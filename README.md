@@ -32,6 +32,17 @@ cp config.exemple.ini config.ini   # sous Windows : copy config.exemple.ini conf
 
 `config.ini` n'est pas versionné : il contient la clé HMAC partagée et les identifiants de la base. Les valeurs d'exemple sont à remplacer.
 
+## Lancer le serveur
+
+```bash
+python scripts/lancer_serveur.py                  # lit config.ini à la racine du dépôt
+python scripts/lancer_serveur.py autre_config.ini
+```
+
+Le serveur écoute en TCP sur le port 5000 et en UDP sur le port 5001 (réglables dans `config.ini`), et journalise dans la console les connexions, les inscriptions et les trames refusées. Ctrl+C ou `kill` l'arrêtent proprement.
+
+Sous macOS, le récepteur AirPlay occupe déjà le port 5000 sur toutes les interfaces. Le serveur peut quand même écouter sur `127.0.0.1:5000`, mais pour écouter sur toutes les interfaces (`hote = 0.0.0.0`), il faut désactiver le récepteur AirPlay (Réglages Système > Général > AirDrop et Handoff) ou choisir un autre `port_tcp`.
+
 ## Tests
 
 ```bash
@@ -44,6 +55,7 @@ python -m pytest
 | --- | --- |
 | `src/cherrypie/` | code de l'application : `commun`, `modele`, `serveur`, `client`, `ihm`, `bdd` |
 | `tests/` | tests pytest |
-| `docs/` | documentation technique (diagramme de classes) |
+| `docs/` | documentation technique : diagramme de classes, protocole, sécurité |
+| `scripts/` | scripts de lancement |
 | `Livrables/` | livrables rendus (QQOQCP, cahier des charges) |
 | `RessourcesProjets/` | consignes et ressources fournies pour la SAÉ |
