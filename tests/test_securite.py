@@ -1,4 +1,4 @@
-"""Tests de la signature HMAC des enveloppes."""
+"""Tests de la signature HMAC et de la protection anti-rejeu."""
 
 import dataclasses
 import re
@@ -6,16 +6,27 @@ import time
 
 import pytest
 
-from cherrypie.commun.erreurs import SignatureInvalideError
+from cherrypie.commun.erreurs import RejeuDetecteError, SignatureInvalideError
 from cherrypie.commun.protocole import Enveloppe, Message, TypeMessage
-from cherrypie.commun.securite import Signataire
+from cherrypie.commun.securite import GardeAntiRejeu, Signataire
 
 CLE = b"cle_de_test_partagee"
+FENETRE = 5.0
+T0 = 1_727_093_000.0
+
+
+def enveloppe_datee(ts: float, nonce: str = "a1b2c3d4e5f60718") -> Enveloppe:
+    return Enveloppe(Message(TypeMessage.PING, "moto_3"), ts, nonce, "00" * 32)
 
 
 @pytest.fixture
 def signataire() -> Signataire:
     return Signataire(CLE)
+
+
+@pytest.fixture
+def garde() -> GardeAntiRejeu:
+    return GardeAntiRejeu(FENETRE)
 
 
 @pytest.fixture
@@ -110,3 +121,79 @@ def test_verifier_hmac_vide_refuse(signataire: Signataire, enveloppe_signee: Env
 def test_verifier_hmac_non_ascii_refuse(signataire: Signataire, enveloppe_signee: Enveloppe) -> None:
     with pytest.raises(SignatureInvalideError):
         signataire.verifier(dataclasses.replace(enveloppe_signee, hmac="é" * 64))
+
+
+# ---------- Anti-rejeu : horodatage ----------
+
+def test_controler_enveloppe_recente_acceptee(garde: GardeAntiRejeu) -> None:
+    garde.controler(enveloppe_datee(T0), maintenant=T0 + 0.2)
+
+
+def test_controler_enveloppe_a_la_limite_de_la_fenetre_acceptee(garde: GardeAntiRejeu) -> None:
+    garde.controler(enveloppe_datee(T0), maintenant=T0 + FENETRE)
+
+
+def test_controler_enveloppe_trop_ancienne_refusee(garde: GardeAntiRejeu) -> None:
+    with pytest.raises(RejeuDetecteError, match="hors fenêtre"):
+        garde.controler(enveloppe_datee(T0), maintenant=T0 + FENETRE + 0.1)
+
+
+def test_controler_enveloppe_datee_du_futur_refusee(garde: GardeAntiRejeu) -> None:
+    with pytest.raises(RejeuDetecteError, match="hors fenêtre"):
+        garde.controler(enveloppe_datee(T0 + FENETRE + 0.1), maintenant=T0)
+
+
+def test_fenetre_nulle_refusee() -> None:
+    with pytest.raises(ValueError, match="fenêtre"):
+        GardeAntiRejeu(0)
+
+
+# ---------- Anti-rejeu : nonces ----------
+
+def test_controler_meme_enveloppe_deux_fois_refusee(garde: GardeAntiRejeu) -> None:
+    enveloppe = enveloppe_datee(T0)
+    garde.controler(enveloppe, maintenant=T0)
+    with pytest.raises(RejeuDetecteError, match="déjà reçu"):
+        garde.controler(enveloppe, maintenant=T0 + 1)
+
+
+def test_controler_nonces_differents_acceptes(garde: GardeAntiRejeu) -> None:
+    garde.controler(enveloppe_datee(T0, "0000000000000001"), maintenant=T0)
+    garde.controler(enveloppe_datee(T0, "0000000000000002"), maintenant=T0)
+    assert len(garde.nonces_vus) == 2
+
+
+def test_controler_enveloppe_refusee_ne_retient_pas_son_nonce(garde: GardeAntiRejeu) -> None:
+    with pytest.raises(RejeuDetecteError):
+        garde.controler(enveloppe_datee(T0 - 60), maintenant=T0)
+    assert garde.nonces_vus == {}
+
+
+def test_nonce_oublie_une_fois_la_fenetre_passee(garde: GardeAntiRejeu) -> None:
+    garde.controler(enveloppe_datee(T0, "0000000000000001"), maintenant=T0)
+    garde.controler(enveloppe_datee(T0 + 10, "0000000000000002"), maintenant=T0 + 10)
+    assert list(garde.nonces_vus) == ["0000000000000002"]
+
+
+def test_rejeu_apres_oubli_du_nonce_toujours_refuse(garde: GardeAntiRejeu) -> None:
+    enveloppe = enveloppe_datee(T0)
+    garde.controler(enveloppe, maintenant=T0)
+    garde.controler(enveloppe_datee(T0 + 10, "ffffffffffffffff"), maintenant=T0 + 10)
+    with pytest.raises(RejeuDetecteError, match="hors fenêtre"):
+        garde.controler(enveloppe, maintenant=T0 + 10)
+
+
+# ---------- Chaîne de réception complète ----------
+
+def test_trame_capturee_puis_rejouee_refusee(
+    signataire: Signataire, garde: GardeAntiRejeu, message_alerte: Message
+) -> None:
+    octets = signataire.signer(message_alerte).vers_octets()
+    premiere = Enveloppe.depuis_octets(octets)
+    signataire.verifier(premiere)
+    garde.controler(premiere, time.time())
+    rejouee = Enveloppe.depuis_octets(octets)
+    # La signature d'une trame rejouée est intacte : seul l'anti-rejeu peut l'arrêter.
+    signataire.verifier(rejouee)
+    with pytest.raises(RejeuDetecteError, match="déjà reçu"):
+        garde.controler(rejouee, time.time())
