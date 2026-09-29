@@ -1,14 +1,21 @@
-"""Tests du format des messages."""
+"""Tests du format des messages et des enveloppes."""
+
+import dataclasses
 
 import pytest
 
 from cherrypie.commun.erreurs import TrameInvalideError
-from cherrypie.commun.protocole import CodeNotification, Message, TypeMessage
+from cherrypie.commun.protocole import CodeNotification, Enveloppe, Message, TypeMessage
 
 
 @pytest.fixture
 def message_pos() -> Message:
     return Message(TypeMessage.POS, "voiture_12", {"x": 3.5, "y": -1.0, "vitesse": 8.3, "segment": "N-O"})
+
+
+@pytest.fixture
+def enveloppe_pos(message_pos: Message) -> Enveloppe:
+    return Enveloppe(message_pos, 1727093000.512, "9f2c1a0b7d3e4f56", "ab" * 32)
 
 
 # ---------- Énumérations ----------
@@ -98,3 +105,69 @@ def test_depuis_dict_emetteur_non_textuel_refuse() -> None:
 def test_depuis_dict_donnees_non_dictionnaire_refusees() -> None:
     with pytest.raises(TrameInvalideError, match="dictionnaire"):
         Message.depuis_dict({"type": "PING", "id": "moto_3", "donnees": "rien"})
+
+
+# ---------- Enveloppe ----------
+
+def test_enveloppe_vers_dict_a_plat(enveloppe_pos: Enveloppe) -> None:
+    assert enveloppe_pos.vers_dict() == {
+        "type": "POS",
+        "id": "voiture_12",
+        "ts": 1727093000.512,
+        "nonce": "9f2c1a0b7d3e4f56",
+        "donnees": {"x": 3.5, "y": -1.0, "vitesse": 8.3, "segment": "N-O"},
+        "hmac": "ab" * 32,
+    }
+
+
+def test_enveloppe_aller_retour_octets(enveloppe_pos: Enveloppe) -> None:
+    assert Enveloppe.depuis_octets(enveloppe_pos.vers_octets()) == enveloppe_pos
+
+
+def test_enveloppe_non_modifiable(enveloppe_pos: Enveloppe) -> None:
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        enveloppe_pos.nonce = "0000"
+
+
+def test_enveloppe_non_signee_a_un_hmac_vide(message_pos: Message) -> None:
+    assert Enveloppe(message_pos, 1727093000.0, "00ff").hmac == ""
+
+
+# ---------- Lecture d'une enveloppe invalide ----------
+
+def test_enveloppe_octets_non_json_refuses() -> None:
+    with pytest.raises(TrameInvalideError, match="JSON invalide"):
+        Enveloppe.depuis_octets(b'{"type": "POS", ')
+
+
+def test_enveloppe_octets_non_utf8_refuses() -> None:
+    with pytest.raises(TrameInvalideError, match="UTF-8"):
+        Enveloppe.depuis_octets(b"\xff\xfe\x00")
+
+
+def test_enveloppe_champ_nonce_manquant_refuse(enveloppe_pos: Enveloppe) -> None:
+    contenu = enveloppe_pos.vers_dict()
+    del contenu["nonce"]
+    with pytest.raises(TrameInvalideError, match="nonce"):
+        Enveloppe.depuis_dict(contenu)
+
+
+def test_enveloppe_nonce_vide_refuse(enveloppe_pos: Enveloppe) -> None:
+    contenu = enveloppe_pos.vers_dict()
+    contenu["nonce"] = ""
+    with pytest.raises(TrameInvalideError, match="nonce"):
+        Enveloppe.depuis_dict(contenu)
+
+
+@pytest.mark.parametrize("ts", ["1727093000", True, None], ids=["texte", "booleen", "null"])
+def test_enveloppe_horodatage_non_numerique_refuse(enveloppe_pos: Enveloppe, ts: object) -> None:
+    contenu = enveloppe_pos.vers_dict()
+    contenu["ts"] = ts
+    with pytest.raises(TrameInvalideError, match="horodatage"):
+        Enveloppe.depuis_dict(contenu)
+
+
+def test_enveloppe_horodatage_nan_refuse() -> None:
+    octets = b'{"type":"PING","id":"moto_3","ts":NaN,"nonce":"00ff","donnees":{},"hmac":""}'
+    with pytest.raises(TrameInvalideError, match="fini"):
+        Enveloppe.depuis_octets(octets)
