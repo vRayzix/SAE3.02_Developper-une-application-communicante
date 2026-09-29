@@ -37,6 +37,7 @@ class Configuration:
         self.__intervalle_ping = self.__lire_reel_positif(parseur, "delais", "intervalle_ping")
         self.__timeout_client = self.__lire_reel_positif(parseur, "delais", "timeout_client")
         self.__intervalle_position = self.__lire_reel_positif(parseur, "delais", "intervalle_position")
+        self.__intervalle_etat = self.__lire_reel_positif(parseur, "delais", "intervalle_etat")
         self.__backoff_initial = self.__lire_reel_positif(parseur, "delais", "backoff_initial")
         self.__backoff_max = self.__lire_reel_positif(parseur, "delais", "backoff_max")
         self.__branches = self.__lire_branches(parseur)
@@ -128,6 +129,14 @@ class Configuration:
     def intervalle_position(self) -> float:
         """float: délai entre deux POS envoyés par un client, en secondes."""
         return self.__intervalle_position
+
+    @property
+    def intervalle_etat(self) -> float:
+        """float: délai entre deux STATE envoyés aux supervisions, en secondes.
+
+        Le serveur s'en sert aussi comme cadence pour contrôler les heartbeats.
+        """
+        return self.__intervalle_etat
 
     @property
     def backoff_initial(self) -> float:

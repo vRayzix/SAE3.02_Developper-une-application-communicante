@@ -9,6 +9,7 @@ from cherrypie.commun.erreurs import (
     RejeuDetecteError,
     SignatureInvalideError,
     TrameInvalideError,
+    UsagerInconnuError,
 )
 
 ERREURS_METIER = [
@@ -17,6 +18,7 @@ ERREURS_METIER = [
     SignatureInvalideError,
     RejeuDetecteError,
     BrancheInconnueError,
+    UsagerInconnuError,
 ]
 
 

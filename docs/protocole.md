@@ -48,18 +48,39 @@ Dans le code, `Message` porte `type`, `id` et `donnees` ; `Enveloppe` y ajoute `
 | type | Sens | Transport | donnees |
 | --- | --- | --- | --- |
 | HELLO | client → serveur | TCP | `{"categorie": "voiture", "entree": "N", "sortie": "E"}`, catégorie parmi `voiture`, `moto`, `trottinette`, `pieton`, `vp` |
-| HELLO_ACK | serveur → client | TCP | `{"accepte": true}` |
+| HELLO_ACK | serveur → client | TCP | `{"accepte": true}`, ou `{"accepte": false, "raison": "..."}` en cas de refus |
 | POS | client → serveur | UDP | `{"x": 3.5, "y": -1.0, "vitesse": 8.3, "segment": "N-O"}` |
 | VP_ALERT | client VP → serveur | TCP | `{"entree": "N", "sortie": "E", "eta": 8.0}` |
 | VP_FIN | client VP → serveur | TCP | `{}` |
 | NOTIF | serveur → client | TCP | `{"code": "DEGAGEZ", "message": "..."}`, code parmi `DEGAGEZ`, `CHANGEZ_VOIE`, `ATTENDEZ`, `OK_PASSER` |
-| STATE | serveur → supervision | TCP | `{"usagers": [...], "densite": {"N": 0.7, ...}, "vp_actif": true, "entrees_bloquees": ["S"], "regulation": true}` |
+| STATE | serveur → supervision | TCP | `{"usagers": [...]}`, voir plus bas |
 | ABONNEMENT | supervision → serveur | TCP | `{}` : la connexion reçoit ensuite les STATE |
 | REGLAGE | supervision → serveur | TCP | `{"regulation": false}` |
 | PING | client → serveur | TCP | `{}` |
 | PONG | serveur → client | TCP | `{}` |
 | BYE | client → serveur | TCP | `{}` |
 
+Chaque élément de la liste `usagers` d'un STATE décrit un usager connecté :
+
+```json
+{"id": "voiture_12", "categorie": "voiture", "entree": "S", "sortie": "N", "x": 0.0, "y": -20.0, "vitesse": 8.0, "segment": null, "consigne": null}
+```
+
+`x` et `y` valent `null` tant que le serveur n'a reçu aucune position de l'usager. Les champs `densite`, `vp_actif`, `entrees_bloquees` et `regulation` s'ajouteront au STATE avec la régulation.
+
+## Sessions et heartbeat
+
+- Chaque connexion TCP ouvre une session. Elle devient celle d'un usager quand son HELLO est accepté, ou celle d'une supervision après un ABONNEMENT.
+- Un HELLO est refusé, avec la raison dans le HELLO_ACK, si la session est déjà enregistrée, si l'identifiant est déjà connecté sur une autre session, s'il manque un champ, si la catégorie ou une branche est inconnue, ou si un piéton donne une sortie différente de son entrée.
+- Après le HELLO, tous les messages de la session doivent porter l'identifiant de son usager. Un message au nom d'un autre est refusé.
+- Toute session, usager ou supervision, doit donner des nouvelles : le client envoie un PING toutes les 2 s (`intervalle_ping`) et le serveur répond PONG. Seuls les messages TCP comptent ; les POS reçus en UDP ne maintiennent pas la session.
+- Après 6 s sans message (`timeout_client`), le serveur ferme la socket et retire l'usager du registre. Il fait de même après un BYE, une déconnexion ou une coupure brutale.
+- Toutes les 0,2 s (`intervalle_etat`), le serveur envoie un STATE à chaque supervision abonnée, et à elles seules.
+
+## Positions en UDP
+
+Le serveur ne répond pas aux POS. Il n'accepte une position que si son émetteur a une session TCP ouverte, où son HELLO a été accepté : c'est le contrôle d'identité. Il vérifie aussi que `x` et `y` sont des nombres finis, que `vitesse` reste entre 0 et la vitesse maximale de la catégorie, et que `segment` est le nom d'un segment de l'anneau, ou `null` hors de l'anneau.
+
 ## Trames refusées
 
-À la réception, une trame passe trois contrôles dans cet ordre : lecture de l'enveloppe, vérification du HMAC, contrôle anti-rejeu (détails dans [securite.md](securite.md)). Chaque échec lève une exception dédiée, fille de `CherryPieError` : `TrameInvalideError`, `SignatureInvalideError` ou `RejeuDetecteError`. La trame est alors journalisée puis ignorée.
+À la réception, une trame passe trois contrôles dans cet ordre : lecture de l'enveloppe, vérification du HMAC, contrôle anti-rejeu (détails dans [securite.md](securite.md)). Chaque échec lève une exception dédiée, fille de `CherryPieError` : `TrameInvalideError`, `SignatureInvalideError` ou `RejeuDetecteError`, et `UsagerInconnuError` pour une position sans session TCP. La trame est alors journalisée puis ignorée, sans interrompre le serveur. Seule exception : sur TCP, une longueur annoncée de plus de 1 Mio ferme la connexion, puisque le flux ne peut plus être resynchronisé.

@@ -28,3 +28,7 @@ class RejeuDetecteError(CherryPieError):
 
 class BrancheInconnueError(CherryPieError):
     """La branche demandée n'existe pas dans la configuration du rond-point."""
+
+
+class UsagerInconnuError(CherryPieError):
+    """L'identifiant ne correspond à aucun usager connecté."""
