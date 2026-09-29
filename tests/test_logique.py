@@ -2,8 +2,9 @@
 
 import pytest
 
-from cherrypie.commun.erreurs import TrameInvalideError
+from cherrypie.commun.erreurs import TrameInvalideError, UsagerInconnuError
 from cherrypie.commun.protocole import Message, TypeMessage
+from cherrypie.modele.position import Position
 from cherrypie.modele.rond_point import RondPoint
 from cherrypie.serveur.logique import IDENTIFIANT_SERVEUR, LogiqueServeur, Reponse
 
@@ -157,3 +158,70 @@ def test_position_envoyee_en_tcp_refusee(logique: LogiqueServeur) -> None:
     numero = session_inscrite(logique)
     with pytest.raises(TrameInvalideError, match="inattendu"):
         logique.traiter_tcp(numero, Message(TypeMessage.POS, "voiture_12", {"x": 0.0, "y": 0.0}), 1.0)
+
+
+# ---------- Positions reçues en UDP ----------
+
+def pos(identifiant: str = "voiture_12", **modifications: object) -> Message:
+    donnees = {"x": 3.5, "y": -20.0, "vitesse": 4.2, "segment": "S-E"} | modifications
+    return Message(TypeMessage.POS, identifiant, donnees)
+
+
+def test_pos_met_a_jour_l_usager(logique: LogiqueServeur) -> None:
+    session_inscrite(logique)
+    logique.traiter_udp(pos())
+    usager = logique.registre.obtenir("voiture_12")
+    assert usager.position == Position(3.5, -20.0)
+    assert usager.vitesse == pytest.approx(4.2)
+    assert usager.segment == "S-E"
+
+
+def test_pos_hors_de_l_anneau_sans_segment(logique: LogiqueServeur) -> None:
+    session_inscrite(logique)
+    logique.traiter_udp(pos(segment=None))
+    assert logique.registre.obtenir("voiture_12").segment is None
+
+
+def test_pos_d_un_usager_sans_session_refuse(logique: LogiqueServeur) -> None:
+    with pytest.raises(UsagerInconnuError, match="voiture_99"):
+        logique.traiter_udp(pos("voiture_99"))
+
+
+def test_pos_apres_fermeture_de_la_session_refuse(logique: LogiqueServeur) -> None:
+    logique.fermer_session(session_inscrite(logique))
+    with pytest.raises(UsagerInconnuError):
+        logique.traiter_udp(pos())
+
+
+@pytest.mark.parametrize(
+    ("modifications", "motif"),
+    [
+        ({"x": float("nan")}, "fini"),
+        ({"y": "loin"}, "nombre"),
+        ({"vitesse": 50.0}, "hors limites"),
+        ({"segment": "N-S"}, "segment inconnu"),
+    ],
+    ids=["x-nan", "y-texte", "trop-rapide", "segment-inconnu"],
+)
+def test_pos_invalide_refuse_sans_toucher_l_usager(
+    logique: LogiqueServeur, modifications: dict, motif: str
+) -> None:
+    session_inscrite(logique)
+    with pytest.raises(TrameInvalideError, match=motif):
+        logique.traiter_udp(pos(**modifications))
+    usager = logique.registre.obtenir("voiture_12")
+    assert usager.position is None
+    assert usager.vitesse == 0.0
+
+
+def test_pos_incomplet_refuse(logique: LogiqueServeur) -> None:
+    session_inscrite(logique)
+    incomplet = Message(TypeMessage.POS, "voiture_12", {"x": 0.0, "y": 0.0, "vitesse": 1.0})
+    with pytest.raises(TrameInvalideError, match="il manque : segment"):
+        logique.traiter_udp(incomplet)
+
+
+def test_autre_message_qu_un_pos_refuse_en_udp(logique: LogiqueServeur) -> None:
+    session_inscrite(logique)
+    with pytest.raises(TrameInvalideError, match="seuls les POS"):
+        logique.traiter_udp(Message(TypeMessage.PING, "voiture_12"))
