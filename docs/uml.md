@@ -270,3 +270,139 @@ classDiagram
 - `position_a()` donne la position d'un usager à partir de la distance déjà parcourue sur sa trajectoire ; le décalage sert à s'écarter quand un véhicule prioritaire arrive.
 
 Setters prévus : `Usager.position`, `Usager.vitesse` et `Usager.segment`, mis à jour par le client quand il avance et par le serveur à chaque POS reçu.
+
+## Paquet `serveur`
+
+```mermaid
+classDiagram
+    class Serveur {
+        -config : Configuration
+        -ecoute_tcp : socket
+        -socket_udp : socket
+        -sessions : dict[socket, SessionClient]
+        -registre : Registre
+        -calculateur : CalculateurDensite
+        -regulateur : Regulateur
+        -signataire : Signataire
+        -garde : GardeAntiRejeu
+        -acces_bdd : AccesBdd | None
+        -en_marche : bool
+        +demarrer() None
+        +arreter() None
+        -accepter_client() None
+        -lire_tcp(session: SessionClient) None
+        -lire_udp() None
+        -traiter(session: SessionClient, message: Message) None
+        -retirer_inactifs(maintenant: float) None
+        -diffuser_etat() None
+    }
+
+    class SessionClient {
+        -connexion : socket
+        -adresse : tuple[str, int]
+        -decoupeur : DecoupeurTrames
+        -identifiant : str | None
+        -superviseur : bool
+        -derniere_activite : float
+        +envoyer(octets: bytes) None
+        +fermer() None
+    }
+
+    class Registre {
+        -usagers : dict[str, Usager]
+        +ajouter(usager: Usager) None
+        +retirer(identifiant: str) Usager
+        +obtenir(identifiant: str) Usager
+        +usagers_sur_branche(branche: str) list[Usager]
+        +usagers_sur_segment(segment: str) list[Usager]
+    }
+
+    class NiveauDensite {
+        <<enumeration>>
+        FAIBLE
+        MOYENNE
+        FORTE
+    }
+
+    class CalculateurDensite {
+        -rond_point : RondPoint
+        +calculer(registre: Registre) dict[str, float]
+        +niveau(densite: float) NiveauDensite$
+    }
+
+    class Regulateur {
+        -rond_point : RondPoint
+        -active : bool
+        -vp_actif : str | None
+        -segments_reserves : set[str]
+        -entrees_bloquees : set[str]
+        -consignes_envoyees : dict[str, CodeNotification]
+        +signaler_vp(identifiant: str, entree: str, sortie: str) None
+        +terminer_vp(identifiant: str) None
+        +decider(registre: Registre, densites: dict[str, float]) list[Notification]
+    }
+
+    class Notification {
+        <<dataclass>>
+        +destinataire : str
+        +code : CodeNotification
+        +texte : str
+        +vers_message() Message
+    }
+
+    Serveur "1" *-- "0..*" SessionClient
+    Serveur *-- Registre
+    Serveur *-- CalculateurDensite
+    Serveur *-- Regulateur
+    Serveur --> AccesBdd
+    SessionClient *-- DecoupeurTrames
+    Registre "1" o-- "0..*" Usager
+    CalculateurDensite --> RondPoint
+    CalculateurDensite ..> NiveauDensite
+    Regulateur --> RondPoint
+    Regulateur ..> Notification : produit
+```
+
+- `Serveur` fait tourner une seule boucle `select` sur la socket d'écoute TCP, la socket UDP et les sockets des clients. Chaque connexion TCP a sa `SessionClient`, avec son propre tampon de trames.
+- Une session devient usager au HELLO (`identifiant` renseigné) ou superviseur à l'ABONNEMENT. Un POS reçu en UDP n'est accepté que si son identifiant correspond à une session active.
+- `Regulateur.decider()` est appelé à chaque tour de boucle. Il compare la situation (VP actif ou non, densités, position des usagers) aux consignes déjà envoyées et ne renvoie que les nouvelles notifications. Quand la régulation est désactivée, il ne renvoie rien.
+- `CalculateurDensite.niveau()` applique les seuils du cahier des charges : faible en dessous de 0,4, moyenne en dessous de 0,7, forte au-delà.
+
+Setters prévus : `SessionClient.identifiant`, `SessionClient.superviseur`, `SessionClient.derniere_activite` et `Regulateur.active` (message REGLAGE).
+
+## Paquet `client`
+
+```mermaid
+classDiagram
+    class Thread
+    class ClientUsager {
+        -config : Configuration
+        -usager : Usager
+        -trajectoire : Trajectoire
+        -avancement : float
+        -connexion : socket | None
+        -socket_udp : socket
+        -decoupeur : DecoupeurTrames
+        -signataire : Signataire
+        -garde : GardeAntiRejeu
+        -actif : bool
+        +run() None
+        +arreter() None
+        -connecter() None
+        -envoyer(message: Message) None
+        -envoyer_position() None
+        -avancer(duree: float) None
+        -traiter(message: Message) None
+    }
+
+    Thread <|-- ClientUsager
+    ClientUsager *-- Usager
+    ClientUsager *-- Trajectoire
+    ClientUsager *-- DecoupeurTrames
+```
+
+- Chaque `ClientUsager` est un `threading.Thread` avec ses propres sockets. `run()` enchaîne : connexion et HELLO, puis, à chaque pas, déplacement, envoi du POS en UDP, PING toutes les 2 s et lecture des notifications.
+- `connecter()` réessaie après une coupure avec un délai qui double (1, 2, 4, 8 s, plafonné à 10 s) et renvoie un HELLO à chaque reconnexion.
+- Un client de catégorie `vp` envoie VP_ALERT à son arrivée et VP_FIN à sa sortie du rond-point.
+
+Setters prévus : aucun, `avancement` n'est modifié que par le client lui-même.
