@@ -406,3 +406,89 @@ classDiagram
 - Un client de catégorie `vp` envoie VP_ALERT à son arrivée et VP_FIN à sa sortie du rond-point.
 
 Setters prévus : aucun, `avancement` n'est modifié que par le client lui-même.
+
+## Paquets `ihm` et `bdd`
+
+```mermaid
+classDiagram
+    class QMainWindow
+    class QGraphicsScene
+    class QThread
+    class QWidget
+
+    class FenetreSupervision {
+        -scene : SceneRondPoint
+        -thread_reseau : ThreadReseau
+        -panneau_creation : PanneauCreation
+        -panneau_stats : PanneauStats
+        -interrupteur_regulation : QCheckBox
+        -afficher_etat(etat: dict) None
+        -basculer_regulation(active: bool) None
+        #closeEvent(evenement: QCloseEvent) None
+    }
+
+    class SceneRondPoint {
+        -rond_point : RondPoint
+        -marqueurs : dict[str, QGraphicsEllipseItem]
+        +mettre_a_jour(usagers: list[dict], entrees_bloquees: list[str]) None
+        -dessiner_rond_point() None
+    }
+
+    class ThreadReseau {
+        +etat_recu : pyqtSignal~dict~
+        +connexion_perdue : pyqtSignal~str~
+        -config : Configuration
+        -actif : bool
+        +run() None
+        +demander_reglage(regulation: bool) None
+        +arreter() None
+    }
+
+    class PanneauCreation {
+        -config : Configuration
+        -clients : list[ClientUsager]
+        -choix_categorie : QComboBox
+        -choix_entree : QComboBox
+        -choix_sortie : QComboBox
+        -creer_usager() None
+        +arreter_clients() None
+    }
+
+    class PanneauStats {
+        -acces_bdd : AccesBdd
+        -graphe_temps_vp : PlotWidget
+        -graphe_densite : PlotWidget
+        +rafraichir() None
+    }
+
+    class AccesBdd {
+        -parametres : dict[str, str]
+        -connexion : MySQLConnection | None
+        +connecter() None
+        +fermer() None
+        +enregistrer_passage_vp(passage: dict) None
+        +enregistrer_densites(instantanes: list[tuple]) None
+        +enregistrer_evenement(identifiant: str, categorie: str, evenement: str) None
+        +lire_passages_vp() list[dict]
+        +lire_densites() list[dict]
+    }
+
+    QMainWindow <|-- FenetreSupervision
+    QGraphicsScene <|-- SceneRondPoint
+    QThread <|-- ThreadReseau
+    QWidget <|-- PanneauCreation
+    QWidget <|-- PanneauStats
+    FenetreSupervision *-- SceneRondPoint
+    FenetreSupervision *-- ThreadReseau
+    FenetreSupervision *-- PanneauCreation
+    FenetreSupervision *-- PanneauStats
+    PanneauCreation "1" *-- "0..*" ClientUsager
+    PanneauStats --> AccesBdd
+```
+
+- `ThreadReseau` ne touche aucun widget. Il reçoit les STATE et émet `etat_recu` ; c'est `FenetreSupervision`, dans le thread graphique, qui met la scène à jour dans `afficher_etat()`.
+- `closeEvent()` redéfinit la méthode protégée de Qt pour arrêter proprement le thread réseau et les clients lancés avant de fermer la fenêtre.
+- `PanneauCreation` lance un `ClientUsager` local pour la catégorie, l'entrée et la sortie choisies. Ce client se connecte au serveur comme n'importe quel autre.
+- `AccesBdd` utilise des requêtes paramétrées et `executemany` pour les instantanés de densité. Le serveur est le seul à écrire ; `PanneauStats` ne fait que lire.
+
+Setters prévus : aucun.
