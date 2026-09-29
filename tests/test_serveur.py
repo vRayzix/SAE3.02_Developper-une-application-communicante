@@ -29,6 +29,7 @@ class ClientTest:
         self.__signataire = Signataire(config.cle_hmac)
         self.__decoupeur = DecoupeurTrames()
         self.__recus: deque[Message] = deque()
+        self.__historique: list[Message] = []
         self.__socket = socket.create_connection((config.hote, config.port_tcp), timeout=DELAI)
 
     @property
@@ -50,6 +51,11 @@ class ClientTest:
     @property
     def recus(self) -> list[Message]:
         return list(self.__recus)
+
+    @property
+    def historique(self) -> list[Message]:
+        """list[Message]: tous les messages reçus depuis la connexion, y compris ceux sautés."""
+        return list(self.__historique)
 
     @property
     def socket(self) -> socket.socket:
@@ -84,6 +90,19 @@ class ClientTest:
             self.__lire()
         raise AssertionError(f"aucun {type_attendu.value} reçu en {DELAI} s")
 
+    def attendre_etat(self, condition: Callable[[dict], bool]) -> dict:
+        """Lit les STATE jusqu'au premier qui remplit la condition.
+
+        Un PING part avant chaque lecture, pour que la session ne soit pas retirée pendant l'attente.
+        """
+        limite = time.monotonic() + DELAI
+        while time.monotonic() < limite:
+            self.envoyer(TypeMessage.PING)
+            etat = self.recevoir(TypeMessage.STATE).donnees
+            if condition(etat):
+                return etat
+        raise AssertionError("aucun STATE ne remplit la condition")
+
     def attendre_fermeture(self) -> None:
         """Attend que le serveur ferme la connexion, en ignorant ce qu'il envoie d'ici là."""
         limite = time.monotonic() + DELAI
@@ -112,6 +131,7 @@ class ClientTest:
             enveloppe = Enveloppe.depuis_octets(trame)
             self.__signataire.verifier(enveloppe)
             self.__recus.append(enveloppe.message)
+            self.__historique.append(enveloppe.message)
 
 
 @pytest.fixture
@@ -166,6 +186,16 @@ def voiture_inscrite(clients: Callable[[str], ClientTest], identifiant: str = "v
     client.envoyer(TypeMessage.HELLO, HELLO_VOITURE)
     assert client.recevoir(TypeMessage.HELLO_ACK).donnees == {"accepte": True}
     return client
+
+
+def supervision_abonnee(clients: Callable[[str], ClientTest]) -> ClientTest:
+    supervision = clients("supervision")
+    supervision.envoyer(TypeMessage.ABONNEMENT)
+    return supervision
+
+
+def identifiants(etat: dict) -> list[str]:
+    return [usager["id"] for usager in etat["usagers"]]
 
 
 # ---------- Inscription et PING ----------
@@ -320,3 +350,64 @@ def test_arret_propre_de_la_boucle(fabrique_config: Callable[..., Configuration]
     client.attendre_fermeture()
     with pytest.raises(ConnectionRefusedError):
         socket.create_connection((serveur.config.hote, serveur.config.port_tcp), timeout=DELAI)
+
+
+# ---------- Diffusion des STATE ----------
+
+def test_supervision_recoit_les_usagers_connectes(clients: Callable[[str], ClientTest]) -> None:
+    voiture_inscrite(clients, "voiture_12")
+    supervision = supervision_abonnee(clients)
+    etat = supervision.attendre_etat(lambda etat: identifiants(etat) == ["voiture_12"])
+    assert etat["usagers"][0]["categorie"] == "voiture"
+
+
+def test_state_suit_les_positions_recues(clients: Callable[[str], ClientTest]) -> None:
+    voiture = voiture_inscrite(clients)
+    supervision = supervision_abonnee(clients)
+    voiture.envoyer_position(3.5, -20.0, segment="S-E")
+    etat = supervision.attendre_etat(lambda etat: etat["usagers"][0]["x"] == 3.5)
+    assert etat["usagers"][0]["segment"] == "S-E"
+
+
+def test_usager_parti_disparait_du_state(clients: Callable[[str], ClientTest]) -> None:
+    voiture = voiture_inscrite(clients)
+    supervision = supervision_abonnee(clients)
+    supervision.attendre_etat(lambda etat: identifiants(etat) == ["voiture_12"])
+    voiture.envoyer(TypeMessage.BYE)
+    supervision.attendre_etat(lambda etat: etat["usagers"] == [])
+
+
+def test_usager_ne_recoit_pas_les_state(clients: Callable[[str], ClientTest]) -> None:
+    voiture = voiture_inscrite(clients)
+    supervision = supervision_abonnee(clients)
+    supervision.recevoir(TypeMessage.STATE)
+    supervision.recevoir(TypeMessage.STATE)
+    voiture.envoyer(TypeMessage.PING)
+    voiture.recevoir(TypeMessage.PONG)
+    assert TypeMessage.STATE not in [message.type for message in voiture.historique]
+
+
+# ---------- Heartbeat ----------
+
+def test_client_silencieux_deconnecte_et_retire(lancer_serveur: Callable[..., Serveur]) -> None:
+    serveur = lancer_serveur(intervalle_ping="0.1", timeout_client="0.3")
+    client = ClientTest(serveur.config, "voiture_12")
+    client.envoyer(TypeMessage.HELLO, HELLO_VOITURE)
+    assert client.recevoir(TypeMessage.HELLO_ACK).donnees == {"accepte": True}
+    client.attendre_fermeture()
+    attendre(lambda: not serveur.logique.registre.contient("voiture_12"))
+    client.fermer()
+
+
+def test_client_qui_pingue_reste_connecte(lancer_serveur: Callable[..., Serveur]) -> None:
+    serveur = lancer_serveur(intervalle_ping="0.1", timeout_client="0.3")
+    client = ClientTest(serveur.config, "voiture_12")
+    client.envoyer(TypeMessage.HELLO, HELLO_VOITURE)
+    client.recevoir(TypeMessage.HELLO_ACK)
+    # Huit PING espacés de 0,1 s : bien plus longtemps que le timeout de 0,3 s.
+    for _ in range(8):
+        client.envoyer(TypeMessage.PING)
+        client.recevoir(TypeMessage.PONG)
+        time.sleep(0.1)
+    assert serveur.logique.registre.contient("voiture_12")
+    client.fermer()
