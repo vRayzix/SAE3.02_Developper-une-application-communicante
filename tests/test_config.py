@@ -33,8 +33,8 @@ def ecrire_variante(dossier: Path, texte: str, ligne: str, remplacement: str) ->
 def test_exemple_valeurs_reseau() -> None:
     config = Configuration.depuis_fichier(CHEMIN_EXEMPLE)
     assert config.hote == "127.0.0.1"
-    assert config.port_tcp == 5000
-    assert config.port_udp == 5001
+    assert config.port_tcp == 5050
+    assert config.port_udp == 5051
 
 
 def test_exemple_valeurs_securite_et_delais() -> None:
@@ -102,7 +102,7 @@ def test_section_absente_refusee(tmp_path: Path, texte_exemple: str) -> None:
 
 
 def test_cle_absente_refusee(tmp_path: Path, texte_exemple: str) -> None:
-    chemin = ecrire_variante(tmp_path, texte_exemple, "port_tcp = 5000\n", "")
+    chemin = ecrire_variante(tmp_path, texte_exemple, "port_tcp = 5050\n", "")
     with pytest.raises(ConfigurationInvalideError, match="port_tcp absent"):
         Configuration.depuis_fichier(chemin)
 
@@ -116,8 +116,8 @@ def test_cle_vide_refusee(tmp_path: Path, texte_exemple: str) -> None:
 # ---------- Valeurs incohérentes ----------
 
 VALEURS_INCOHERENTES = [
-    pytest.param("port_tcp = 5000", "port_tcp = cinq_mille", "doit être un entier", id="port-non-entier"),
-    pytest.param("port_udp = 5001", "port_udp = 70000", "au plus 65535", id="port-trop-grand"),
+    pytest.param("port_tcp = 5050", "port_tcp = cinq_mille", "doit être un entier", id="port-non-entier"),
+    pytest.param("port_udp = 5051", "port_udp = 70000", "au plus 65535", id="port-trop-grand"),
     pytest.param("port = 3306", "port = 0", "au moins 1", id="port-bdd-nul"),
     pytest.param("intervalle_ping = 2", "intervalle_ping = 0", "strictement positif", id="delai-nul"),
     pytest.param("intervalle_etat = 0.2", "intervalle_etat = -0.2", "strictement positif", id="cadence-negative"),
