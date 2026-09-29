@@ -87,7 +87,7 @@ def test_identifiant_deja_connecte_refuse(logique: LogiqueServeur) -> None:
     session_inscrite(logique, "voiture_12")
     seconde = logique.ouvrir_session(1.0)
     donnees = accuse(logique.traiter_tcp(seconde, hello("voiture_12"), 2.0))
-    assert donnees == {"accepte": False, "raison": "l'identifiant voiture_12 est déjà connecté"}
+    assert donnees == {"accepte": False, "raison": "l'identifiant voiture_12 est déjà connecté", "reessayer": True}
 
 
 def test_identifiant_libere_a_la_fermeture_de_sa_session(logique: LogiqueServeur) -> None:
@@ -99,7 +99,7 @@ def test_identifiant_libere_a_la_fermeture_de_sa_session(logique: LogiqueServeur
 def test_second_hello_sur_la_meme_session_refuse(logique: LogiqueServeur) -> None:
     numero = session_inscrite(logique, "voiture_12")
     donnees = accuse(logique.traiter_tcp(numero, hello("voiture_12"), 1.0))
-    assert donnees == {"accepte": False, "raison": "cette session est déjà enregistrée"}
+    assert donnees == {"accepte": False, "raison": "cette session est déjà enregistrée", "reessayer": False}
 
 
 # ---------- PING, ABONNEMENT et BYE ----------
