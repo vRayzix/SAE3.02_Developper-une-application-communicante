@@ -3,7 +3,8 @@
 Une seule boucle select surveille la socket d'écoute TCP, la socket UDP et les
 sockets des clients. Elle ne prend aucune décision : elle lit les trames, vérifie
 leur signature et leur fraîcheur, les confie à LogiqueServeur et envoie ce que
-celle-ci renvoie.
+celle-ci renvoie. Le délai d'attente de select court jusqu'à la prochaine cadence,
+qui rythme la diffusion des STATE et le contrôle des heartbeats : aucune attente active.
 """
 
 from __future__ import annotations
@@ -118,10 +119,16 @@ class Serveur:
         """
         if self.__ecoute_tcp is None or self.__socket_udp is None:
             raise RuntimeError("le serveur doit être démarré avant de servir")
+        prochaine_cadence = time.monotonic()
         try:
             while not self.__arret.is_set():
                 try:
-                    self.__attendre_et_traiter(self.__config.intervalle_etat)
+                    self.__attendre_et_traiter(max(0.0, prochaine_cadence - time.monotonic()))
+                    if time.monotonic() >= prochaine_cadence:
+                        # Échéance suivante fixée d'abord : une erreur dans la cadence ne doit
+                        # pas la faire rejouer à chaque tour.
+                        prochaine_cadence = time.monotonic() + self.__config.intervalle_etat
+                        self.__cadencer()
                 except Exception:
                     # Frontière : une erreur imprévue est journalisée, la boucle continue.
                     journal.exception("erreur inattendue dans la boucle du serveur")
@@ -150,6 +157,14 @@ class Serveur:
                 self.__lire_udp()
             else:
                 self.__proteger(numeros[prise], self.__lire_tcp)
+
+    def __cadencer(self) -> None:
+        """Retire les clients silencieux, puis envoie le STATE aux supervisions."""
+        for numero in self.__logique.sessions_expirees(time.monotonic()):
+            self.__fermer(numero, f"aucune nouvelle depuis plus de {self.__config.timeout_client:g} s")
+        etat = self.__logique.construire_etat()
+        for numero in self.__logique.superviseurs():
+            self.__envoyer(numero, etat)
 
     def __proteger(self, numero: int, action: Callable[[int], None]) -> None:
         """Exécute une action sur une session sans qu'une erreur imprévue n'arrête le serveur."""
