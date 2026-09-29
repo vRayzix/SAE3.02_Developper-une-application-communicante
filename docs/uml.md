@@ -140,3 +140,133 @@ classDiagram
 - `DecoupeurTrames` tient le tampon d'une socket TCP : `ajouter()` renvoie les trames complètes et garde le reste pour la lecture suivante.
 
 Setters prévus : aucun, ces objets ne changent plus une fois construits.
+
+## Paquet `modele`
+
+### Usagers
+
+```mermaid
+classDiagram
+    class Position {
+        <<dataclass>>
+        +x : float
+        +y : float
+        +distance(autre: Position) float
+    }
+
+    class Usager {
+        <<abstract>>
+        +CATEGORIE : str$
+        +VITESSE_MAX : float$
+        +CONSIGNES_SUIVIES : frozenset[CodeNotification]$
+        -identifiant : str
+        -branche_entree : str
+        -branche_sortie : str
+        -position : Position
+        -vitesse : float
+        -segment : str | None
+        -consigne : CodeNotification | None
+        +reagir(code: CodeNotification) None
+        +vitesse_autorisee() float
+        +decalage_lateral() float
+        +vers_dict() dict
+        +depuis_dict(contenu: dict) Usager$
+    }
+
+    class Voiture {
+        +CATEGORIE$
+        +VITESSE_MAX$
+    }
+
+    class Moto {
+        +CATEGORIE$
+        +VITESSE_MAX$
+    }
+
+    class Trottinette {
+        +CATEGORIE$
+        +VITESSE_MAX$
+    }
+
+    class Pieton {
+        +CATEGORIE$
+        +VITESSE_MAX$
+        +CONSIGNES_SUIVIES$
+    }
+
+    class VehiculePrioritaire {
+        +CATEGORIE$
+        +VITESSE_MAX$
+        +CONSIGNES_SUIVIES$
+    }
+
+    Usager <|-- Voiture
+    Usager <|-- Moto
+    Usager <|-- Trottinette
+    Usager <|-- Pieton
+    Usager <|-- VehiculePrioritaire
+    Usager *-- Position
+```
+
+`Usager.reagir()` enregistre la consigne reçue si elle fait partie de `CONSIGNES_SUIVIES`, et l'ignore sinon. Chaque sous-classe redéfinit ce qui lui est propre :
+
+| Classe | Catégorie | Vitesse max | Consignes suivies |
+| --- | --- | --- | --- |
+| `Voiture` | `voiture` | 8,3 m/s (30 km/h) | toutes |
+| `Moto` | `moto` | 8,3 m/s (30 km/h) | toutes |
+| `Trottinette` | `trottinette` | 5,6 m/s (20 km/h) | toutes |
+| `Pieton` | `pieton` | 1,4 m/s (5 km/h) | `ATTENDEZ`, `OK_PASSER` |
+| `VehiculePrioritaire` | `vp` | 11,1 m/s (40 km/h) | aucune, c'est lui qu'on laisse passer |
+
+Les vitesses sont des valeurs de départ, à régler pendant les essais. `vitesse_autorisee()` et `decalage_lateral()` traduisent la consigne en cours en mouvement : arrêt pour `ATTENDEZ`, ralentissement et décalage pour `DEGAGEZ`, décalage pour `CHANGEZ_VOIE`. `depuis_dict()` instancie la bonne sous-classe d'après la catégorie reçue dans le HELLO.
+
+### Rond-point et trajectoires
+
+```mermaid
+classDiagram
+    class RondPoint {
+        -rayon : float
+        -branches : list[Branche]
+        -segments : list[Segment]
+        +branche(nom: str) Branche
+        +segments_entre(entree: str, sortie: str) list[Segment]
+        +depuis_config(config: Configuration) RondPoint$
+    }
+
+    class Branche {
+        -nom : str
+        -angle : float
+        -capacite : int
+    }
+
+    class Segment {
+        -depart : Branche
+        -arrivee : Branche
+        -longueur : float
+        +nom() str
+    }
+
+    class Trajectoire {
+        -entree : Branche
+        -sortie : Branche
+        -segments : list[Segment]
+        -longueur : float
+        +calculer(rond_point: RondPoint, entree: str, sortie: str) Trajectoire$
+        +position_a(avancement: float, decalage: float) Position
+        +segment_a(avancement: float) Segment | None
+        +passe_par(segment: Segment) bool
+    }
+
+    RondPoint "1" *-- "3..*" Branche
+    RondPoint "1" *-- "3..*" Segment
+    Segment --> "2" Branche
+    Trajectoire o-- "1..*" Segment
+    Trajectoire --> "2" Branche
+    Trajectoire ..> Position : calcule
+```
+
+- `RondPoint` crée ses branches et ses segments à partir de la configuration, et ils n'existent pas sans lui : composition. Une `Trajectoire` ne fait que référencer des segments du rond-point : agrégation.
+- Les segments suivent le sens de circulation, inverse des aiguilles d'une montre : avec les branches N, E, S et O, `segments_entre("S", "N")` renvoie S-E puis E-N.
+- `position_a()` donne la position d'un usager à partir de la distance déjà parcourue sur sa trajectoire ; le décalage sert à s'écarter quand un véhicule prioritaire arrive.
+
+Setters prévus : `Usager.position`, `Usager.vitesse` et `Usager.segment`, mis à jour par le client quand il avance et par le serveur à chaque POS reçu.
