@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from cherrypie.commun.erreurs import BrancheInconnueError, TrameInvalideError
 from cherrypie.commun.protocole import Message, TypeMessage
+from cherrypie.modele.position import Position
 from cherrypie.modele.rond_point import RondPoint
 from cherrypie.modele.usager import Usager
 from cherrypie.serveur.registre import Registre
@@ -19,6 +20,7 @@ from cherrypie.serveur.session import Session
 
 IDENTIFIANT_SERVEUR = "serveur"
 CHAMPS_HELLO = ("categorie", "entree", "sortie")
+CHAMPS_POS = ("x", "y", "vitesse", "segment")
 
 journal = logging.getLogger(__name__)
 
@@ -139,6 +141,36 @@ class LogiqueServeur:
         if message.type is TypeMessage.BYE:
             return Reponse(fermer=True)
         raise TrameInvalideError(f"message {message.type.value} inattendu sur une session TCP")
+
+    def traiter_udp(self, message: Message) -> None:
+        """Met à jour un usager à partir d'une position reçue en UDP.
+
+        Args:
+            message (Message): message déjà authentifié (HMAC et anti-rejeu vérifiés).
+
+        Raises:
+            TrameInvalideError: si le message n'est pas un POS ou si ses données sont invalides.
+            UsagerInconnuError: si l'émetteur n'a pas de session TCP ouverte.
+        """
+        if message.type is not TypeMessage.POS:
+            raise TrameInvalideError(f"seuls les POS passent par UDP (reçu : {message.type.value})")
+        # Contrôle d'identité : seuls les usagers dont la session TCP est ouverte sont au registre.
+        usager = self.__registre.obtenir(message.emetteur)
+        donnees = message.donnees
+        manquants = [champ for champ in CHAMPS_POS if champ not in donnees]
+        if manquants:
+            raise TrameInvalideError(f"POS incomplet, il manque : {', '.join(manquants)}")
+        noms_segments = [segment.nom for segment in self.__rond_point.segments]
+        if donnees["segment"] is not None and donnees["segment"] not in noms_segments:
+            raise TrameInvalideError(f"POS sur un segment inconnu : {donnees['segment']!r}")
+        try:
+            position = Position(donnees["x"], donnees["y"])
+            # La vitesse est la première valeur modifiée : si elle est refusée, l'usager reste tel quel.
+            usager.vitesse = donnees["vitesse"]
+        except (TypeError, ValueError) as erreur:
+            raise TrameInvalideError(f"POS invalide de {message.emetteur} : {erreur}") from erreur
+        usager.segment = donnees["segment"]
+        usager.position = position
 
     def __accueillir(self, session: Session, message: Message) -> Reponse:
         """Inscrit l'usager annoncé par un HELLO, ou lui explique pourquoi il est refusé."""
