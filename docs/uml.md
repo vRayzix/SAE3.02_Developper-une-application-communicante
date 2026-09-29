@@ -164,13 +164,14 @@ classDiagram
         -identifiant : str
         -branche_entree : str
         -branche_sortie : str
-        -position : Position
+        -position : Position | None
         -vitesse : float
         -segment : str | None
         -consigne : CodeNotification | None
-        +reagir(code: CodeNotification) None
+        +reagir(code: CodeNotification) bool
         +vitesse_autorisee() float
         +decalage_lateral() float
+        +calculer_trajectoire(rond_point: RondPoint) Trajectoire
         +vers_dict() dict
         +depuis_dict(contenu: dict) Usager$
     }
@@ -194,6 +195,7 @@ classDiagram
         +CATEGORIE$
         +VITESSE_MAX$
         +CONSIGNES_SUIVIES$
+        +calculer_trajectoire(rond_point: RondPoint) Trajectoire
     }
 
     class VehiculePrioritaire {
@@ -207,22 +209,28 @@ classDiagram
     Usager <|-- Trottinette
     Usager <|-- Pieton
     Usager <|-- VehiculePrioritaire
-    Usager *-- Position
+    Usager *-- "0..1" Position
+    Usager ..> Trajectoire : calcule
 ```
 
-`Usager.reagir()` enregistre la consigne reçue si elle fait partie de `CONSIGNES_SUIVIES`, et l'ignore sinon. Chaque sous-classe redéfinit ce qui lui est propre :
+`Usager.reagir()` applique la consigne reçue si elle fait partie de `CONSIGNES_SUIVIES` et renvoie `True` ; sinon il l'ignore et renvoie `False`. Chaque sous-classe redéfinit ce qui lui est propre :
 
-| Classe | Catégorie | Vitesse max | Consignes suivies |
-| --- | --- | --- | --- |
-| `Voiture` | `voiture` | 8,3 m/s (30 km/h) | toutes |
-| `Moto` | `moto` | 8,3 m/s (30 km/h) | toutes |
-| `Trottinette` | `trottinette` | 5,6 m/s (20 km/h) | toutes |
-| `Pieton` | `pieton` | 1,4 m/s (5 km/h) | `ATTENDEZ`, `OK_PASSER` |
-| `VehiculePrioritaire` | `vp` | 11,1 m/s (40 km/h) | aucune, c'est lui qu'on laisse passer |
+| Classe | Catégorie | Vitesse max | Consignes suivies | Trajectoire |
+| --- | --- | --- | --- | --- |
+| `Voiture` | `voiture` | 8,3 m/s (30 km/h) | toutes | approche, anneau, sortie |
+| `Moto` | `moto` | 8,3 m/s (30 km/h) | toutes | approche, anneau, sortie |
+| `Trottinette` | `trottinette` | 5,6 m/s (20 km/h) | toutes | approche, anneau, sortie |
+| `Pieton` | `pieton` | 1,4 m/s (5 km/h) | `ATTENDEZ`, `OK_PASSER` | traversée de sa branche |
+| `VehiculePrioritaire` | `vp` | 11,1 m/s (40 km/h) | aucune, c'est lui qu'on laisse passer | approche, anneau, sortie |
 
-Les vitesses sont des valeurs de départ, à régler pendant les essais. `vitesse_autorisee()` et `decalage_lateral()` traduisent la consigne en cours en mouvement : arrêt pour `ATTENDEZ`, ralentissement et décalage pour `DEGAGEZ`, décalage pour `CHANGEZ_VOIE`. `depuis_dict()` instancie la bonne sous-classe d'après la catégorie reçue dans le HELLO.
+- `vitesse_autorisee()` et `decalage_lateral()` traduisent la consigne en cours : vitesse réduite de moitié et décalage de 2 m pour `DEGAGEZ`, décalage seul pour `CHANGEZ_VOIE`. `ATTENDEZ` ne change pas la vitesse : l'usager avance jusqu'à la ligne d'entrée de sa trajectoire et s'y arrête. `OK_PASSER` lève la consigne.
+- `Pieton` redéfinit `calculer_trajectoire()` : il ne prend pas l'anneau, il traverse une seule branche, qui est à la fois son entrée et sa sortie.
+- `depuis_dict()` instancie la bonne sous-classe d'après la catégorie reçue dans le HELLO.
+- `Position` a son propre module (`modele/position.py`), partagé par les usagers, le rond-point et les trajectoires. Elle refuse les coordonnées infinies ou NaN.
 
-### Rond-point et trajectoires
+Setters : `Usager.position`, `Usager.vitesse` (entre 0 et la vitesse maximale de la catégorie) et `Usager.segment`, mis à jour par le client quand il avance et par le serveur à chaque POS reçu.
+
+### Rond-point
 
 ```mermaid
 classDiagram
@@ -233,12 +241,14 @@ classDiagram
         +branche(nom: str) Branche
         +segments_entre(entree: str, sortie: str) list[Segment]
         +depuis_config(config: Configuration) RondPoint$
+        -segment_partant_de(branche: Branche) Segment
     }
 
     class Branche {
         -nom : str
         -angle : float
         -capacite : int
+        +point(distance_au_centre: float, decalage: float) Position
     }
 
     class Segment {
@@ -248,30 +258,78 @@ classDiagram
         +nom() str
     }
 
-    class Trajectoire {
-        -entree : Branche
-        -sortie : Branche
-        -segments : list[Segment]
-        -longueur : float
-        +calculer(rond_point: RondPoint, entree: str, sortie: str) Trajectoire$
-        +position_a(avancement: float, decalage: float) Position
-        +segment_a(avancement: float) Segment | None
-        +passe_par(segment: Segment) bool
-    }
-
     RondPoint "1" *-- "3..*" Branche
     RondPoint "1" *-- "3..*" Segment
     Segment --> "2" Branche
-    Trajectoire o-- "1..*" Segment
-    Trajectoire --> "2" Branche
-    Trajectoire ..> Position : calcule
 ```
 
-- `RondPoint` crée ses branches et ses segments à partir de la configuration, et ils n'existent pas sans lui : composition. Une `Trajectoire` ne fait que référencer des segments du rond-point : agrégation.
-- Les segments suivent le sens de circulation, inverse des aiguilles d'une montre : avec les branches N, E, S et O, `segments_entre("S", "N")` renvoie S-E puis E-N.
-- `position_a()` donne la position d'un usager à partir de la distance déjà parcourue sur sa trajectoire ; le décalage sert à s'écarter quand un véhicule prioritaire arrive.
+- `RondPoint` crée ses branches et ses segments à partir de la configuration, et ils n'existent pas sans lui : composition.
+- Les branches sont réparties régulièrement autour de l'anneau. La première est placée au nord, les suivantes dans le sens des aiguilles d'une montre : N, E, S et O tombent à leur place.
+- Les segments suivent le sens de circulation, inverse des aiguilles d'une montre : `segments_entre("S", "N")` renvoie S-E puis E-N. Si l'entrée et la sortie sont la même branche, l'usager fait le tour complet.
+- `RondPoint.branche()` lève `BrancheInconnueError` pour un nom qui n'existe pas.
 
-Setters prévus : `Usager.position`, `Usager.vitesse` et `Usager.segment`, mis à jour par le client quand il avance et par le serveur à chaque POS reçu.
+Setters : aucun, la géométrie ne change plus une fois le rond-point construit.
+
+### Trajectoires
+
+```mermaid
+classDiagram
+    class Etape {
+        <<enumeration>>
+        APPROCHE
+        ANNEAU
+        TRAVERSEE
+        SORTIE
+    }
+
+    class TronconDroit {
+        <<dataclass>>
+        +etape : Etape
+        +depart : Position
+        +arrivee : Position
+        +longueur() float
+        +segment() None
+        +position_a(distance: float, decalage: float) Position
+    }
+
+    class TronconArc {
+        <<dataclass>>
+        +segment : Segment
+        +rayon : float
+        +etape() Etape
+        +longueur() float
+        +position_a(distance: float, decalage: float) Position
+    }
+
+    class Trajectoire {
+        -troncons : list[TronconDroit | TronconArc]
+        +longueur() float
+        +longueur_approche() float
+        +segments() list[Segment]
+        +pour_vehicule(rond_point: RondPoint, entree: str, sortie: str) Trajectoire$
+        +pour_pieton(rond_point: RondPoint, branche: str) Trajectoire$
+        +position_a(avancement: float, decalage: float) Position
+        +etape_a(avancement: float) Etape
+        +segment_a(avancement: float) Segment | None
+        +passe_par(segment: Segment) bool
+        -troncon_a(avancement: float) tuple
+    }
+
+    Trajectoire "1" *-- "1..*" TronconDroit
+    Trajectoire "1" *-- "0..*" TronconArc
+    TronconArc o-- Segment
+    TronconDroit --> Etape
+    TronconDroit ..> Position : calcule
+    TronconArc ..> Position : calcule
+```
+
+- Une trajectoire est une suite de tronçons parcourus l'un après l'autre : des tronçons droits sur les branches (approche, sortie, passage piéton) et des arcs sur l'anneau, un par segment. Les deux types de tronçons offrent les mêmes membres (`etape`, `longueur`, `segment`, `position_a()`) : la trajectoire trouve le tronçon qui correspond à l'avancement et lui délègue le calcul.
+- L'avancement est la distance parcourue depuis le départ. `longueur_approche` donne la position de la ligne d'entrée, où s'arrête un usager qui a reçu `ATTENDEZ`. Un point situé pile à la jonction de deux tronçons appartient au premier : un usager arrêté sur la ligne est encore en approche.
+- Un véhicule parcourt 50 m d'approche, les segments de l'anneau, puis 50 m de sortie. Un piéton parcourt 4 m de trottoir jusqu'au bord de la chaussée, traverse les 7 m du passage piéton, placé à 8 m de l'anneau, puis repart sur le trottoir d'en face : il croise l'approche des véhicules de cette branche.
+- Le décalage latéral se compte vers la droite du sens de marche ; sur l'anneau, c'est l'extérieur.
+- Les arcs ne font que référencer les segments du rond-point, sans les posséder : agrégation.
+
+Setters : aucun, une trajectoire ne change plus une fois calculée.
 
 ## Paquet `serveur`
 
