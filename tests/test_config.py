@@ -80,7 +80,7 @@ def test_fichier_introuvable_refuse(tmp_path: Path) -> None:
 
 def test_fichier_sans_section_refuse(tmp_path: Path) -> None:
     chemin = ecrire_config(tmp_path, "hote = 127.0.0.1\n")
-    with pytest.raises(ConfigurationInvalideError, match="mal formé"):
+    with pytest.raises(ConfigurationInvalideError, match="ligne 1 : valeur placée avant toute section"):
         Configuration.depuis_fichier(chemin)
 
 
