@@ -24,3 +24,7 @@ class SignatureInvalideError(CherryPieError):
 
 class RejeuDetecteError(CherryPieError):
     """Enveloppe hors de la fenêtre de temps acceptée, ou nonce déjà reçu."""
+
+
+class BrancheInconnueError(CherryPieError):
+    """La branche demandée n'existe pas dans la configuration du rond-point."""

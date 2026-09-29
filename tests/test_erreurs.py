@@ -3,6 +3,7 @@
 import pytest
 
 from cherrypie.commun.erreurs import (
+    BrancheInconnueError,
     CherryPieError,
     ConfigurationInvalideError,
     RejeuDetecteError,
@@ -15,6 +16,7 @@ ERREURS_METIER = [
     TrameInvalideError,
     SignatureInvalideError,
     RejeuDetecteError,
+    BrancheInconnueError,
 ]
 
 
