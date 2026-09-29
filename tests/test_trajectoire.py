@@ -7,7 +7,15 @@ import pytest
 from cherrypie.commun.erreurs import BrancheInconnueError
 from cherrypie.modele.position import Position
 from cherrypie.modele.rond_point import RondPoint
-from cherrypie.modele.trajectoire import LONGUEUR_BRANCHE, Etape, Trajectoire, TronconDroit
+from cherrypie.modele.trajectoire import (
+    DISTANCE_PASSAGE_PIETON,
+    LARGEUR_CHAUSSEE,
+    LONGUEUR_BRANCHE,
+    LONGUEUR_TROTTOIR,
+    Etape,
+    Trajectoire,
+    TronconDroit,
+)
 
 RAYON = 20.0
 QUART_DE_TOUR = 2 * math.pi * RAYON / 4
@@ -144,3 +152,48 @@ def test_passe_par_les_seuls_segments_du_trajet(rond_point: RondPoint, sud_vers_
     segments = {segment.nom: segment for segment in rond_point.segments}
     assert sud_vers_nord.passe_par(segments["E-N"])
     assert not sud_vers_nord.passe_par(segments["N-O"])
+
+
+# ---------- Traversée d'un piéton ----------
+
+@pytest.fixture
+def traversee_nord(rond_point: RondPoint) -> Trajectoire:
+    return Trajectoire.pour_pieton(rond_point, "N")
+
+
+def test_pieton_rejoint_le_bord_traverse_puis_repart(traversee_nord: Trajectoire) -> None:
+    etapes = [troncon.etape for troncon in traversee_nord.troncons]
+    assert etapes == [Etape.APPROCHE, Etape.TRAVERSEE, Etape.SORTIE]
+
+
+def test_pieton_ne_prend_pas_l_anneau(traversee_nord: Trajectoire) -> None:
+    assert traversee_nord.segments == []
+    assert traversee_nord.segment_a(traversee_nord.longueur / 2) is None
+
+
+def test_longueur_de_la_traversee(traversee_nord: Trajectoire) -> None:
+    assert traversee_nord.longueur == pytest.approx(LARGEUR_CHAUSSEE + 2 * LONGUEUR_TROTTOIR)
+    assert traversee_nord.longueur_approche == pytest.approx(LONGUEUR_TROTTOIR)
+
+
+def test_pieton_attend_au_bord_de_la_chaussee(traversee_nord: Trajectoire) -> None:
+    # Vu d'un véhicule qui arrive du nord, le trottoir de droite est à l'ouest.
+    bord = traversee_nord.position_a(traversee_nord.longueur_approche)
+    assert coordonnees(bord) == pytest.approx((-LARGEUR_CHAUSSEE / 2, RAYON + DISTANCE_PASSAGE_PIETON))
+    assert traversee_nord.etape_a(traversee_nord.longueur_approche) is Etape.APPROCHE
+
+
+def test_pieton_sur_la_chaussee_en_traversee(traversee_nord: Trajectoire) -> None:
+    milieu = traversee_nord.longueur_approche + LARGEUR_CHAUSSEE / 2
+    assert traversee_nord.etape_a(milieu) is Etape.TRAVERSEE
+    assert coordonnees(traversee_nord.position_a(milieu)) == pytest.approx(
+        (0.0, RAYON + DISTANCE_PASSAGE_PIETON), abs=1e-9
+    )
+
+
+def test_passage_pieton_croise_l_approche_des_vehicules(rond_point: RondPoint, traversee_nord: Trajectoire) -> None:
+    vehicule = Trajectoire.pour_vehicule(rond_point, "N", "S")
+    passage = traversee_nord.position_a(traversee_nord.longueur_approche + LARGEUR_CHAUSSEE / 2)
+    avancement_au_passage = LONGUEUR_BRANCHE - DISTANCE_PASSAGE_PIETON
+    assert vehicule.etape_a(avancement_au_passage) is Etape.APPROCHE
+    assert vehicule.position_a(avancement_au_passage).distance(passage) == pytest.approx(0.0, abs=1e-9)
