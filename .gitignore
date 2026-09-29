@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Environnement virtuel
+.venv/
+venv/
+
+# Configuration locale : contient la clé HMAC et le mot de passe de la base
+config.ini
+
+# Journaux
+*.log
+
+# Systèmes et éditeurs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
