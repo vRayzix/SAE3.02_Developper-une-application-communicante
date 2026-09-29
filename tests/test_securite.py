@@ -197,3 +197,20 @@ def test_trame_capturee_puis_rejouee_refusee(
     signataire.verifier(rejouee)
     with pytest.raises(RejeuDetecteError, match="déjà reçu"):
         garde.controler(rejouee, time.time())
+
+
+# ---------- Confidentialité de la clé ----------
+
+def test_repr_du_signataire_ne_montre_pas_la_cle(signataire: Signataire) -> None:
+    assert CLE.decode() not in repr(signataire)
+    assert CLE.decode() not in str(signataire)
+
+
+def test_refus_de_signature_ne_montre_ni_la_cle_ni_de_hmac(
+    signataire: Signataire, enveloppe_signee: Enveloppe
+) -> None:
+    with pytest.raises(SignatureInvalideError) as refus:
+        signataire.verifier(dataclasses.replace(enveloppe_signee, nonce="0" * 16))
+    assert CLE.decode() not in str(refus.value)
+    # Montrer le HMAC attendu donnerait à un attaquant la signature valide du message.
+    assert not re.search(r"[0-9a-f]{64}", str(refus.value))

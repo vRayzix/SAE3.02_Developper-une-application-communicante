@@ -147,3 +147,11 @@ def test_mot_de_passe_avec_pourcent_lu_tel_quel(tmp_path: Path, texte_exemple: s
     )
     config = Configuration.depuis_fichier(chemin)
     assert config.parametres_bdd["mot_de_passe"] == "50%de_sel"
+
+
+# ---------- Confidentialité ----------
+
+def test_repr_de_la_configuration_ne_montre_pas_la_cle() -> None:
+    config = Configuration.depuis_fichier(CHEMIN_EXEMPLE)
+    assert "remplacer_par_une_cle_secrete" not in repr(config)
+    assert "remplacer_par_le_mot_de_passe" not in repr(config)
