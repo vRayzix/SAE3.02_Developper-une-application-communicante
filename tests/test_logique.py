@@ -225,3 +225,39 @@ def test_autre_message_qu_un_pos_refuse_en_udp(logique: LogiqueServeur) -> None:
     session_inscrite(logique)
     with pytest.raises(TrameInvalideError, match="seuls les POS"):
         logique.traiter_udp(Message(TypeMessage.PING, "voiture_12"))
+
+
+# ---------- Heartbeat et STATE ----------
+
+def test_session_expiree_apres_le_timeout(logique: LogiqueServeur) -> None:
+    numero = session_inscrite(logique)
+    assert logique.sessions_expirees(0.5 + TIMEOUT) == []
+    assert logique.sessions_expirees(0.5 + TIMEOUT + 0.1) == [numero]
+
+
+def test_ping_repousse_l_expiration(logique: LogiqueServeur) -> None:
+    numero = session_inscrite(logique)
+    logique.traiter_tcp(numero, Message(TypeMessage.PING, "voiture_12"), 5.0)
+    assert logique.sessions_expirees(5.0 + TIMEOUT) == []
+
+
+def test_superviseurs_seules_sessions_abonnees(logique: LogiqueServeur) -> None:
+    session_inscrite(logique)
+    supervision = logique.ouvrir_session(0.0)
+    logique.traiter_tcp(supervision, Message(TypeMessage.ABONNEMENT, "supervision"), 0.1)
+    assert logique.superviseurs() == [supervision]
+
+
+def test_etat_sans_usager(logique: LogiqueServeur) -> None:
+    etat = logique.construire_etat()
+    assert etat.type is TypeMessage.STATE
+    assert etat.donnees == {"usagers": []}
+
+
+def test_etat_liste_les_usagers_et_leur_derniere_position(logique: LogiqueServeur) -> None:
+    session_inscrite(logique, "voiture_12")
+    logique.traiter_udp(pos())
+    (usager,) = logique.construire_etat().donnees["usagers"]
+    assert usager["id"] == "voiture_12"
+    assert usager["categorie"] == "voiture"
+    assert (usager["x"], usager["y"]) == (3.5, -20.0)
