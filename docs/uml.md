@@ -333,50 +333,104 @@ Setters : aucun, une trajectoire ne change plus une fois calculée.
 
 ## Paquet `serveur`
 
+### Boucle réseau et logique
+
 ```mermaid
 classDiagram
     class Serveur {
         -config : Configuration
-        -ecoute_tcp : socket
-        -socket_udp : socket
-        -sessions : dict[socket, SessionClient]
-        -registre : Registre
-        -calculateur : CalculateurDensite
-        -regulateur : Regulateur
+        -logique : LogiqueServeur
         -signataire : Signataire
         -garde : GardeAntiRejeu
-        -acces_bdd : AccesBdd | None
-        -en_marche : bool
+        -arret : threading.Event
+        -ecoute_tcp : socket | None
+        -socket_udp : socket | None
+        -connexions : dict[int, Connexion]
         +demarrer() None
+        +servir() None
         +arreter() None
-        -accepter_client() None
-        -lire_tcp(session: SessionClient) None
+        -attendre_et_traiter(attente: float) None
+        -cadencer() None
+        -accepter() None
+        -lire_tcp(numero: int) None
+        -traiter_trame(numero: int, trame: bytes) None
         -lire_udp() None
-        -traiter(session: SessionClient, message: Message) None
-        -retirer_inactifs(maintenant: float) None
-        -diffuser_etat() None
+        -ouvrir(octets: bytes) Message
+        -envoyer(numero: int, message: Message) None
+        -vider(numero: int) None
+        -fermer(numero: int, raison: str) None
     }
 
-    class SessionClient {
-        -connexion : socket
+    class Connexion {
+        -socket : socket
         -adresse : tuple[str, int]
         -decoupeur : DecoupeurTrames
+        -a_envoyer : bytearray
+        +recevoir() list[bytes]
+        +envoyer(trame: bytes) None
+        +vider() None
+        +fermer() None
+    }
+
+    class LogiqueServeur {
+        -rond_point : RondPoint
+        -timeout_client : float
+        -registre : Registre
+        -sessions : dict[int, Session]
+        -total_sessions : int
+        +ouvrir_session(maintenant: float) int
+        +fermer_session(numero: int) Usager | None
+        +traiter_tcp(numero: int, message: Message, maintenant: float) Reponse
+        +traiter_udp(message: Message) None
+        +sessions_expirees(maintenant: float) list[int]
+        +superviseurs() list[int]
+        +construire_etat() Message
+    }
+
+    class Reponse {
+        <<dataclass>>
+        +messages : tuple[Message, ...]
+        +fermer : bool
+    }
+
+    class Session {
+        -numero : int
         -identifiant : str | None
         -superviseur : bool
         -derniere_activite : float
-        +envoyer(octets: bytes) None
-        +fermer() None
+        +est_expiree(maintenant: float, delai: float) bool
     }
 
     class Registre {
         -usagers : dict[str, Usager]
+        +contient(identifiant: str) bool
         +ajouter(usager: Usager) None
-        +retirer(identifiant: str) Usager
         +obtenir(identifiant: str) Usager
-        +usagers_sur_branche(branche: str) list[Usager]
-        +usagers_sur_segment(segment: str) list[Usager]
+        +retirer(identifiant: str) Usager
     }
 
+    Serveur *-- LogiqueServeur
+    Serveur "1" *-- "0..*" Connexion
+    Connexion *-- DecoupeurTrames
+    LogiqueServeur *-- Registre
+    LogiqueServeur "1" *-- "0..*" Session
+    LogiqueServeur ..> Reponse : renvoie
+    LogiqueServeur --> RondPoint
+    Registre "1" o-- "0..*" Usager
+```
+
+- La boucle réseau et la logique sont séparées. `Serveur` ne décide rien ; `LogiqueServeur` ne touche aucune socket, ce qui permet de la tester sans réseau. Elles se parlent par numéro de session : la boucle associe chaque numéro à une `Connexion` (la socket et ses tampons), la logique à une `Session` (usager, abonnement, dernière activité).
+- `servir()` fait tourner une seule boucle `select` sur la socket d'écoute TCP, la socket UDP et les sockets des clients. Son délai d'attente court jusqu'à la prochaine cadence (`intervalle_etat`) : à chaque cadence, `cadencer()` ferme les sessions silencieuses et envoie le STATE aux supervisions. `arreter()` lève un `threading.Event` vérifié à chaque tour, ce qui arrête la boucle en moins d'un intervalle.
+- Chaque trame reçue passe par `ouvrir()` (enveloppe, HMAC, anti-rejeu) avant d'être confiée à la logique. Une trame refusée est journalisée puis ignorée.
+- `Connexion` utilise une socket non bloquante. Son découpeur recolle les trames reçues en plusieurs morceaux ou collées ensemble, et sa file d'envoi garde ce que la socket n'a pas pu accepter, jusqu'à ce que `select` la signale prête à écrire. Un client qui laisse plus de 1 Mio en attente est déconnecté.
+- Aux frontières, une erreur imprévue sur une session ne ferme que cette session ; ailleurs dans la boucle, elle est journalisée et la boucle continue.
+
+Setters : `Session.identifiant` (une seule fois, au HELLO), `Session.superviseur` (à l'ABONNEMENT) et `Session.derniere_activite` (à chaque message reçu, jamais en arrière).
+
+### Régulation (prévue)
+
+```mermaid
+classDiagram
     class NiveauDensite {
         <<enumeration>>
         FAIBLE
@@ -410,25 +464,16 @@ classDiagram
         +vers_message() Message
     }
 
-    Serveur "1" *-- "0..*" SessionClient
-    Serveur *-- Registre
-    Serveur *-- CalculateurDensite
-    Serveur *-- Regulateur
-    Serveur --> AccesBdd
-    SessionClient *-- DecoupeurTrames
-    Registre "1" o-- "0..*" Usager
-    CalculateurDensite --> RondPoint
+    LogiqueServeur *-- CalculateurDensite
+    LogiqueServeur *-- Regulateur
     CalculateurDensite ..> NiveauDensite
-    Regulateur --> RondPoint
     Regulateur ..> Notification : produit
 ```
 
-- `Serveur` fait tourner une seule boucle `select` sur la socket d'écoute TCP, la socket UDP et les sockets des clients. Chaque connexion TCP a sa `SessionClient`, avec son propre tampon de trames.
-- Une session devient usager au HELLO (`identifiant` renseigné) ou superviseur à l'ABONNEMENT. Un POS reçu en UDP n'est accepté que si son identifiant correspond à une session active.
-- `Regulateur.decider()` est appelé à chaque tour de boucle. Il compare la situation (VP actif ou non, densités, position des usagers) aux consignes déjà envoyées et ne renvoie que les nouvelles notifications. Quand la régulation est désactivée, il ne renvoie rien.
-- `CalculateurDensite.niveau()` applique les seuils du cahier des charges : faible en dessous de 0,4, moyenne en dessous de 0,7, forte au-delà.
+- `Regulateur.decider()` sera appelé à chaque cadence. Il compare la situation (VP actif ou non, densités, position des usagers) aux consignes déjà envoyées et ne renvoie que les nouvelles notifications. Quand la régulation est désactivée, il ne renvoie rien.
+- `CalculateurDensite.niveau()` appliquera les seuils du cahier des charges : faible en dessous de 0,4, moyenne en dessous de 0,7, forte au-delà.
 
-Setters prévus : `SessionClient.identifiant`, `SessionClient.superviseur`, `SessionClient.derniere_activite` et `Regulateur.active` (message REGLAGE).
+Setters prévus : `Regulateur.active` (message REGLAGE).
 
 ## Paquet `client`
 
