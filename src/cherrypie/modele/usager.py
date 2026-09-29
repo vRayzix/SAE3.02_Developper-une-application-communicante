@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from cherrypie.commun.protocole import CodeNotification
 from cherrypie.modele.position import Position
+from cherrypie.modele.rond_point import RondPoint
+from cherrypie.modele.trajectoire import Trajectoire
 
 # 1 km/h en m/s : les vitesses se lisent en km/h, les calculs se font en m/s.
 KMH = 1 / 3.6
@@ -204,6 +206,20 @@ class Usager:
             return DECALAGE_DEGAGEMENT
         return 0.0
 
+    def calculer_trajectoire(self, rond_point: RondPoint) -> Trajectoire:
+        """Calcule le chemin de l'usager : approche, anneau, puis sortie.
+
+        Args:
+            rond_point (RondPoint): rond-point traversé.
+
+        Returns:
+            Trajectoire: la trajectoire de l'usager.
+
+        Raises:
+            BrancheInconnueError: si sa branche d'entrée ou de sortie n'existe pas.
+        """
+        return Trajectoire.pour_vehicule(rond_point, self.__branche_entree, self.__branche_sortie)
+
     def vers_dict(self) -> dict:
         """Convertit l'usager en dictionnaire prêt pour json.dumps.
 
@@ -246,14 +262,47 @@ class Trottinette(Usager):
 
 
 class Pieton(Usager):
-    """Piéton : seules les consignes d'attente le concernent.
+    """Piéton : il ne prend pas l'anneau, il traverse une branche sur le passage piéton.
 
-    On lui demande d'attendre pour traverser, puis on l'autorise à repartir.
+    Seules les consignes d'attente le concernent : on lui demande d'attendre pour
+    traverser, puis on l'autorise à repartir.
     """
 
     CATEGORIE = "pieton"
     VITESSE_MAX = 5 * KMH
     CONSIGNES_SUIVIES = frozenset({CodeNotification.ATTENDEZ, CodeNotification.OK_PASSER})
+
+    def __init__(self, identifiant: str, branche_entree: str, branche_sortie: str) -> None:
+        """Crée un piéton.
+
+        Args:
+            identifiant (str): identifiant unique sur le réseau (ex. "pieton_4").
+            branche_entree (str): branche qu'il traverse.
+            branche_sortie (str): même branche que l'entrée.
+
+        Raises:
+            ValueError: si une valeur est vide, ou si l'entrée et la sortie diffèrent.
+        """
+        super().__init__(identifiant, branche_entree, branche_sortie)
+        if branche_sortie != branche_entree:
+            raise ValueError(
+                "un piéton traverse une seule branche : l'entrée et la sortie doivent être identiques "
+                f"(reçu : {branche_entree} et {branche_sortie})"
+            )
+
+    def calculer_trajectoire(self, rond_point: RondPoint) -> Trajectoire:
+        """Calcule la traversée de sa branche sur le passage piéton.
+
+        Args:
+            rond_point (RondPoint): rond-point traversé.
+
+        Returns:
+            Trajectoire: la trajectoire du piéton.
+
+        Raises:
+            BrancheInconnueError: si sa branche n'existe pas.
+        """
+        return Trajectoire.pour_pieton(rond_point, self.branche_entree)
 
 
 class VehiculePrioritaire(Usager):
