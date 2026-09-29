@@ -1,5 +1,6 @@
 """Tests de la lecture et de la validation de config.ini."""
 
+import traceback
 from pathlib import Path
 
 import pytest
@@ -155,3 +156,24 @@ def test_repr_de_la_configuration_ne_montre_pas_la_cle() -> None:
     config = Configuration.depuis_fichier(CHEMIN_EXEMPLE)
     assert "remplacer_par_une_cle_secrete" not in repr(config)
     assert "remplacer_par_le_mot_de_passe" not in repr(config)
+
+
+SECRET = "cle_tres_secrete_42"
+
+LIGNES_MALFORMEES = [
+    pytest.param(
+        "cle_hmac = remplacer_par_une_cle_secrete", f"cle_hmac {SECRET}", "ligne 12", id="sans-egal"
+    ),
+    pytest.param("[reseau]", f"cle_hmac = {SECRET}\n[reseau]", "ligne 4", id="avant-toute-section"),
+]
+
+
+@pytest.mark.parametrize(("ligne", "remplacement", "position"), LIGNES_MALFORMEES)
+def test_ligne_malformee_signalee_sans_son_contenu(
+    tmp_path: Path, texte_exemple: str, ligne: str, remplacement: str, position: str
+) -> None:
+    chemin = ecrire_variante(tmp_path, texte_exemple, ligne, remplacement)
+    with pytest.raises(ConfigurationInvalideError, match=position) as erreur:
+        Configuration.depuis_fichier(chemin)
+    # La trace complète est ce qui finirait dans un journal : l'erreur chaînée ne doit pas y figurer.
+    assert SECRET not in "".join(traceback.format_exception(erreur.value))
