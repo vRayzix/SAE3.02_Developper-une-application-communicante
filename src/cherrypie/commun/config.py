@@ -72,8 +72,19 @@ class Configuration:
             fichiers_lus = parseur.read(chemin, encoding="utf-8")
         except UnicodeDecodeError as erreur:
             raise ConfigurationInvalideError(f"{chemin} n'est pas encodé en UTF-8") from erreur
+        # Les messages de configparser recopient la ligne fautive, qui peut contenir la
+        # clé HMAC ou le mot de passe : on n'en garde que le numéro. « from None » évite
+        # que l'erreur d'origine réapparaisse dans une trace journalisée.
+        except configparser.MissingSectionHeaderError as erreur:
+            raise ConfigurationInvalideError(
+                f"{chemin}, ligne {erreur.lineno} : valeur placée avant toute section"
+            ) from None
+        except configparser.ParsingError as erreur:
+            lignes = ", ".join(str(numero) for numero, _ in erreur.errors)
+            raise ConfigurationInvalideError(f"{chemin}, ligne {lignes} : format « cle = valeur » attendu") from None
         except configparser.Error as erreur:
-            raise ConfigurationInvalideError(f"{chemin} est mal formé : {erreur}") from erreur
+            # Restent les sections ou clés en double, dont le message ne cite que des noms.
+            raise ConfigurationInvalideError(f"{chemin} est mal formé : {erreur}") from None
         if not fichiers_lus:
             raise ConfigurationInvalideError(f"fichier de configuration introuvable ou illisible : {chemin}")
         return cls(parseur)
