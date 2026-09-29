@@ -1,7 +1,9 @@
 """Trajectoires des usagers : suite de tronçons droits et d'arcs de l'anneau.
 
 Un véhicule passe par trois étapes : l'approche sur sa branche d'entrée, un ou
-plusieurs segments de l'anneau, puis la sortie sur sa branche de sortie.
+plusieurs segments de l'anneau, puis la sortie sur sa branche de sortie. Un
+piéton ne prend pas l'anneau : il rejoint le passage piéton de sa branche, la
+traverse, puis s'éloigne sur le trottoir d'en face.
 L'avancement d'un usager est la distance qu'il a parcourue depuis son départ.
 """
 
@@ -16,6 +18,11 @@ from cherrypie.modele.rond_point import RondPoint, Segment
 
 # Longueur modélisée de chaque branche, entre son extrémité et l'anneau, en mètres.
 LONGUEUR_BRANCHE = 50.0
+# Distance entre l'anneau et le passage piéton de chaque branche, en mètres.
+DISTANCE_PASSAGE_PIETON = 8.0
+LARGEUR_CHAUSSEE = 7.0
+# Trottoir parcouru par un piéton avant et après sa traversée, en mètres.
+LONGUEUR_TROTTOIR = 4.0
 
 
 class Etape(Enum):
@@ -23,6 +30,7 @@ class Etape(Enum):
 
     APPROCHE = "approche"
     ANNEAU = "anneau"
+    TRAVERSEE = "traversee"
     SORTIE = "sortie"
 
 
@@ -168,6 +176,37 @@ class Trajectoire:
         ]
         troncon_sortie = TronconDroit(Etape.SORTIE, branche_sortie.point(bord_anneau), branche_sortie.point(extremite))
         return cls([troncon_approche, *troncons_anneau, troncon_sortie])
+
+    @classmethod
+    def pour_pieton(cls, rond_point: RondPoint, branche: str) -> Trajectoire:
+        """Construit la trajectoire d'un piéton qui traverse une branche sur son passage piéton.
+
+        Le piéton part du trottoir de droite (vu d'un véhicule qui arrive), s'arrête
+        au bord de la chaussée s'il doit attendre, traverse, puis s'éloigne sur le
+        trottoir d'en face.
+
+        Args:
+            rond_point (RondPoint): rond-point traversé.
+            branche (str): nom de la branche traversée.
+
+        Returns:
+            Trajectoire: la trajectoire du piéton.
+
+        Raises:
+            BrancheInconnueError: si la branche n'existe pas.
+        """
+        branche_traversee = rond_point.branche(branche)
+        distance = rond_point.rayon + DISTANCE_PASSAGE_PIETON
+        demi_chaussee = LARGEUR_CHAUSSEE / 2
+        depart = branche_traversee.point(distance, demi_chaussee + LONGUEUR_TROTTOIR)
+        bord_droit = branche_traversee.point(distance, demi_chaussee)
+        bord_gauche = branche_traversee.point(distance, -demi_chaussee)
+        arrivee = branche_traversee.point(distance, -demi_chaussee - LONGUEUR_TROTTOIR)
+        return cls([
+            TronconDroit(Etape.APPROCHE, depart, bord_droit),
+            TronconDroit(Etape.TRAVERSEE, bord_droit, bord_gauche),
+            TronconDroit(Etape.SORTIE, bord_gauche, arrivee),
+        ])
 
     @property
     def troncons(self) -> list[Troncon]:
