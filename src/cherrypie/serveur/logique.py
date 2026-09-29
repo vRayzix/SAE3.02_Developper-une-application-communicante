@@ -172,6 +172,41 @@ class LogiqueServeur:
         usager.segment = donnees["segment"]
         usager.position = position
 
+    def sessions_expirees(self, maintenant: float) -> list[int]:
+        """Liste les sessions restées silencieuses plus longtemps que le timeout.
+
+        La boucle réseau les ferme ensuite : un client qui ne donne plus de nouvelles
+        ne pourrait de toute façon plus recevoir de consignes.
+
+        Args:
+            maintenant (float): instant présent, sur l'horloge monotone du serveur.
+
+        Returns:
+            list[int]: numéros des sessions expirées.
+        """
+        return [
+            session.numero
+            for session in self.__sessions.values()
+            if session.est_expiree(maintenant, self.__timeout_client)
+        ]
+
+    def superviseurs(self) -> list[int]:
+        """Liste les sessions abonnées aux STATE.
+
+        Returns:
+            list[int]: numéros des sessions de supervision.
+        """
+        return [session.numero for session in self.__sessions.values() if session.superviseur]
+
+    def construire_etat(self) -> Message:
+        """Construit le STATE diffusé aux supervisions.
+
+        Returns:
+            Message: STATE qui liste les usagers connectés et leur dernier état connu.
+        """
+        usagers = [usager.vers_dict() for usager in self.__registre.usagers]
+        return Message(TypeMessage.STATE, IDENTIFIANT_SERVEUR, {"usagers": usagers})
+
     def __accueillir(self, session: Session, message: Message) -> Reponse:
         """Inscrit l'usager annoncé par un HELLO, ou lui explique pourquoi il est refusé."""
         try:
