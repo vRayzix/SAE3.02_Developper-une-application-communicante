@@ -63,8 +63,8 @@ classDiagram
         -branches : list[str]
         -rayon : float
         -capacite_par_branche : int
-        -parametres_bdd : dict[str, str]
-        +depuis_fichier(chemin: str) Configuration$
+        -parametres_bdd : dict[str, str | int]
+        +depuis_fichier(chemin: str | Path) Configuration$
     }
 
     class TypeMessage {
@@ -105,7 +105,9 @@ classDiagram
         +ts : float
         +nonce : str
         +hmac : str
+        +vers_dict() dict
         +vers_octets() bytes
+        +depuis_dict(contenu: dict) Enveloppe$
         +depuis_octets(octets: bytes) Enveloppe$
     }
 
@@ -119,14 +121,14 @@ classDiagram
         -cle : bytes
         +signer(message: Message) Enveloppe
         +verifier(enveloppe: Enveloppe) None
-        -calculer_hmac(contenu: dict) str
+        -calculer_hmac(enveloppe: Enveloppe) str
     }
 
     class GardeAntiRejeu {
         -fenetre : float
         -nonces_vus : dict[str, float]
         +controler(enveloppe: Enveloppe, maintenant: float) None
-        -purger(maintenant: float) None
+        -oublier_nonces_expires(maintenant: float) None
     }
 
     Message --> TypeMessage
