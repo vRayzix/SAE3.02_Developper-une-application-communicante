@@ -44,6 +44,7 @@ def test_exemple_valeurs_securite_et_delais() -> None:
     assert config.intervalle_ping == pytest.approx(2.0)
     assert config.timeout_client == pytest.approx(6.0)
     assert config.intervalle_position == pytest.approx(0.2)
+    assert config.intervalle_etat == pytest.approx(0.2)
     assert config.backoff_initial == pytest.approx(1.0)
     assert config.backoff_max == pytest.approx(10.0)
 
@@ -119,6 +120,7 @@ VALEURS_INCOHERENTES = [
     pytest.param("port_udp = 5001", "port_udp = 70000", "au plus 65535", id="port-trop-grand"),
     pytest.param("port = 3306", "port = 0", "au moins 1", id="port-bdd-nul"),
     pytest.param("intervalle_ping = 2", "intervalle_ping = 0", "strictement positif", id="delai-nul"),
+    pytest.param("intervalle_etat = 0.2", "intervalle_etat = -0.2", "strictement positif", id="cadence-negative"),
     pytest.param("intervalle_position = 0.2", "intervalle_position = 0,2", "doit être un nombre", id="virgule"),
     pytest.param("backoff_max = 10", "backoff_max = inf", "fini", id="delai-infini"),
     pytest.param("rayon = 20", "rayon = -20", "strictement positif", id="rayon-negatif"),
