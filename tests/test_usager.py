@@ -2,8 +2,11 @@
 
 import pytest
 
+from cherrypie.commun.erreurs import BrancheInconnueError
 from cherrypie.commun.protocole import CodeNotification
 from cherrypie.modele.position import Position
+from cherrypie.modele.rond_point import RondPoint
+from cherrypie.modele.trajectoire import Etape
 from cherrypie.modele.usager import (
     CLASSES_PAR_CATEGORIE,
     DECALAGE_DEGAGEMENT,
@@ -204,3 +207,32 @@ def test_depuis_dict_categorie_inconnue_refusee() -> None:
 def test_depuis_dict_champ_manquant_refuse() -> None:
     with pytest.raises(ValueError, match="sortie"):
         Usager.depuis_dict({"id": "moto_1", "categorie": "moto", "entree": "S"})
+
+
+# ---------- Trajectoire selon la catégorie ----------
+
+@pytest.fixture
+def rond_point() -> RondPoint:
+    return RondPoint(["N", "E", "S", "O"], 20.0, 8)
+
+
+@pytest.mark.parametrize("classe", [Voiture, Moto, Trottinette, VehiculePrioritaire])
+def test_vehicule_passe_par_l_anneau(rond_point: RondPoint, classe: type) -> None:
+    trajectoire = classe(f"{classe.CATEGORIE}_1", "S", "N").calculer_trajectoire(rond_point)
+    assert [segment.nom for segment in trajectoire.segments] == ["S-E", "E-N"]
+
+
+def test_pieton_traverse_sa_branche_sans_prendre_l_anneau(rond_point: RondPoint, pieton: Pieton) -> None:
+    trajectoire = pieton.calculer_trajectoire(rond_point)
+    assert Etape.TRAVERSEE in [troncon.etape for troncon in trajectoire.troncons]
+    assert trajectoire.segments == []
+
+
+def test_pieton_avec_entree_et_sortie_differentes_refuse() -> None:
+    with pytest.raises(ValueError, match="une seule branche"):
+        Pieton("pieton_5", "N", "E")
+
+
+def test_trajectoire_vers_une_branche_inconnue_refusee(rond_point: RondPoint) -> None:
+    with pytest.raises(BrancheInconnueError):
+        Voiture("voiture_1", "S", "X").calculer_trajectoire(rond_point)
