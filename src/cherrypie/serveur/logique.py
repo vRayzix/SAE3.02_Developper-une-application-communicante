@@ -1,0 +1,188 @@
+"""Logique du serveur, indépendante du réseau.
+
+La boucle réseau (serveur.py) confie à LogiqueServeur chaque message reçu, puis
+envoie ce qu'elle renvoie. Aucune méthode ne touche une socket : toute la logique
+se teste sans réseau.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+
+from cherrypie.commun.erreurs import BrancheInconnueError, TrameInvalideError
+from cherrypie.commun.protocole import Message, TypeMessage
+from cherrypie.modele.rond_point import RondPoint
+from cherrypie.modele.usager import Usager
+from cherrypie.serveur.registre import Registre
+from cherrypie.serveur.session import Session
+
+IDENTIFIANT_SERVEUR = "serveur"
+CHAMPS_HELLO = ("categorie", "entree", "sortie")
+
+journal = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class Reponse:
+    """Suite à donner à un message reçu en TCP.
+
+    Attributes:
+        messages (tuple[Message, ...]): messages à renvoyer à l'émetteur, dans l'ordre.
+        fermer (bool): True si la session doit être fermée ensuite.
+    """
+
+    messages: tuple[Message, ...] = ()
+    fermer: bool = False
+
+
+class LogiqueServeur:
+    """Décisions du serveur : sessions, registre des usagers et réponses aux messages."""
+
+    def __init__(self, rond_point: RondPoint, timeout_client: float) -> None:
+        """Crée la logique d'un serveur, sans session ni usager.
+
+        Args:
+            rond_point (RondPoint): rond-point géré par le serveur.
+            timeout_client (float): silence au-delà duquel une session expire, en secondes.
+
+        Raises:
+            ValueError: si le timeout n'est pas strictement positif.
+        """
+        if not timeout_client > 0:
+            raise ValueError(f"le timeout des clients doit être positif (reçu : {timeout_client})")
+        self.__rond_point = rond_point
+        self.__timeout_client = timeout_client
+        self.__registre = Registre()
+        self.__sessions: dict[int, Session] = {}
+        self.__total_sessions = 0
+
+    @property
+    def rond_point(self) -> RondPoint:
+        """RondPoint: rond-point géré par le serveur."""
+        return self.__rond_point
+
+    @property
+    def timeout_client(self) -> float:
+        """float: silence au-delà duquel une session expire, en secondes."""
+        return self.__timeout_client
+
+    @property
+    def registre(self) -> Registre:
+        """Registre: usagers connectés."""
+        return self.__registre
+
+    @property
+    def sessions(self) -> list[Session]:
+        """list[Session]: sessions ouvertes (copie)."""
+        return list(self.__sessions.values())
+
+    @property
+    def total_sessions(self) -> int:
+        """int: nombre de sessions ouvertes depuis le démarrage, qui sert aussi à les numéroter."""
+        return self.__total_sessions
+
+    def ouvrir_session(self, maintenant: float) -> int:
+        """Ouvre une session pour une nouvelle connexion TCP.
+
+        Args:
+            maintenant (float): instant de la connexion, sur l'horloge monotone du serveur.
+
+        Returns:
+            int: numéro de la session, que la boucle réseau associe à sa socket.
+        """
+        self.__total_sessions += 1
+        numero = self.__total_sessions
+        self.__sessions[numero] = Session(numero, maintenant)
+        return numero
+
+    def fermer_session(self, numero: int) -> Usager | None:
+        """Oublie une session et retire son usager du registre.
+
+        Args:
+            numero (int): numéro de la session.
+
+        Returns:
+            Usager | None: l'usager retiré, None si la session n'en avait pas ou était déjà fermée.
+        """
+        session = self.__sessions.pop(numero, None)
+        if session is None or session.identifiant is None:
+            return None
+        return self.__registre.retirer(session.identifiant)
+
+    def traiter_tcp(self, numero: int, message: Message, maintenant: float) -> Reponse:
+        """Traite un message reçu sur une session TCP.
+
+        Args:
+            numero (int): numéro de la session qui a reçu le message.
+            message (Message): message déjà authentifié (HMAC et anti-rejeu vérifiés).
+            maintenant (float): instant de réception, sur l'horloge monotone du serveur.
+
+        Returns:
+            Reponse: messages à renvoyer à l'émetteur, et fermeture éventuelle de la session.
+
+        Raises:
+            TrameInvalideError: si le message parle au nom d'un autre usager que celui de
+                la session, ou si son type n'a pas sa place sur une session TCP.
+        """
+        session = self.__sessions[numero]
+        # Contrôle d'identité : une fois le HELLO passé, la session ne parle qu'au nom de son usager.
+        if session.identifiant is not None and message.emetteur != session.identifiant:
+            raise TrameInvalideError(f"message de {message.emetteur} reçu sur la session de {session.identifiant}")
+        session.derniere_activite = maintenant
+        if message.type is TypeMessage.HELLO:
+            return self.__accueillir(session, message)
+        if message.type is TypeMessage.PING:
+            return Reponse((Message(TypeMessage.PONG, IDENTIFIANT_SERVEUR),))
+        if message.type is TypeMessage.ABONNEMENT:
+            return self.__abonner(session)
+        if message.type is TypeMessage.BYE:
+            return Reponse(fermer=True)
+        raise TrameInvalideError(f"message {message.type.value} inattendu sur une session TCP")
+
+    def __accueillir(self, session: Session, message: Message) -> Reponse:
+        """Inscrit l'usager annoncé par un HELLO, ou lui explique pourquoi il est refusé."""
+        try:
+            usager = self.__creer_usager(session, message)
+        except (ValueError, TypeError, BrancheInconnueError) as refus:
+            journal.info("HELLO de %s refusé : %s", message.emetteur, refus)
+            return Reponse((self.__accuse_hello(False, str(refus)),))
+        self.__registre.ajouter(usager)
+        session.identifiant = usager.identifiant
+        journal.info(
+            "usager %s inscrit (%s, de %s vers %s)",
+            usager.identifiant, usager.CATEGORIE, usager.branche_entree, usager.branche_sortie,
+        )
+        return Reponse((self.__accuse_hello(True),))
+
+    def __creer_usager(self, session: Session, message: Message) -> Usager:
+        """Crée l'usager décrit par un HELLO, après avoir vérifié qu'il peut être accueilli."""
+        if session.identifiant is not None or session.superviseur:
+            raise ValueError("cette session est déjà enregistrée")
+        if self.__registre.contient(message.emetteur):
+            raise ValueError(f"l'identifiant {message.emetteur} est déjà connecté")
+        donnees = message.donnees
+        manquants = [champ for champ in CHAMPS_HELLO if champ not in donnees]
+        if manquants:
+            raise ValueError(f"HELLO incomplet, il manque : {', '.join(manquants)}")
+        usager = Usager.depuis_dict({"id": message.emetteur, **{champ: donnees[champ] for champ in CHAMPS_HELLO}})
+        # Lève BrancheInconnueError si l'une des deux branches n'existe pas dans ce rond-point.
+        self.__rond_point.branche(usager.branche_entree)
+        self.__rond_point.branche(usager.branche_sortie)
+        return usager
+
+    def __abonner(self, session: Session) -> Reponse:
+        """Abonne une session de supervision aux STATE."""
+        if session.identifiant is not None:
+            raise TrameInvalideError(f"l'usager {session.identifiant} ne peut pas s'abonner aux STATE")
+        session.superviseur = True
+        journal.info("supervision abonnée aux STATE (session %d)", session.numero)
+        return Reponse()
+
+    @staticmethod
+    def __accuse_hello(accepte: bool, raison: str | None = None) -> Message:
+        """Construit la réponse à un HELLO, avec la raison d'un refus."""
+        donnees: dict = {"accepte": accepte}
+        if raison is not None:
+            donnees["raison"] = raison
+        return Message(TypeMessage.HELLO_ACK, IDENTIFIANT_SERVEUR, donnees)
