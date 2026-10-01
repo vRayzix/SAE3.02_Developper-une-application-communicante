@@ -43,10 +43,12 @@ class EtatConnexion(Enum):
 class ClientUsager(threading.Thread):
     """Client d'un usager, dans son propre thread.
 
-    Il se connecte au serveur, inscrit son usager (HELLO), envoie un PING toutes les
-    intervalle_ping secondes et se reconnecte avec un délai qui double à chaque échec
-    (backoff, plafonné à backoff_max) quand la connexion tombe ou que l'inscription est
-    refusée pour l'instant. Il dit au revoir (BYE) quand on l'arrête.
+    Il se connecte au serveur et inscrit son usager (HELLO). Ensuite, à chaque intervalle
+    de position, l'usager avance d'un pas sur sa trajectoire et le client envoie sa
+    position en UDP ; un PING part toutes les intervalle_ping secondes. Quand la connexion
+    tombe ou que l'inscription est refusée pour l'instant, le client réessaie avec un délai
+    qui double à chaque échec (backoff, plafonné à backoff_max). Il dit au revoir (BYE) à
+    la fin du trajet ou quand on l'arrête.
 
     Les fonctions de rappel sont appelées depuis le thread du client : elles ne doivent
     jamais toucher un widget directement.
@@ -56,6 +58,7 @@ class ClientUsager(threading.Thread):
         self,
         config: Configuration,
         usager: Usager,
+        sur_position: Callable[[dict], None] | None = None,
         sur_connexion: Callable[[EtatConnexion, str], None] | None = None,
     ) -> None:
         """Prépare le client ; la connexion ne s'ouvre qu'au lancement du thread.
@@ -63,6 +66,8 @@ class ClientUsager(threading.Thread):
         Args:
             config (Configuration): configuration partagée avec le serveur.
             usager (Usager): usager que le client fait circuler.
+            sur_position (Callable[[dict], None] | None): appelée après chaque pas, avec une
+                copie de l'état de l'usager (format de Usager.vers_dict()).
             sur_connexion (Callable[[EtatConnexion, str], None] | None): appelée à chaque
                 changement d'état de la connexion, avec un détail lisible.
 
@@ -76,8 +81,10 @@ class ClientUsager(threading.Thread):
         self.__garde = GardeAntiRejeu(config.fenetre_anti_rejeu)
         self.__arret = threading.Event()
         self.__socket_tcp: socket.socket | None = None
+        self.__socket_udp: socket.socket | None = None
         self.__decoupeur = DecoupeurTrames()
         self.__etat = EtatConnexion.DECONNECTE
+        self.__sur_position = sur_position
         self.__sur_connexion = sur_connexion
 
     @property
@@ -116,6 +123,11 @@ class ClientUsager(threading.Thread):
         return self.__socket_tcp
 
     @property
+    def socket_udp(self) -> socket.socket | None:
+        """socket.socket | None: socket d'envoi des positions, ouverte pendant la vie du thread."""
+        return self.__socket_udp
+
+    @property
     def decoupeur(self) -> DecoupeurTrames:
         """DecoupeurTrames: tampon des octets reçus sur la connexion en cours."""
         return self.__decoupeur
@@ -124,6 +136,11 @@ class ClientUsager(threading.Thread):
     def etat(self) -> EtatConnexion:
         """EtatConnexion: dernier état de la connexion."""
         return self.__etat
+
+    @property
+    def sur_position(self) -> Callable[[dict], None] | None:
+        """Callable | None: fonction appelée après chaque pas de l'usager."""
+        return self.__sur_position
 
     @property
     def sur_connexion(self) -> Callable[[EtatConnexion, str], None] | None:
@@ -138,7 +155,8 @@ class ClientUsager(threading.Thread):
         self.__arret.set()
 
     def run(self) -> None:
-        """Corps du thread : connexions successives, jusqu'à l'arrêt."""
+        """Corps du thread : connexions successives, jusqu'à la fin du trajet ou l'arrêt."""
+        self.__socket_udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         raison = "arrêt demandé"
         try:
             raison = self.__rouler()
@@ -148,6 +166,7 @@ class ClientUsager(threading.Thread):
             raison = "erreur inattendue"
         finally:
             self.__fermer_connexion()
+            self.__socket_udp.close()
             self.__changer_etat(EtatConnexion.TERMINE, raison)
 
     def __rouler(self) -> str:
@@ -170,6 +189,8 @@ class ClientUsager(threading.Thread):
                     self.__changer_etat(EtatConnexion.DECONNECTE, f"connexion perdue : {erreur}")
             finally:
                 self.__fermer_connexion()
+            if self.__deplacement.termine:
+                return "trajet terminé"
             # Attente interruptible : arreter() réveille le client sans attendre la fin du délai.
             if self.__arret.wait(delai):
                 break
@@ -200,18 +221,24 @@ class ClientUsager(threading.Thread):
         self.__changer_etat(EtatConnexion.CONNECTE, "inscrit auprès du serveur")
 
     def __circuler(self) -> None:
-        """Envoie les PING et lit les messages du serveur tant que la connexion tient.
+        """Fait avancer l'usager, envoie positions et PING, et lit le serveur tant que la connexion tient.
 
-        Revient après avoir dit au revoir (BYE) quand l'arrêt est demandé.
+        Revient après avoir dit au revoir (BYE), à la fin du trajet ou quand l'arrêt est demandé.
 
         Raises:
             OSError: si la connexion est coupée ou si le serveur ne donne plus de nouvelles.
             TrameInvalideError: si le flux du serveur devient illisible.
         """
+        prochaine_position = time.monotonic()
         prochain_ping = time.monotonic() + self.__config.intervalle_ping
         derniere_nouvelle = time.monotonic()
         while not self.__arret.is_set():
             maintenant = time.monotonic()
+            if maintenant >= prochaine_position:
+                prochaine_position = maintenant + self.__config.intervalle_position
+                self.__faire_un_pas()
+                if self.__deplacement.termine:
+                    break
             if maintenant >= prochain_ping:
                 prochain_ping = maintenant + self.__config.intervalle_ping
                 self.__envoyer(Message(TypeMessage.PING, self.usager.identifiant))
@@ -219,11 +246,23 @@ class ClientUsager(threading.Thread):
             # dire qu'il est tombé, même si la connexion TCP n'a pas encore cassé.
             if maintenant - derniere_nouvelle > self.__config.timeout_client:
                 raise TimeoutError(f"aucune nouvelle du serveur depuis plus de {self.__config.timeout_client:g} s")
-            # La boucle se réveille au moins à chaque intervalle de position, pour rester réactive.
-            prochain_reveil = min(prochain_ping, maintenant + self.__config.intervalle_position)
+            prochain_reveil = min(prochaine_position, prochain_ping)
             if self.__lire(max(0.0, prochain_reveil - time.monotonic())):
                 derniere_nouvelle = time.monotonic()
         self.__envoyer(Message(TypeMessage.BYE, self.usager.identifiant))
+
+    def __faire_un_pas(self) -> None:
+        """Avance d'un pas, à la cadence des positions, puis envoie et signale la nouvelle position."""
+        self.__deplacement.avancer(self.__config.intervalle_position)
+        usager = self.usager
+        donnees = {"x": usager.position.x, "y": usager.position.y, "vitesse": usager.vitesse, "segment": usager.segment}
+        octets = self.__signataire.signer(Message(TypeMessage.POS, usager.identifiant, donnees)).vers_octets()
+        try:
+            self.__socket_udp.sendto(octets, (self.__config.hote, self.__config.port_udp))
+        except OSError as erreur:
+            # UDP ne garantit rien : une position perdue est remplacée par la suivante.
+            journal.debug("position de %s non envoyée : %s", usager.identifiant, erreur)
+        self.__appeler(self.__sur_position, usager.vers_dict())
 
     def __attendre(self, type_attendu: TypeMessage) -> Message:
         """Attend un message d'un type donné, au plus timeout_client secondes, en ignorant les autres.
