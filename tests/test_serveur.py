@@ -9,6 +9,7 @@ from collections import deque
 from collections.abc import Callable, Iterator
 
 import pytest
+from outils import DELAI, attendre
 
 from cherrypie.commun.config import Configuration
 from cherrypie.commun.protocole import Enveloppe, Message, TypeMessage
@@ -16,7 +17,6 @@ from cherrypie.commun.securite import Signataire
 from cherrypie.commun.trame import TAILLE_MAX_TRAME, DecoupeurTrames
 from cherrypie.serveur.serveur import Serveur
 
-DELAI = 2.0
 HELLO_VOITURE = {"categorie": "voiture", "entree": "N", "sortie": "E"}
 
 
@@ -135,25 +135,6 @@ class ClientTest:
 
 
 @pytest.fixture
-def lancer_serveur(fabrique_config: Callable[..., Configuration]) -> Iterator[Callable[..., Serveur]]:
-    """Démarre des serveurs dans des threads, puis les arrête proprement à la fin du test."""
-    lances: list[tuple[Serveur, threading.Thread]] = []
-
-    def lancer(**valeurs: str) -> Serveur:
-        serveur = Serveur(fabrique_config(**{"intervalle_etat": "0.05", **valeurs}))
-        serveur.demarrer()
-        fil = threading.Thread(target=serveur.servir, daemon=True)
-        fil.start()
-        lances.append((serveur, fil))
-        return serveur
-
-    yield lancer
-    for serveur, fil in lances:
-        serveur.arreter()
-        fil.join(timeout=DELAI)
-
-
-@pytest.fixture
 def serveur(lancer_serveur: Callable[..., Serveur]) -> Serveur:
     return lancer_serveur()
 
@@ -171,14 +152,6 @@ def clients(serveur: Serveur) -> Iterator[Callable[[str], ClientTest]]:
     yield ouvrir
     for client in ouverts:
         client.fermer()
-
-
-def attendre(condition: Callable[[], bool]) -> None:
-    """Attend qu'une condition sur l'état du serveur devienne vraie."""
-    limite = time.monotonic() + DELAI
-    while not condition():
-        assert time.monotonic() < limite, "la condition n'est jamais devenue vraie"
-        time.sleep(0.01)
 
 
 def voiture_inscrite(clients: Callable[[str], ClientTest], identifiant: str = "voiture_12") -> ClientTest:

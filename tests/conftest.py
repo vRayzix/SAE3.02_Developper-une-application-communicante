@@ -1,13 +1,16 @@
-"""Outils partagés par les tests : configurations sur des ports libres."""
+"""Fixtures partagées par les tests : configurations sur des ports libres et serveurs lancés."""
 
 import configparser
 import socket
-from collections.abc import Callable
+import threading
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
+from outils import DELAI
 
 from cherrypie.commun.config import Configuration
+from cherrypie.serveur.serveur import Serveur
 
 CHEMIN_EXEMPLE = Path(__file__).resolve().parent.parent / "config.exemple.ini"
 
@@ -39,3 +42,29 @@ def fabrique_config() -> Callable[..., Configuration]:
         return Configuration(parseur)
 
     return fabriquer
+
+
+@pytest.fixture
+def lancer_serveur(fabrique_config: Callable[..., Configuration]) -> Iterator[Callable[..., Serveur]]:
+    """Démarre des serveurs dans des threads, puis les arrête proprement à la fin du test.
+
+    lancer_serveur(timeout_client="0.3") fabrique une configuration sur des ports libres ;
+    lancer_serveur(config) réutilise une configuration, par exemple pour relancer un
+    serveur sur les mêmes ports.
+    """
+    lances: list[tuple[Serveur, threading.Thread]] = []
+
+    def lancer(config: Configuration | None = None, **valeurs: str) -> Serveur:
+        if config is None:
+            config = fabrique_config(**{"intervalle_etat": "0.05", **valeurs})
+        serveur = Serveur(config)
+        serveur.demarrer()
+        fil = threading.Thread(target=serveur.servir, daemon=True)
+        fil.start()
+        lances.append((serveur, fil))
+        return serveur
+
+    yield lancer
+    for serveur, fil in lances:
+        serveur.arreter()
+        fil.join(timeout=DELAI)
