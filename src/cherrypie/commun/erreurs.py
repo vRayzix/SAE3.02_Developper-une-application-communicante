@@ -32,3 +32,22 @@ class BrancheInconnueError(CherryPieError):
 
 class UsagerInconnuError(CherryPieError):
     """L'identifiant ne correspond à aucun usager connecté."""
+
+
+class InscriptionRefuseeError(CherryPieError):
+    """Le serveur a refusé le HELLO d'un usager."""
+
+    def __init__(self, raison: str, reessayer: bool) -> None:
+        """Crée l'erreur à partir du HELLO_ACK reçu.
+
+        Args:
+            raison (str): raison donnée par le serveur.
+            reessayer (bool): True si le refus est provisoire (identifiant encore connecté ailleurs).
+        """
+        super().__init__(raison)
+        self.__reessayer = reessayer
+
+    @property
+    def reessayer(self) -> bool:
+        """bool: True si un nouvel essai peut réussir, False si le refus est définitif."""
+        return self.__reessayer
