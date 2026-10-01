@@ -1,6 +1,7 @@
 """Tests du client usager face à un vrai serveur, sur 127.0.0.1."""
 
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -12,7 +13,10 @@ from outils import DELAI, attendre
 
 from cherrypie.client.client_usager import ClientUsager, EtatConnexion
 from cherrypie.commun.config import Configuration
-from cherrypie.modele.usager import Usager, Voiture
+from cherrypie.commun.protocole import CodeNotification, Enveloppe, Message, TypeMessage
+from cherrypie.commun.securite import Signataire
+from cherrypie.commun.trame import DecoupeurTrames
+from cherrypie.modele.usager import FACTEUR_RALENTISSEMENT, Usager, VehiculePrioritaire, Voiture
 from cherrypie.serveur.serveur import Serveur
 
 # Délais courts, pour que les tests de heartbeat et de reconnexion restent rapides.
@@ -23,6 +27,81 @@ DELAIS_RAPIDES = {
     "backoff_initial": "0.1",
     "backoff_max": "0.4",
 }
+
+
+class FauxServeur:
+    """Serveur minimal qui accepte un client et lui envoie les messages choisis par le test.
+
+    Le vrai serveur n'enverra de NOTIF qu'avec la régulation ; celui-ci parle déjà le même
+    protocole (trames signées sur TCP) pour tester la réaction du client aux consignes.
+    """
+
+    def __init__(self, config: Configuration) -> None:
+        self.__config = config
+        self.__signataire = Signataire(config.cle_hmac)
+        self.__decoupeur = DecoupeurTrames()
+        self.__ecoute = socket.create_server((config.hote, config.port_tcp))
+        self.__ecoute.settimeout(DELAI)
+        self.__connexion: socket.socket | None = None
+
+    @property
+    def config(self) -> Configuration:
+        return self.__config
+
+    @property
+    def signataire(self) -> Signataire:
+        return self.__signataire
+
+    @property
+    def decoupeur(self) -> DecoupeurTrames:
+        return self.__decoupeur
+
+    @property
+    def ecoute(self) -> socket.socket:
+        return self.__ecoute
+
+    @property
+    def connexion(self) -> socket.socket | None:
+        return self.__connexion
+
+    def accepter(self) -> Message:
+        """Accepte la connexion du client et renvoie son HELLO, sans y répondre."""
+        self.__connexion, _ = self.__ecoute.accept()
+        self.__connexion.settimeout(DELAI)
+        while True:
+            octets = self.__connexion.recv(65536)
+            if not octets:
+                raise ConnectionError("le client a fermé la connexion")
+            for trame in self.__decoupeur.ajouter(octets):
+                message = Enveloppe.depuis_octets(trame).message
+                if message.type is TypeMessage.HELLO:
+                    return message
+
+    def envoyer(self, *messages: Message) -> None:
+        """Signe les messages et les envoie d'un seul bloc, qui peut arriver en une seule lecture."""
+        trames = [DecoupeurTrames.encoder(self.__signataire.signer(message).vers_octets()) for message in messages]
+        self.__connexion.sendall(b"".join(trames))
+
+    def fermer(self) -> None:
+        if self.__connexion is not None:
+            self.__connexion.close()
+        self.__ecoute.close()
+
+
+def accuse_d_inscription() -> Message:
+    return Message(TypeMessage.HELLO_ACK, "serveur", {"accepte": True})
+
+
+def consigne(code: CodeNotification, texte: str = "") -> Message:
+    return Message(TypeMessage.NOTIF, "serveur", {"code": code.value, "message": texte})
+
+
+@pytest.fixture
+def faux_serveur(fabrique_config: Callable[..., Configuration]) -> Iterator[FauxServeur]:
+    # Le faux serveur ne répond pas aux PING : un timeout long évite que le client le croie tombé.
+    serveur = FauxServeur(fabrique_config(**{**DELAIS_RAPIDES, "timeout_client": "5"}))
+    yield serveur
+    serveur.fermer()
 
 
 @pytest.fixture
@@ -214,3 +293,19 @@ def test_fin_de_trajet_au_revoir_puis_arret(serveur: Serveur, preparer_client: C
     assert (EtatConnexion.CONNECTE, "inscrit auprès du serveur") in etats
     assert etats[-1] == (EtatConnexion.TERMINE, "trajet terminé")
     attendre(lambda: not serveur.logique.registre.contient("voiture_12"))
+
+
+# ---------- Réaction aux consignes ----------
+
+def test_consigne_arrivee_avec_l_accuse_d_inscription_appliquee(
+    faux_serveur: FauxServeur, preparer_client: Callable[..., ClientUsager]
+) -> None:
+    consignes: list[CodeNotification] = []
+    client = preparer_client(
+        faux_serveur.config, sur_notification=lambda code, texte, appliquee: consignes.append(code)
+    )
+    client.start()
+    faux_serveur.accepter()
+    faux_serveur.envoyer(accuse_d_inscription(), consigne(CodeNotification.CHANGEZ_VOIE))
+    attendre(lambda: consignes == [CodeNotification.CHANGEZ_VOIE])
+    assert client.usager.consigne is CodeNotification.CHANGEZ_VOIE
