@@ -175,3 +175,42 @@ def test_refus_definitif_arrete_le_client(
     assert not client.is_alive()
     assert client.etat is EtatConnexion.TERMINE
     assert "branche inconnue" in details[-1]
+
+
+# ---------- Déplacement et positions ----------
+
+def test_positions_recues_par_le_registre(serveur: Serveur, preparer_client: Callable[..., ClientUsager]) -> None:
+    client = preparer_client(serveur.config)
+    client.start()
+    attendre(lambda: serveur.logique.registre.contient("voiture_12"))
+    vue_du_serveur = serveur.logique.registre.obtenir("voiture_12")
+    attendre(lambda: vue_du_serveur.position is not None)
+    premiere = vue_du_serveur.position
+    attendre(lambda: vue_du_serveur.position != premiere)
+    assert vue_du_serveur.vitesse == pytest.approx(Voiture.VITESSE_MAX)
+
+
+def test_position_signalee_a_chaque_pas(serveur: Serveur, preparer_client: Callable[..., ClientUsager]) -> None:
+    positions: list[dict] = []
+    client = preparer_client(serveur.config, sur_position=positions.append)
+    client.start()
+    attendre(lambda: len(positions) >= 5)
+    assert {etat["id"] for etat in positions} == {"voiture_12"}
+    # Venue du sud, la voiture remonte sa branche vers le nord : y augmente à chaque pas.
+    ordonnees = [etat["y"] for etat in positions[:5]]
+    assert ordonnees == sorted(ordonnees)
+    assert len(set(ordonnees)) == 5
+
+
+def test_fin_de_trajet_au_revoir_puis_arret(serveur: Serveur, preparer_client: Callable[..., ClientUsager]) -> None:
+    etats: list[tuple[EtatConnexion, str]] = []
+    client = preparer_client(serveur.config, sur_connexion=lambda etat, detail: etats.append((etat, detail)))
+    # Placé à deux mètres du bout de sa trajectoire, l'usager finit son trajet en quelques pas.
+    client.deplacement.avancer((client.deplacement.trajectoire.longueur - 2.0) / Voiture.VITESSE_MAX)
+    client.start()
+    client.join(timeout=DELAI)
+    assert not client.is_alive()
+    assert client.deplacement.termine
+    assert (EtatConnexion.CONNECTE, "inscrit auprès du serveur") in etats
+    assert etats[-1] == (EtatConnexion.TERMINE, "trajet terminé")
+    attendre(lambda: not serveur.logique.registre.contient("voiture_12"))
