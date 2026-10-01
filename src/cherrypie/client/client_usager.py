@@ -45,7 +45,10 @@ class ClientUsager(threading.Thread):
 
     Il se connecte au serveur et inscrit son usager (HELLO). Ensuite, à chaque intervalle
     de position, l'usager avance d'un pas sur sa trajectoire et le client envoie sa
-    position en UDP ; un PING part toutes les intervalle_ping secondes. Quand la connexion
+    position en UDP ; un PING part toutes les intervalle_ping secondes. Les consignes reçues
+    (NOTIF) passent par reagir() de l'usager, dont le déplacement tient compte au pas
+    suivant : arrêt sur la ligne d'entrée pour ATTENDEZ jusqu'à OK_PASSER, ralentissement
+    et décalage pour DEGAGEZ, décalage pour CHANGEZ_VOIE. Quand la connexion
     tombe ou que l'inscription est refusée pour l'instant, le client réessaie avec un délai
     qui double à chaque échec (backoff, plafonné à backoff_max). Il dit au revoir (BYE) à
     la fin du trajet ou quand on l'arrête.
@@ -59,6 +62,7 @@ class ClientUsager(threading.Thread):
         config: Configuration,
         usager: Usager,
         sur_position: Callable[[dict], None] | None = None,
+        sur_notification: Callable[[CodeNotification, str, bool], None] | None = None,
         sur_connexion: Callable[[EtatConnexion, str], None] | None = None,
     ) -> None:
         """Prépare le client ; la connexion ne s'ouvre qu'au lancement du thread.
@@ -68,6 +72,8 @@ class ClientUsager(threading.Thread):
             usager (Usager): usager que le client fait circuler.
             sur_position (Callable[[dict], None] | None): appelée après chaque pas, avec une
                 copie de l'état de l'usager (format de Usager.vers_dict()).
+            sur_notification (Callable[[CodeNotification, str, bool], None] | None): appelée
+                à chaque consigne reçue, avec son texte et True si l'usager l'applique.
             sur_connexion (Callable[[EtatConnexion, str], None] | None): appelée à chaque
                 changement d'état de la connexion, avec un détail lisible.
 
@@ -85,6 +91,7 @@ class ClientUsager(threading.Thread):
         self.__decoupeur = DecoupeurTrames()
         self.__etat = EtatConnexion.DECONNECTE
         self.__sur_position = sur_position
+        self.__sur_notification = sur_notification
         self.__sur_connexion = sur_connexion
 
     @property
@@ -141,6 +148,11 @@ class ClientUsager(threading.Thread):
     def sur_position(self) -> Callable[[dict], None] | None:
         """Callable | None: fonction appelée après chaque pas de l'usager."""
         return self.__sur_position
+
+    @property
+    def sur_notification(self) -> Callable[[CodeNotification, str, bool], None] | None:
+        """Callable | None: fonction appelée à chaque consigne reçue du serveur."""
+        return self.__sur_notification
 
     @property
     def sur_connexion(self) -> Callable[[EtatConnexion, str], None] | None:
@@ -247,8 +259,11 @@ class ClientUsager(threading.Thread):
             if maintenant - derniere_nouvelle > self.__config.timeout_client:
                 raise TimeoutError(f"aucune nouvelle du serveur depuis plus de {self.__config.timeout_client:g} s")
             prochain_reveil = min(prochaine_position, prochain_ping)
-            if self.__lire(max(0.0, prochain_reveil - time.monotonic())):
+            messages = self.__lire(max(0.0, prochain_reveil - time.monotonic()))
+            if messages:
                 derniere_nouvelle = time.monotonic()
+            for message in messages:
+                self.__traiter(message)
         self.__envoyer(Message(TypeMessage.BYE, self.usager.identifiant))
 
     def __faire_un_pas(self) -> None:
@@ -263,6 +278,23 @@ class ClientUsager(threading.Thread):
             # UDP ne garantit rien : une position perdue est remplacée par la suivante.
             journal.debug("position de %s non envoyée : %s", usager.identifiant, erreur)
         self.__appeler(self.__sur_position, usager.vers_dict())
+
+    def __traiter(self, message: Message) -> None:
+        """Applique un message du serveur : seule une NOTIF demande une réaction."""
+        if message.type is not TypeMessage.NOTIF:
+            # PONG et autres : leur arrivée suffit à montrer que le serveur répond.
+            return
+        try:
+            code = CodeNotification(message.donnees.get("code"))
+        except ValueError:
+            journal.warning("consigne inconnue reçue par %s : %r", self.usager.identifiant, message.donnees.get("code"))
+            return
+        texte = str(message.donnees.get("message", ""))
+        appliquee = self.usager.reagir(code)
+        journal.info(
+            "client %s : consigne %s %s", self.usager.identifiant, code.value, "appliquée" if appliquee else "ignorée"
+        )
+        self.__appeler(self.__sur_notification, code, texte, appliquee)
 
     def __attendre(self, type_attendu: TypeMessage) -> Message:
         """Attend un message d'un type donné, au plus timeout_client secondes, en ignorant les autres.
