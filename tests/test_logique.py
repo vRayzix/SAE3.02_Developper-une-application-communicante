@@ -75,19 +75,20 @@ def test_fermer_session_retire_son_usager(logique: LogiqueServeur) -> None:
     ],
     ids=["categorie-inconnue", "branche-inconnue", "hello-incomplet", "pieton-sur-deux-branches"],
 )
-def test_hello_invalide_refuse_avec_sa_raison(logique: LogiqueServeur, message: Message, motif: str) -> None:
+def test_hello_invalide_refuse_definitivement(logique: LogiqueServeur, message: Message, motif: str) -> None:
     numero = logique.ouvrir_session(0.0)
     donnees = accuse(logique.traiter_tcp(numero, message, 1.0))
     assert donnees["accepte"] is False
     assert motif in donnees["raison"]
+    assert donnees["reessayer"] is False
     assert logique.registre.usagers == []
 
 
-def test_identifiant_deja_connecte_refuse(logique: LogiqueServeur) -> None:
+def test_identifiant_deja_connecte_refuse_provisoirement(logique: LogiqueServeur) -> None:
     session_inscrite(logique, "voiture_12")
     seconde = logique.ouvrir_session(1.0)
     donnees = accuse(logique.traiter_tcp(seconde, hello("voiture_12"), 2.0))
-    assert donnees == {"accepte": False, "raison": "l'identifiant voiture_12 est déjà connecté"}
+    assert donnees == {"accepte": False, "raison": "l'identifiant voiture_12 est déjà connecté", "reessayer": True}
 
 
 def test_identifiant_libere_a_la_fermeture_de_sa_session(logique: LogiqueServeur) -> None:
@@ -96,10 +97,17 @@ def test_identifiant_libere_a_la_fermeture_de_sa_session(logique: LogiqueServeur
     assert accuse(logique.traiter_tcp(seconde, hello("voiture_12"), 2.0)) == {"accepte": True}
 
 
+def test_hello_d_une_supervision_refuse_definitivement(logique: LogiqueServeur) -> None:
+    numero = logique.ouvrir_session(0.0)
+    logique.traiter_tcp(numero, Message(TypeMessage.ABONNEMENT, "supervision"), 0.5)
+    donnees = accuse(logique.traiter_tcp(numero, hello("supervision"), 1.0))
+    assert donnees == {"accepte": False, "raison": "cette session est déjà enregistrée", "reessayer": False}
+
+
 def test_second_hello_sur_la_meme_session_refuse(logique: LogiqueServeur) -> None:
     numero = session_inscrite(logique, "voiture_12")
     donnees = accuse(logique.traiter_tcp(numero, hello("voiture_12"), 1.0))
-    assert donnees == {"accepte": False, "raison": "cette session est déjà enregistrée"}
+    assert donnees == {"accepte": False, "raison": "cette session est déjà enregistrée", "reessayer": False}
 
 
 # ---------- PING, ABONNEMENT et BYE ----------

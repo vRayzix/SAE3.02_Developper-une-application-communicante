@@ -209,11 +209,17 @@ class LogiqueServeur:
 
     def __accueillir(self, session: Session, message: Message) -> Reponse:
         """Inscrit l'usager annoncé par un HELLO, ou lui explique pourquoi il est refusé."""
+        if session.identifiant is not None or session.superviseur:
+            return self.__refuser(message.emetteur, "cette session est déjà enregistrée", reessayer=False)
+        if self.__registre.contient(message.emetteur):
+            # Refus provisoire : l'autre session de cet identifiant a pu disparaître sans
+            # prévenir ; elle expirera au bout de timeout_client et le client pourra réessayer.
+            raison = f"l'identifiant {message.emetteur} est déjà connecté"
+            return self.__refuser(message.emetteur, raison, reessayer=True)
         try:
-            usager = self.__creer_usager(session, message)
+            usager = self.__creer_usager(message)
         except (ValueError, TypeError, BrancheInconnueError) as refus:
-            journal.info("HELLO de %s refusé : %s", message.emetteur, refus)
-            return Reponse((self.__accuse_hello(False, str(refus)),))
+            return self.__refuser(message.emetteur, str(refus), reessayer=False)
         self.__registre.ajouter(usager)
         session.identifiant = usager.identifiant
         journal.info(
@@ -222,12 +228,8 @@ class LogiqueServeur:
         )
         return Reponse((self.__accuse_hello(True),))
 
-    def __creer_usager(self, session: Session, message: Message) -> Usager:
-        """Crée l'usager décrit par un HELLO, après avoir vérifié qu'il peut être accueilli."""
-        if session.identifiant is not None or session.superviseur:
-            raise ValueError("cette session est déjà enregistrée")
-        if self.__registre.contient(message.emetteur):
-            raise ValueError(f"l'identifiant {message.emetteur} est déjà connecté")
+    def __creer_usager(self, message: Message) -> Usager:
+        """Crée l'usager décrit par un HELLO, après avoir vérifié ses champs et ses branches."""
         donnees = message.donnees
         manquants = [champ for champ in CHAMPS_HELLO if champ not in donnees]
         if manquants:
@@ -247,9 +249,16 @@ class LogiqueServeur:
         return Reponse()
 
     @staticmethod
-    def __accuse_hello(accepte: bool, raison: str | None = None) -> Message:
-        """Construit la réponse à un HELLO, avec la raison d'un refus."""
+    def __refuser(emetteur: str, raison: str, reessayer: bool) -> Reponse:
+        """Refuse un HELLO, en disant au client s'il peut réessayer plus tard."""
+        journal.info("HELLO de %s refusé : %s", emetteur, raison)
+        return Reponse((LogiqueServeur.__accuse_hello(False, raison, reessayer),))
+
+    @staticmethod
+    def __accuse_hello(accepte: bool, raison: str | None = None, reessayer: bool = False) -> Message:
+        """Construit la réponse à un HELLO ; un refus dit pourquoi, et si un nouvel essai peut réussir."""
         donnees: dict = {"accepte": accepte}
-        if raison is not None:
+        if not accepte:
             donnees["raison"] = raison
+            donnees["reessayer"] = reessayer
         return Message(TypeMessage.HELLO_ACK, IDENTIFIANT_SERVEUR, donnees)

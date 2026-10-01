@@ -48,7 +48,7 @@ Dans le code, `Message` porte `type`, `id` et `donnees` ; `Enveloppe` y ajoute `
 | type | Sens | Transport | donnees |
 | --- | --- | --- | --- |
 | HELLO | client → serveur | TCP | `{"categorie": "voiture", "entree": "N", "sortie": "E"}`, catégorie parmi `voiture`, `moto`, `trottinette`, `pieton`, `vp` |
-| HELLO_ACK | serveur → client | TCP | `{"accepte": true}`, ou `{"accepte": false, "raison": "..."}` en cas de refus |
+| HELLO_ACK | serveur → client | TCP | `{"accepte": true}`, ou `{"accepte": false, "raison": "...", "reessayer": true}` en cas de refus |
 | POS | client → serveur | UDP | `{"x": 3.5, "y": -1.0, "vitesse": 8.3, "segment": "N-O"}` |
 | VP_ALERT | client VP → serveur | TCP | `{"entree": "N", "sortie": "E", "eta": 8.0}` |
 | VP_FIN | client VP → serveur | TCP | `{}` |
@@ -72,10 +72,20 @@ Chaque élément de la liste `usagers` d'un STATE décrit un usager connecté :
 
 - Chaque connexion TCP ouvre une session. Elle devient celle d'un usager quand son HELLO est accepté, ou celle d'une supervision après un ABONNEMENT.
 - Un HELLO est refusé, avec la raison dans le HELLO_ACK, si la session est déjà enregistrée, si l'identifiant est déjà connecté sur une autre session, s'il manque un champ, si la catégorie ou une branche est inconnue, ou si un piéton donne une sortie différente de son entrée.
+- Le champ `reessayer` du refus dit au client si un nouvel essai peut réussir. Il ne vaut `true` que pour un identifiant déjà connecté : l'autre session a pu disparaître sans prévenir, et elle expirera au bout de `timeout_client`. Tous les autres refus sont définitifs.
 - Après le HELLO, tous les messages de la session doivent porter l'identifiant de son usager. Un message au nom d'un autre est refusé.
 - Toute session, usager ou supervision, doit donner des nouvelles : le client envoie un PING toutes les 2 s (`intervalle_ping`) et le serveur répond PONG. Seuls les messages TCP comptent ; les POS reçus en UDP ne maintiennent pas la session.
 - Après 6 s sans message (`timeout_client`), le serveur ferme la socket et retire l'usager du registre. Il fait de même après un BYE, une déconnexion ou une coupure brutale.
 - Toutes les 0,2 s (`intervalle_etat`), le serveur envoie un STATE à chaque supervision abonnée, et à elles seules.
+
+## Côté client
+
+- Le client ouvre la connexion TCP, envoie son HELLO et attend le HELLO_ACK au plus `timeout_client` secondes.
+- Une fois inscrit, il avance d'un pas toutes les `intervalle_position` secondes et envoie aussitôt sa position en UDP. Il envoie un PING toutes les `intervalle_ping` secondes.
+- Si le serveur ne donne aucune nouvelle pendant `timeout_client` secondes, alors qu'il répond normalement à chaque PING, le client considère la connexion perdue, même si TCP ne l'a pas encore signalé.
+- Après une coupure, ou un refus avec `reessayer` à `true`, le client attend `backoff_initial` secondes, puis un délai qui double à chaque échec (1, 2, 4, 8 s), plafonné à `backoff_max` (10 s). Il renvoie un HELLO à chaque reconnexion. Un refus définitif l'arrête.
+- Une nouvelle session repart sans consigne : le serveur renvoie celles qui s'appliquent encore.
+- À la fin de son trajet, ou quand on l'arrête, le client envoie un BYE : le serveur le retire du registre sans attendre le timeout.
 
 ## Positions en UDP
 

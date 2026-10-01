@@ -35,6 +35,9 @@ classDiagram
     class RejeuDetecteError
     class BrancheInconnueError
     class UsagerInconnuError
+    class InscriptionRefuseeError {
+        -reessayer : bool
+    }
 
     Exception <|-- CherryPieError
     CherryPieError <|-- ConfigurationInvalideError
@@ -43,6 +46,7 @@ classDiagram
     CherryPieError <|-- RejeuDetecteError
     CherryPieError <|-- BrancheInconnueError
     CherryPieError <|-- UsagerInconnuError
+    CherryPieError <|-- InscriptionRefuseeError
 ```
 
 ### Configuration, protocole, trames et sécurité
@@ -480,37 +484,68 @@ Setters prévus : `Regulateur.active` (message REGLAGE).
 ```mermaid
 classDiagram
     class Thread
+
+    class EtatConnexion {
+        <<enumeration>>
+        CONNEXION
+        CONNECTE
+        DECONNECTE
+        TERMINE
+    }
+
     class ClientUsager {
         -config : Configuration
+        -deplacement : Deplacement
+        -signataire : Signataire
+        -garde : GardeAntiRejeu
+        -arret : threading.Event
+        -socket_tcp : socket | None
+        -socket_udp : socket | None
+        -decoupeur : DecoupeurTrames
+        -recus : deque[Message]
+        -etat : EtatConnexion
+        -sur_position : Callable | None
+        -sur_notification : Callable | None
+        -sur_connexion : Callable | None
+        +run() None
+        +arreter() None
+        -rouler() str
+        -connecter() None
+        -circuler() None
+        -faire_un_pas() None
+        -traiter(message: Message) None
+        -attendre(type_attendu: TypeMessage) Message
+        -lire(attente: float) bool
+        -envoyer(message: Message) None
+        -changer_etat(etat: EtatConnexion, detail: str) None
+    }
+
+    class Deplacement {
         -usager : Usager
         -trajectoire : Trajectoire
         -avancement : float
-        -connexion : socket | None
-        -socket_udp : socket
-        -decoupeur : DecoupeurTrames
-        -signataire : Signataire
-        -garde : GardeAntiRejeu
-        -actif : bool
-        +run() None
-        +arreter() None
-        -connecter() None
-        -envoyer(message: Message) None
-        -envoyer_position() None
-        -avancer(duree: float) None
-        -traiter(message: Message) None
+        +termine() bool
+        +avancer(duree: float) None
+        -doit_s_arreter_a_la_ligne() bool
+        -placer_usager(vitesse: float) None
     }
 
     Thread <|-- ClientUsager
-    ClientUsager *-- Usager
-    ClientUsager *-- Trajectoire
+    ClientUsager *-- Deplacement
+    ClientUsager ..> EtatConnexion : signale
     ClientUsager *-- DecoupeurTrames
+    Deplacement --> Usager
+    Deplacement --> Trajectoire
 ```
 
-- Chaque `ClientUsager` est un `threading.Thread` avec ses propres sockets. `run()` enchaîne : connexion et HELLO, puis, à chaque pas, déplacement, envoi du POS en UDP, PING toutes les 2 s et lecture des notifications.
-- `connecter()` réessaie après une coupure avec un délai qui double (1, 2, 4, 8 s, plafonné à 10 s) et renvoie un HELLO à chaque reconnexion.
-- Un client de catégorie `vp` envoie VP_ALERT à son arrivée et VP_FIN à sa sortie du rond-point.
+- Chaque `ClientUsager` est un `threading.Thread` avec ses propres sockets. Il ne dépend pas de Qt : il signale sa position, les consignes reçues et l'état de sa connexion par trois fonctions de rappel, appelées depuis son thread. L'IHM les reliera à des signaux Qt, sans que le client touche jamais un widget. La position est transmise sous forme de copie (`Usager.vers_dict()`), jamais par l'objet partagé.
+- `rouler()` enchaîne les connexions. Après une coupure, ou un refus provisoire (`InscriptionRefuseeError.reessayer`), il attend avec un délai qui double (1, 2, 4, 8 s, plafonné à 10 s). L'attente se fait sur un `threading.Event` : `arreter()` réveille le client sans attendre la fin du délai. Un refus définitif l'arrête.
+- `circuler()` fait avancer l'usager d'un pas à chaque intervalle de position, envoie le POS en UDP, envoie un PING toutes les `intervalle_ping` secondes et traite les messages reçus. Elle s'arrête si le serveur reste muet plus de `timeout_client` secondes, et dit au revoir (BYE) à la fin du trajet ou à l'arrêt.
+- Les messages lus attendent dans une file (`recus`) : une NOTIF arrivée dans la même lecture que le HELLO_ACK n'est pas perdue.
+- `Deplacement` contient les règles de mouvement, sans réseau, ce qui permet de les tester seules. À chaque pas, l'usager parcourt la distance que permet sa consigne et s'arrête sur la ligne d'entrée pendant un ATTENDEZ s'il ne l'a pas encore franchie. Le décalage et le ralentissement viennent de `reagir()`.
+- L'envoi de VP_ALERT et de VP_FIN par un client `vp` viendra avec la régulation.
 
-Setters prévus : aucun, `avancement` n'est modifié que par le client lui-même.
+Setters prévus : aucun.
 
 ## Paquets `ihm` et `bdd`
 
