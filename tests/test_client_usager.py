@@ -309,3 +309,72 @@ def test_consigne_arrivee_avec_l_accuse_d_inscription_appliquee(
     faux_serveur.envoyer(accuse_d_inscription(), consigne(CodeNotification.CHANGEZ_VOIE))
     attendre(lambda: consignes == [CodeNotification.CHANGEZ_VOIE])
     assert client.usager.consigne is CodeNotification.CHANGEZ_VOIE
+
+
+def test_attendez_arrete_sur_la_ligne_jusqu_a_ok_passer(
+    faux_serveur: FauxServeur, preparer_client: Callable[..., ClientUsager]
+) -> None:
+    client = preparer_client(faux_serveur.config)
+    ligne = client.deplacement.trajectoire.longueur_approche
+    # Placé à deux mètres de la ligne d'entrée, l'usager l'atteint en quelques pas.
+    client.deplacement.avancer((ligne - 2.0) / Voiture.VITESSE_MAX)
+    client.start()
+    faux_serveur.accepter()
+    faux_serveur.envoyer(accuse_d_inscription(), consigne(CodeNotification.ATTENDEZ, "véhicule prioritaire en approche"))
+    attendre(lambda: client.deplacement.avancement == pytest.approx(ligne))
+    time.sleep(5 * float(DELAIS_RAPIDES["intervalle_position"]))
+    assert client.deplacement.avancement == pytest.approx(ligne)
+    assert client.usager.vitesse == 0.0
+    faux_serveur.envoyer(consigne(CodeNotification.OK_PASSER))
+    attendre(lambda: client.deplacement.avancement > ligne + 1.0)
+
+
+def test_consigne_signalee_par_rappel(faux_serveur: FauxServeur, preparer_client: Callable[..., ClientUsager]) -> None:
+    recues: list[tuple[CodeNotification, str, bool]] = []
+    client = preparer_client(
+        faux_serveur.config, sur_notification=lambda code, texte, appliquee: recues.append((code, texte, appliquee))
+    )
+    client.start()
+    faux_serveur.accepter()
+    faux_serveur.envoyer(accuse_d_inscription())
+    faux_serveur.envoyer(consigne(CodeNotification.DEGAGEZ, "véhicule prioritaire derrière vous"))
+    attendre(lambda: recues == [(CodeNotification.DEGAGEZ, "véhicule prioritaire derrière vous", True)])
+
+
+def test_degagez_ralentit_l_usager(faux_serveur: FauxServeur, preparer_client: Callable[..., ClientUsager]) -> None:
+    positions: list[dict] = []
+    client = preparer_client(faux_serveur.config, sur_position=positions.append)
+    client.start()
+    faux_serveur.accepter()
+    faux_serveur.envoyer(accuse_d_inscription(), consigne(CodeNotification.DEGAGEZ))
+    attendre(lambda: positions and positions[-1]["consigne"] == "DEGAGEZ")
+    attendre(lambda: positions[-1]["vitesse"] == pytest.approx(Voiture.VITESSE_MAX * FACTEUR_RALENTISSEMENT))
+
+
+def test_vehicule_prioritaire_ignore_les_consignes(
+    faux_serveur: FauxServeur, preparer_client: Callable[..., ClientUsager]
+) -> None:
+    recues: list[tuple[CodeNotification, str, bool]] = []
+    client = preparer_client(
+        faux_serveur.config,
+        VehiculePrioritaire("vp_1", "S", "N"),
+        sur_notification=lambda code, texte, appliquee: recues.append((code, texte, appliquee)),
+    )
+    client.start()
+    faux_serveur.accepter()
+    faux_serveur.envoyer(accuse_d_inscription(), consigne(CodeNotification.ATTENDEZ))
+    attendre(lambda: recues == [(CodeNotification.ATTENDEZ, "", False)])
+    assert client.usager.consigne is None
+
+
+def test_consigne_inconnue_ignoree(
+    faux_serveur: FauxServeur, preparer_client: Callable[..., ClientUsager], caplog: pytest.LogCaptureFixture
+) -> None:
+    client = preparer_client(faux_serveur.config)
+    client.start()
+    faux_serveur.accepter()
+    inconnue = Message(TypeMessage.NOTIF, "serveur", {"code": "DECOLLEZ", "message": ""})
+    faux_serveur.envoyer(accuse_d_inscription(), inconnue, consigne(CodeNotification.ATTENDEZ))
+    attendre(lambda: client.usager.consigne is CodeNotification.ATTENDEZ)
+    assert "consigne inconnue" in caplog.text
+    assert client.etat is EtatConnexion.CONNECTE
