@@ -13,6 +13,7 @@ import select
 import socket
 import threading
 import time
+from collections import deque
 from collections.abc import Callable
 from enum import Enum
 
@@ -89,6 +90,7 @@ class ClientUsager(threading.Thread):
         self.__socket_tcp: socket.socket | None = None
         self.__socket_udp: socket.socket | None = None
         self.__decoupeur = DecoupeurTrames()
+        self.__recus: deque[Message] = deque()
         self.__etat = EtatConnexion.DECONNECTE
         self.__sur_position = sur_position
         self.__sur_notification = sur_notification
@@ -138,6 +140,11 @@ class ClientUsager(threading.Thread):
     def decoupeur(self) -> DecoupeurTrames:
         """DecoupeurTrames: tampon des octets reçus sur la connexion en cours."""
         return self.__decoupeur
+
+    @property
+    def recus(self) -> list[Message]:
+        """list[Message]: messages reçus du serveur et pas encore traités (copie)."""
+        return list(self.__recus)
 
     @property
     def etat(self) -> EtatConnexion:
@@ -219,8 +226,9 @@ class ClientUsager(threading.Thread):
         hote, port = self.__config.hote, self.__config.port_tcp
         self.__changer_etat(EtatConnexion.CONNEXION, f"vers {hote}:{port}")
         self.__socket_tcp = socket.create_connection((hote, port), timeout=self.__config.timeout_client)
-        # Chaque connexion repart d'un tampon vide : un reste de l'ancienne n'aurait plus de sens.
+        # Chaque connexion repart de tampons vides : un reste de l'ancienne n'aurait plus de sens.
         self.__decoupeur = DecoupeurTrames()
+        self.__recus.clear()
         usager = self.usager
         description = {"categorie": usager.CATEGORIE, "entree": usager.branche_entree, "sortie": usager.branche_sortie}
         self.__envoyer(Message(TypeMessage.HELLO, usager.identifiant, description))
@@ -259,11 +267,10 @@ class ClientUsager(threading.Thread):
             if maintenant - derniere_nouvelle > self.__config.timeout_client:
                 raise TimeoutError(f"aucune nouvelle du serveur depuis plus de {self.__config.timeout_client:g} s")
             prochain_reveil = min(prochaine_position, prochain_ping)
-            messages = self.__lire(max(0.0, prochain_reveil - time.monotonic()))
-            if messages:
+            if self.__lire(max(0.0, prochain_reveil - time.monotonic())):
                 derniere_nouvelle = time.monotonic()
-            for message in messages:
-                self.__traiter(message)
+            while self.__recus:
+                self.__traiter(self.__recus.popleft())
         self.__envoyer(Message(TypeMessage.BYE, self.usager.identifiant))
 
     def __faire_un_pas(self) -> None:
@@ -297,23 +304,33 @@ class ClientUsager(threading.Thread):
         self.__appeler(self.__sur_notification, code, texte, appliquee)
 
     def __attendre(self, type_attendu: TypeMessage) -> Message:
-        """Attend un message d'un type donné, au plus timeout_client secondes, en ignorant les autres.
+        """Attend un message d'un type donné, au plus timeout_client secondes.
+
+        Les messages arrivés avant lui sont écartés ; ceux arrivés après, dans la même
+        lecture, restent dans la file pour être traités ensuite.
 
         Raises:
             TimeoutError: si le message n'arrive pas à temps.
             ConnectionError: si le serveur ferme la connexion.
         """
         limite = time.monotonic() + self.__config.timeout_client
-        while time.monotonic() < limite:
-            for message in self.__lire(max(0.0, limite - time.monotonic())):
+        while True:
+            while self.__recus:
+                message = self.__recus.popleft()
                 if message.type is type_attendu:
                     return message
-        raise TimeoutError(f"pas de {type_attendu.value} du serveur à temps")
+            reste = limite - time.monotonic()
+            if reste <= 0:
+                raise TimeoutError(f"pas de {type_attendu.value} du serveur à temps")
+            self.__lire(reste)
 
-    def __lire(self, attente: float) -> list[Message]:
-        """Attend des données du serveur, au plus `attente` secondes, et renvoie les messages valides.
+    def __lire(self, attente: float) -> bool:
+        """Attend des données du serveur, au plus `attente` secondes, et range les messages valides dans la file.
 
         Une trame refusée (JSON, HMAC, rejeu) est journalisée puis ignorée.
+
+        Returns:
+            bool: True si au moins un message valide est arrivé.
 
         Raises:
             ConnectionError: si le serveur a fermé ou coupé la connexion.
@@ -321,17 +338,17 @@ class ClientUsager(threading.Thread):
         """
         lisibles, _, _ = select.select([self.__socket_tcp], [], [], attente)
         if not lisibles:
-            return []
+            return False
         octets = self.__socket_tcp.recv(TAILLE_LECTURE)
         if not octets:
             raise ConnectionError("connexion fermée par le serveur")
-        messages = []
+        nombre_avant = len(self.__recus)
         for trame in self.__decoupeur.ajouter(octets):
             try:
-                messages.append(self.__ouvrir(trame))
+                self.__recus.append(self.__ouvrir(trame))
             except CherryPieError as erreur:
                 journal.warning("trame du serveur refusée par %s : %s", self.usager.identifiant, erreur)
-        return messages
+        return len(self.__recus) > nombre_avant
 
     def __ouvrir(self, octets: bytes) -> Message:
         """Lit une enveloppe reçue, vérifie son HMAC puis sa fraîcheur, et renvoie son message."""
