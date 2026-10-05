@@ -366,3 +366,42 @@ def test_vp_disparu_leve_sa_reservation_sans_mesure(logique: LogiqueServeur) -> 
     logique.fermer_session(numero)
     assert not logique.vp_actif
     assert logique.passages == []
+
+
+# ---------- Cadence et STATE complet ----------
+
+def test_cadence_envoie_le_state_a_chaque_supervision(logique: LogiqueServeur) -> None:
+    session_inscrite(logique)
+    supervisions = []
+    for nom in ("supervision_1", "supervision_2"):
+        numero = logique.ouvrir_session(0.0)
+        logique.traiter_tcp(numero, Message(TypeMessage.ABONNEMENT, nom), 0.1)
+        supervisions.append(numero)
+    envois = logique.cadencer()
+    assert [numero for numero, _ in envois] == supervisions
+    assert {message.type for _, message in envois} == {TypeMessage.STATE}
+
+
+def test_state_donne_la_densite_des_branches(logique: LogiqueServeur) -> None:
+    session_inscrite(logique, "voiture_12")
+    assert logique.construire_etat().donnees["densite"]["N"] == pytest.approx(1 / 8)
+
+
+def test_state_signale_le_vp_et_ses_segments_reserves(logique: LogiqueServeur) -> None:
+    numero = vp_inscrit(logique)
+    logique.traiter_tcp(numero, alerte(), 1.0)
+    donnees = logique.construire_etat().donnees
+    assert donnees["vp_actif"] is True
+    assert donnees["segments_reserves"] == ["E-N", "S-E"]
+
+
+def test_densite_relevee_pendant_la_traversee_du_vp(logique: LogiqueServeur) -> None:
+    for numero_voiture in range(4):
+        session_inscrite(logique, f"voiture_{numero_voiture}")
+    numero = vp_inscrit(logique)
+    logique.traiter_tcp(numero, alerte(), 1.0)
+    logique.traiter_udp(pos("vp_1"), 2.0)
+    logique.cadencer()
+    logique.traiter_tcp(numero, Message(TypeMessage.VP_FIN, "vp_1"), 3.0)
+    # Quatre voitures en approche sur N (capacité 8) : densité 0,5 sur N, 0 ailleurs.
+    assert logique.passages[0].densite_moyenne == pytest.approx(0.5 / 4)
