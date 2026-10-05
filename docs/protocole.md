@@ -29,7 +29,7 @@ En UDP, un datagramme contient exactement une enveloppe JSON, sans en-tête de l
 Tous les messages, en TCP comme en UDP, ont la même forme : un objet JSON à plat.
 
 ```json
-{"type": "POS", "id": "voiture_12", "ts": 1727093000.512, "nonce": "9f2c1a0b7d3e4f56", "donnees": {"x": 3.5, "y": -1.0, "vitesse": 8.3, "segment": "N-O"}, "hmac": "5d41402abc4b2a76…"}
+{"type": "POS", "id": "voiture_12", "ts": 1727093000.512, "nonce": "9f2c1a0b7d3e4f56", "donnees": {"x": 3.5, "y": -1.0, "vitesse": 8.3, "segment": "N-O", "etape": "anneau"}, "hmac": "5d41402abc4b2a76…"}
 ```
 
 | Champ | Type | Rôle |
@@ -49,11 +49,11 @@ Dans le code, `Message` porte `type`, `id` et `donnees` ; `Enveloppe` y ajoute `
 | --- | --- | --- | --- |
 | HELLO | client → serveur | TCP | `{"categorie": "voiture", "entree": "N", "sortie": "E"}`, catégorie parmi `voiture`, `moto`, `trottinette`, `pieton`, `vp` |
 | HELLO_ACK | serveur → client | TCP | `{"accepte": true}`, ou `{"accepte": false, "raison": "...", "reessayer": true}` en cas de refus |
-| POS | client → serveur | UDP | `{"x": 3.5, "y": -1.0, "vitesse": 8.3, "segment": "N-O"}` |
-| VP_ALERT | client VP → serveur | TCP | `{"entree": "N", "sortie": "E", "eta": 8.0}` |
+| POS | client → serveur | UDP | `{"x": 3.5, "y": -1.0, "vitesse": 8.3, "segment": "N-O", "etape": "anneau"}` |
+| VP_ALERT | client VP → serveur | TCP | `{"entree": "N", "sortie": "E", "eta": 8.0}`, `eta` en secondes avant l'anneau |
 | VP_FIN | client VP → serveur | TCP | `{}` |
 | NOTIF | serveur → client | TCP | `{"code": "DEGAGEZ", "message": "..."}`, code parmi `DEGAGEZ`, `CHANGEZ_VOIE`, `ATTENDEZ`, `OK_PASSER` |
-| STATE | serveur → supervision | TCP | `{"usagers": [...]}`, voir plus bas |
+| STATE | serveur → supervision | TCP | `{"usagers": [...], "densite": {"N": 0.25, ...}, "vp_actif": true, "segments_reserves": ["E-N", "S-E"], "entrees_bloquees": [], "regulation": true}`, voir plus bas |
 | ABONNEMENT | supervision → serveur | TCP | `{}` : la connexion reçoit ensuite les STATE |
 | REGLAGE | supervision → serveur | TCP | `{"regulation": false}` |
 | PING | client → serveur | TCP | `{}` |
@@ -63,10 +63,22 @@ Dans le code, `Message` porte `type`, `id` et `donnees` ; `Enveloppe` y ajoute `
 Chaque élément de la liste `usagers` d'un STATE décrit un usager connecté :
 
 ```json
-{"id": "voiture_12", "categorie": "voiture", "entree": "S", "sortie": "N", "x": 0.0, "y": -20.0, "vitesse": 8.0, "segment": null, "consigne": null}
+{"id": "voiture_12", "categorie": "voiture", "entree": "S", "sortie": "N", "x": 0.0, "y": -20.0, "vitesse": 8.0, "segment": null, "etape": "approche", "consigne": null}
 ```
 
-`x` et `y` valent `null` tant que le serveur n'a reçu aucune position de l'usager. Les champs `densite`, `vp_actif`, `entrees_bloquees` et `regulation` s'ajouteront au STATE avec la régulation.
+`x` et `y` valent `null` tant que le serveur n'a reçu aucune position de l'usager. Les autres champs du STATE :
+
+- `densite` : pour chaque branche, le nombre d'usagers en approche sur cette branche divisé par sa capacité, borné entre 0 et 1. Faible en dessous de 0,4, moyenne en dessous de 0,7, forte au-delà.
+- `vp_actif` : `true` si au moins un VP annoncé n'a pas fini sa traversée.
+- `segments_reserves` : segments de l'anneau réservés aux VP en cours de traversée, triés par nom, pour que la supervision puisse les afficher.
+- `entrees_bloquees` : branches dont l'entrée est retenue par la régulation.
+- `regulation` : `true` si la régulation est active.
+
+## Véhicules prioritaires
+
+- Un VP s'annonce par VP_ALERT dès que son HELLO est accepté. Le serveur ne l'accepte que d'un usager inscrit de catégorie `vp`, avec la même entrée et la même sortie que son HELLO et un `eta` positif ou nul. Il réserve alors les segments de la trajectoire du VP. Un VP_ALERT répété pour un VP déjà annoncé ne change rien.
+- Le VP envoie VP_FIN au moment où il quitte l'anneau. Le serveur lève sa réservation et conserve la mesure de sa traversée : le temps entre son premier POS reçu sur l'anneau et son VP_FIN, avec le mode de régulation en vigueur quand il est entré sur l'anneau et la densité moyenne des branches pendant ce temps.
+- Si la session d'un VP se ferme avant son VP_FIN, sa réservation est levée sans mesure. Après une reconnexion, le VP se réannonce tant qu'il n'a pas quitté l'anneau.
 
 ## Sessions et heartbeat
 
@@ -90,6 +102,8 @@ Chaque élément de la liste `usagers` d'un STATE décrit un usager connecté :
 ## Positions en UDP
 
 Le serveur ne répond pas aux POS. Il n'accepte une position que si son émetteur a une session TCP ouverte, où son HELLO a été accepté : c'est le contrôle d'identité. Il vérifie aussi que `x` et `y` sont des nombres finis, que `vitesse` reste entre 0 et la vitesse maximale de la catégorie, et que `segment` est le nom d'un segment de l'anneau, ou `null` hors de l'anneau.
+
+Le champ `etape` dit où en est l'usager sur son trajet : `approche` (sur sa branche d'entrée, avant la ligne), `anneau`, `traversee` (piéton sur le passage) ou `sortie`. Le serveur s'en sert pour savoir qui attend en file sur chaque branche. Un `segment` n'est accepté qu'avec l'étape `anneau`, et l'étape `anneau` exige un segment.
 
 ## Trames refusées
 

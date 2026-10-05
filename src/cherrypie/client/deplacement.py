@@ -15,7 +15,7 @@ class Deplacement:
     À chaque pas, l'usager parcourt la distance que sa consigne permet : il ralentit
     pendant un DEGAGEZ, se décale sur sa droite pendant un DEGAGEZ ou un CHANGEZ_VOIE,
     et s'arrête sur la ligne d'entrée pendant un ATTENDEZ s'il ne l'a pas encore franchie.
-    La position, la vitesse et le segment de l'usager sont mis à jour après chaque pas.
+    La position, la vitesse, le segment et l'étape de l'usager sont mis à jour après chaque pas.
     """
 
     def __init__(self, usager: Usager, trajectoire: Trajectoire) -> None:
@@ -51,7 +51,7 @@ class Deplacement:
         return self.__avancement >= self.__trajectoire.longueur
 
     def avancer(self, duree: float) -> None:
-        """Fait avancer l'usager pendant une durée, puis met à jour sa position, sa vitesse et son segment.
+        """Fait avancer l'usager pendant une durée, puis met à jour sa position, sa vitesse, son segment et son étape.
 
         Args:
             duree (float): durée du pas, en secondes.
@@ -79,8 +79,9 @@ class Deplacement:
         )
 
     def __placer_usager(self, vitesse: float) -> None:
-        """Reporte l'avancement sur l'usager : position (décalage compris), vitesse et segment."""
+        """Reporte l'avancement sur l'usager : position (décalage compris), vitesse, segment et étape."""
         self.__usager.position = self.__trajectoire.position_a(self.__avancement, self.__usager.decalage_lateral())
         self.__usager.vitesse = vitesse
         segment = self.__trajectoire.segment_a(self.__avancement)
         self.__usager.segment = None if segment is None else segment.nom
+        self.__usager.etape = self.__trajectoire.etape_a(self.__avancement)

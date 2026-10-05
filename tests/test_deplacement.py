@@ -68,6 +68,16 @@ def test_vitesse_reelle_reduite_au_dernier_pas(deplacement: Deplacement, voiture
     assert voiture.vitesse == pytest.approx(1.0)
 
 
+@pytest.mark.parametrize(
+    ("avancement", "etape"),
+    [(1.0, Etape.APPROCHE), (LONGUEUR_BRANCHE + 1.0, Etape.ANNEAU), (LONGUEUR_BRANCHE + 80.0, Etape.SORTIE)],
+    ids=["approche", "anneau", "sortie"],
+)
+def test_etape_suit_l_avancement(deplacement: Deplacement, voiture: Voiture, avancement: float, etape: Etape) -> None:
+    amener_a(deplacement, avancement)
+    assert voiture.etape is etape
+
+
 @pytest.mark.parametrize("duree", [-0.1, float("nan")], ids=["negative", "nan"])
 def test_duree_invalide_refusee(deplacement: Deplacement, duree: float) -> None:
     with pytest.raises(ValueError, match="durée"):
@@ -81,7 +91,7 @@ def test_attendez_arrete_sur_la_ligne_d_entree(deplacement: Deplacement, voiture
     for _ in range(100):
         deplacement.avancer(PAS)
     assert deplacement.avancement == pytest.approx(LONGUEUR_BRANCHE)
-    assert deplacement.trajectoire.etape_a(deplacement.avancement) is Etape.APPROCHE
+    assert voiture.etape is Etape.APPROCHE
     assert voiture.vitesse == 0.0
     assert voiture.segment is None
 

@@ -74,7 +74,8 @@ class ClientTest:
 
     def envoyer_position(self, x: float, y: float, segment: str | None = None) -> None:
         """Envoie un POS signé en UDP."""
-        donnees = {"x": x, "y": y, "vitesse": 5.0, "segment": segment}
+        etape = "approche" if segment is None else "anneau"
+        donnees = {"x": x, "y": y, "vitesse": 5.0, "segment": segment, "etape": etape}
         enveloppe = self.__signataire.signer(Message(TypeMessage.POS, self.__identifiant, donnees))
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
             udp.sendto(enveloppe.vers_octets(), (self.__config.hote, self.__config.port_udp))

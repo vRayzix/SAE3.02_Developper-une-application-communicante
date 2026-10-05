@@ -6,6 +6,7 @@ from cherrypie.commun.erreurs import TrameInvalideError, UsagerInconnuError
 from cherrypie.commun.protocole import Message, TypeMessage
 from cherrypie.modele.position import Position
 from cherrypie.modele.rond_point import RondPoint
+from cherrypie.modele.trajectoire import Etape
 from cherrypie.serveur.logique import IDENTIFIANT_SERVEUR, LogiqueServeur, Reponse
 
 TIMEOUT = 6.0
@@ -171,34 +172,35 @@ def test_position_envoyee_en_tcp_refusee(logique: LogiqueServeur) -> None:
 # ---------- Positions reçues en UDP ----------
 
 def pos(identifiant: str = "voiture_12", **modifications: object) -> Message:
-    donnees = {"x": 3.5, "y": -20.0, "vitesse": 4.2, "segment": "S-E"} | modifications
+    donnees = {"x": 3.5, "y": -20.0, "vitesse": 4.2, "segment": "S-E", "etape": "anneau"} | modifications
     return Message(TypeMessage.POS, identifiant, donnees)
 
 
 def test_pos_met_a_jour_l_usager(logique: LogiqueServeur) -> None:
     session_inscrite(logique)
-    logique.traiter_udp(pos())
+    logique.traiter_udp(pos(), 1.0)
     usager = logique.registre.obtenir("voiture_12")
     assert usager.position == Position(3.5, -20.0)
     assert usager.vitesse == pytest.approx(4.2)
     assert usager.segment == "S-E"
+    assert usager.etape is Etape.ANNEAU
 
 
 def test_pos_hors_de_l_anneau_sans_segment(logique: LogiqueServeur) -> None:
     session_inscrite(logique)
-    logique.traiter_udp(pos(segment=None))
+    logique.traiter_udp(pos(segment=None, etape="approche"), 1.0)
     assert logique.registre.obtenir("voiture_12").segment is None
 
 
 def test_pos_d_un_usager_sans_session_refuse(logique: LogiqueServeur) -> None:
     with pytest.raises(UsagerInconnuError, match="voiture_99"):
-        logique.traiter_udp(pos("voiture_99"))
+        logique.traiter_udp(pos("voiture_99"), 1.0)
 
 
 def test_pos_apres_fermeture_de_la_session_refuse(logique: LogiqueServeur) -> None:
     logique.fermer_session(session_inscrite(logique))
     with pytest.raises(UsagerInconnuError):
-        logique.traiter_udp(pos())
+        logique.traiter_udp(pos(), 1.0)
 
 
 @pytest.mark.parametrize(
@@ -208,15 +210,18 @@ def test_pos_apres_fermeture_de_la_session_refuse(logique: LogiqueServeur) -> No
         ({"y": "loin"}, "nombre"),
         ({"vitesse": 50.0}, "hors limites"),
         ({"segment": "N-S"}, "segment inconnu"),
+        ({"etape": "envol"}, "étape inconnue"),
+        ({"etape": "approche"}, "incohérent"),
+        ({"segment": None}, "incohérent"),
     ],
-    ids=["x-nan", "y-texte", "trop-rapide", "segment-inconnu"],
+    ids=["x-nan", "y-texte", "trop-rapide", "segment-inconnu", "etape-inconnue", "segment-hors-anneau", "anneau-sans-segment"],
 )
 def test_pos_invalide_refuse_sans_toucher_l_usager(
     logique: LogiqueServeur, modifications: dict, motif: str
 ) -> None:
     session_inscrite(logique)
     with pytest.raises(TrameInvalideError, match=motif):
-        logique.traiter_udp(pos(**modifications))
+        logique.traiter_udp(pos(**modifications), 1.0)
     usager = logique.registre.obtenir("voiture_12")
     assert usager.position is None
     assert usager.vitesse == 0.0
@@ -225,14 +230,14 @@ def test_pos_invalide_refuse_sans_toucher_l_usager(
 def test_pos_incomplet_refuse(logique: LogiqueServeur) -> None:
     session_inscrite(logique)
     incomplet = Message(TypeMessage.POS, "voiture_12", {"x": 0.0, "y": 0.0, "vitesse": 1.0})
-    with pytest.raises(TrameInvalideError, match="il manque : segment"):
-        logique.traiter_udp(incomplet)
+    with pytest.raises(TrameInvalideError, match="il manque : segment, etape"):
+        logique.traiter_udp(incomplet, 1.0)
 
 
 def test_autre_message_qu_un_pos_refuse_en_udp(logique: LogiqueServeur) -> None:
     session_inscrite(logique)
     with pytest.raises(TrameInvalideError, match="seuls les POS"):
-        logique.traiter_udp(Message(TypeMessage.PING, "voiture_12"))
+        logique.traiter_udp(Message(TypeMessage.PING, "voiture_12"), 1.0)
 
 
 # ---------- Heartbeat et STATE ----------
@@ -259,13 +264,144 @@ def test_superviseurs_seules_sessions_abonnees(logique: LogiqueServeur) -> None:
 def test_etat_sans_usager(logique: LogiqueServeur) -> None:
     etat = logique.construire_etat()
     assert etat.type is TypeMessage.STATE
-    assert etat.donnees == {"usagers": []}
+    assert etat.donnees == {
+        "usagers": [],
+        "densite": {"N": 0.0, "E": 0.0, "S": 0.0, "O": 0.0},
+        "vp_actif": False,
+        "segments_reserves": [],
+        "entrees_bloquees": [],
+        "regulation": True,
+    }
 
 
 def test_etat_liste_les_usagers_et_leur_derniere_position(logique: LogiqueServeur) -> None:
     session_inscrite(logique, "voiture_12")
-    logique.traiter_udp(pos())
+    logique.traiter_udp(pos(), 1.0)
     (usager,) = logique.construire_etat().donnees["usagers"]
     assert usager["id"] == "voiture_12"
     assert usager["categorie"] == "voiture"
     assert (usager["x"], usager["y"]) == (3.5, -20.0)
+
+
+# ---------- Véhicules prioritaires ----------
+
+def vp_inscrit(logique: LogiqueServeur, identifiant: str = "vp_1") -> int:
+    """Ouvre une session et y inscrit un VP qui va du sud au nord."""
+    numero = logique.ouvrir_session(0.0)
+    logique.traiter_tcp(numero, hello(identifiant, categorie="vp", entree="S", sortie="N"), 0.5)
+    return numero
+
+
+def alerte(identifiant: str = "vp_1", **modifications: object) -> Message:
+    donnees = {"entree": "S", "sortie": "N", "eta": 6.0} | modifications
+    return Message(TypeMessage.VP_ALERT, identifiant, donnees)
+
+
+def test_vp_alert_reserve_la_trajectoire(logique: LogiqueServeur) -> None:
+    numero = vp_inscrit(logique)
+    assert logique.traiter_tcp(numero, alerte(), 1.0) == Reponse()
+    (passage,) = logique.passages_en_cours
+    assert passage.segments_reserves == ("S-E", "E-N")
+    assert logique.vp_actif
+
+
+def test_vp_alert_repete_sans_double_reservation(logique: LogiqueServeur) -> None:
+    numero = vp_inscrit(logique)
+    logique.traiter_tcp(numero, alerte(), 1.0)
+    logique.traiter_tcp(numero, alerte(eta=3.0), 2.0)
+    assert len(logique.passages_en_cours) == 1
+
+
+@pytest.mark.parametrize(
+    ("message", "motif"),
+    [
+        (alerte(sortie="E"), "différent du trajet"),
+        (alerte(eta=-1.0), "eta invalide"),
+        (alerte(eta="bientôt"), "eta invalide"),
+    ],
+    ids=["trajet-different", "eta-negatif", "eta-texte"],
+)
+def test_vp_alert_invalide_refuse(logique: LogiqueServeur, message: Message, motif: str) -> None:
+    numero = vp_inscrit(logique)
+    with pytest.raises(TrameInvalideError, match=motif):
+        logique.traiter_tcp(numero, message, 1.0)
+    assert not logique.vp_actif
+
+
+def test_vp_alert_d_une_voiture_refuse(logique: LogiqueServeur) -> None:
+    numero = session_inscrite(logique, "voiture_12")
+    with pytest.raises(TrameInvalideError, match="pas un véhicule prioritaire"):
+        logique.traiter_tcp(numero, alerte("voiture_12"), 1.0)
+
+
+def test_vp_alert_avant_le_hello_refuse(logique: LogiqueServeur) -> None:
+    numero = logique.ouvrir_session(0.0)
+    with pytest.raises(TrameInvalideError, match="usager inscrit"):
+        logique.traiter_tcp(numero, alerte(), 1.0)
+
+
+def test_traversee_mesuree_de_l_entree_sur_l_anneau_au_vp_fin(logique: LogiqueServeur) -> None:
+    numero = vp_inscrit(logique)
+    logique.traiter_tcp(numero, alerte(), 1.0)
+    logique.traiter_udp(pos("vp_1", segment=None, etape="approche"), 2.0)
+    logique.traiter_udp(pos("vp_1", segment="S-E"), 3.0)
+    logique.traiter_udp(pos("vp_1", segment="E-N"), 4.0)
+    logique.traiter_tcp(numero, Message(TypeMessage.VP_FIN, "vp_1"), 8.5)
+    (mesure,) = logique.passages
+    assert mesure.duree == pytest.approx(5.5)
+    assert mesure.regulation is True
+    assert not logique.vp_actif
+
+
+def test_vp_fin_sans_vp_alert_refuse(logique: LogiqueServeur) -> None:
+    numero = vp_inscrit(logique)
+    with pytest.raises(TrameInvalideError, match="sans VP_ALERT"):
+        logique.traiter_tcp(numero, Message(TypeMessage.VP_FIN, "vp_1"), 1.0)
+
+
+def test_vp_disparu_leve_sa_reservation_sans_mesure(logique: LogiqueServeur) -> None:
+    numero = vp_inscrit(logique)
+    logique.traiter_tcp(numero, alerte(), 1.0)
+    logique.traiter_udp(pos("vp_1"), 2.0)
+    logique.fermer_session(numero)
+    assert not logique.vp_actif
+    assert logique.passages == []
+
+
+# ---------- Cadence et STATE complet ----------
+
+def test_cadence_envoie_le_state_a_chaque_supervision(logique: LogiqueServeur) -> None:
+    session_inscrite(logique)
+    supervisions = []
+    for nom in ("supervision_1", "supervision_2"):
+        numero = logique.ouvrir_session(0.0)
+        logique.traiter_tcp(numero, Message(TypeMessage.ABONNEMENT, nom), 0.1)
+        supervisions.append(numero)
+    envois = logique.cadencer()
+    assert [numero for numero, _ in envois] == supervisions
+    assert {message.type for _, message in envois} == {TypeMessage.STATE}
+
+
+def test_state_donne_la_densite_des_branches(logique: LogiqueServeur) -> None:
+    session_inscrite(logique, "voiture_12")
+    assert logique.construire_etat().donnees["densite"]["N"] == pytest.approx(1 / 8)
+
+
+def test_state_signale_le_vp_et_ses_segments_reserves(logique: LogiqueServeur) -> None:
+    numero = vp_inscrit(logique)
+    logique.traiter_tcp(numero, alerte(), 1.0)
+    donnees = logique.construire_etat().donnees
+    assert donnees["vp_actif"] is True
+    assert donnees["segments_reserves"] == ["E-N", "S-E"]
+
+
+def test_densite_relevee_pendant_la_traversee_du_vp(logique: LogiqueServeur) -> None:
+    for numero_voiture in range(4):
+        session_inscrite(logique, f"voiture_{numero_voiture}")
+    numero = vp_inscrit(logique)
+    logique.traiter_tcp(numero, alerte(), 1.0)
+    logique.traiter_udp(pos("vp_1"), 2.0)
+    logique.cadencer()
+    logique.traiter_tcp(numero, Message(TypeMessage.VP_FIN, "vp_1"), 3.0)
+    # Quatre voitures en approche sur N (capacité 8) : densité 0,5 sur N, 0 ailleurs.
+    assert logique.passages[0].densite_moyenne == pytest.approx(0.5 / 4)

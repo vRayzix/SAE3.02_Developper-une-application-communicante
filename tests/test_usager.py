@@ -73,6 +73,10 @@ def test_nouvel_usager_a_l_arret_et_sans_position(voiture: Voiture) -> None:
     assert voiture.consigne is None
 
 
+def test_nouvel_usager_en_approche(voiture: Voiture) -> None:
+    assert voiture.etape is Etape.APPROCHE
+
+
 # ---------- Consignes ----------
 
 def test_degagez_ralentit_et_decale(voiture: Voiture) -> None:
@@ -161,6 +165,16 @@ def test_segment_remis_a_none_en_quittant_l_anneau(voiture: Voiture) -> None:
     assert voiture.segment is None
 
 
+def test_etape_mise_a_jour(voiture: Voiture) -> None:
+    voiture.etape = Etape.ANNEAU
+    assert voiture.etape is Etape.ANNEAU
+
+
+def test_etape_en_texte_refusee(voiture: Voiture) -> None:
+    with pytest.raises(TypeError, match="étape"):
+        voiture.etape = "anneau"
+
+
 def test_segment_vide_refuse(voiture: Voiture) -> None:
     with pytest.raises(ValueError, match="segment"):
         voiture.segment = ""
@@ -178,6 +192,7 @@ def test_vers_dict_nouvel_usager(voiture: Voiture) -> None:
         "y": None,
         "vitesse": 0.0,
         "segment": None,
+        "etape": "approche",
         "consigne": None,
     }
 
@@ -186,6 +201,7 @@ def test_aller_retour_dict_conserve_classe_et_etat(voiture: Voiture) -> None:
     voiture.position = Position(3.5, -20.0)
     voiture.vitesse = 4.2
     voiture.segment = "S-E"
+    voiture.etape = Etape.ANNEAU
     voiture.reagir(CodeNotification.DEGAGEZ)
     copie = Usager.depuis_dict(voiture.vers_dict())
     assert type(copie) is Voiture
@@ -197,6 +213,7 @@ def test_depuis_dict_contenu_d_un_hello() -> None:
     assert isinstance(usager, VehiculePrioritaire)
     assert usager.position is None
     assert usager.vitesse == 0.0
+    assert usager.etape is Etape.APPROCHE
 
 
 def test_depuis_dict_categorie_inconnue_refusee() -> None:
