@@ -277,7 +277,13 @@ class ClientUsager(threading.Thread):
         """Avance d'un pas, à la cadence des positions, puis envoie et signale la nouvelle position."""
         self.__deplacement.avancer(self.__config.intervalle_position)
         usager = self.usager
-        donnees = {"x": usager.position.x, "y": usager.position.y, "vitesse": usager.vitesse, "segment": usager.segment}
+        donnees = {
+            "x": usager.position.x,
+            "y": usager.position.y,
+            "vitesse": usager.vitesse,
+            "segment": usager.segment,
+            "etape": usager.etape.value,
+        }
         octets = self.__signataire.signer(Message(TypeMessage.POS, usager.identifiant, donnees)).vers_octets()
         try:
             self.__socket_udp.sendto(octets, (self.__config.hote, self.__config.port_udp))

@@ -171,7 +171,7 @@ def test_position_envoyee_en_tcp_refusee(logique: LogiqueServeur) -> None:
 # ---------- Positions reçues en UDP ----------
 
 def pos(identifiant: str = "voiture_12", **modifications: object) -> Message:
-    donnees = {"x": 3.5, "y": -20.0, "vitesse": 4.2, "segment": "S-E"} | modifications
+    donnees = {"x": 3.5, "y": -20.0, "vitesse": 4.2, "segment": "S-E", "etape": "anneau"} | modifications
     return Message(TypeMessage.POS, identifiant, donnees)
 
 
@@ -186,7 +186,7 @@ def test_pos_met_a_jour_l_usager(logique: LogiqueServeur) -> None:
 
 def test_pos_hors_de_l_anneau_sans_segment(logique: LogiqueServeur) -> None:
     session_inscrite(logique)
-    logique.traiter_udp(pos(segment=None))
+    logique.traiter_udp(pos(segment=None, etape="approche"))
     assert logique.registre.obtenir("voiture_12").segment is None
 
 
@@ -225,7 +225,7 @@ def test_pos_invalide_refuse_sans_toucher_l_usager(
 def test_pos_incomplet_refuse(logique: LogiqueServeur) -> None:
     session_inscrite(logique)
     incomplet = Message(TypeMessage.POS, "voiture_12", {"x": 0.0, "y": 0.0, "vitesse": 1.0})
-    with pytest.raises(TrameInvalideError, match="il manque : segment"):
+    with pytest.raises(TrameInvalideError, match="il manque : segment, etape"):
         logique.traiter_udp(incomplet)
 
 

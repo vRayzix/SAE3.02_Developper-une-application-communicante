@@ -14,13 +14,14 @@ from cherrypie.commun.erreurs import BrancheInconnueError, TrameInvalideError
 from cherrypie.commun.protocole import Message, TypeMessage
 from cherrypie.modele.position import Position
 from cherrypie.modele.rond_point import RondPoint
+from cherrypie.modele.trajectoire import Etape
 from cherrypie.modele.usager import Usager
 from cherrypie.serveur.registre import Registre
 from cherrypie.serveur.session import Session
 
 IDENTIFIANT_SERVEUR = "serveur"
 CHAMPS_HELLO = ("categorie", "entree", "sortie")
-CHAMPS_POS = ("x", "y", "vitesse", "segment")
+CHAMPS_POS = ("x", "y", "vitesse", "segment", "etape")
 
 journal = logging.getLogger(__name__)
 
@@ -164,12 +165,20 @@ class LogiqueServeur:
         if donnees["segment"] is not None and donnees["segment"] not in noms_segments:
             raise TrameInvalideError(f"POS sur un segment inconnu : {donnees['segment']!r}")
         try:
+            etape = Etape(donnees["etape"])
+        except ValueError as erreur:
+            raise TrameInvalideError(f"POS avec une étape inconnue : {donnees['etape']!r}") from erreur
+        # Le segment n'a de sens que sur l'anneau : la régulation s'appuie sur les deux à la fois.
+        if (etape is Etape.ANNEAU) != (donnees["segment"] is not None):
+            raise TrameInvalideError(f"POS incohérent : étape {etape.value} et segment {donnees['segment']!r}")
+        try:
             position = Position(donnees["x"], donnees["y"])
             # La vitesse est la première valeur modifiée : si elle est refusée, l'usager reste tel quel.
             usager.vitesse = donnees["vitesse"]
         except (TypeError, ValueError) as erreur:
             raise TrameInvalideError(f"POS invalide de {message.emetteur} : {erreur}") from erreur
         usager.segment = donnees["segment"]
+        usager.etape = etape
         usager.position = position
 
     def sessions_expirees(self, maintenant: float) -> list[int]:
