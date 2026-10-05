@@ -6,6 +6,7 @@ from cherrypie.commun.erreurs import TrameInvalideError, UsagerInconnuError
 from cherrypie.commun.protocole import Message, TypeMessage
 from cherrypie.modele.position import Position
 from cherrypie.modele.rond_point import RondPoint
+from cherrypie.modele.trajectoire import Etape
 from cherrypie.serveur.logique import IDENTIFIANT_SERVEUR, LogiqueServeur, Reponse
 
 TIMEOUT = 6.0
@@ -182,6 +183,7 @@ def test_pos_met_a_jour_l_usager(logique: LogiqueServeur) -> None:
     assert usager.position == Position(3.5, -20.0)
     assert usager.vitesse == pytest.approx(4.2)
     assert usager.segment == "S-E"
+    assert usager.etape is Etape.ANNEAU
 
 
 def test_pos_hors_de_l_anneau_sans_segment(logique: LogiqueServeur) -> None:
@@ -208,8 +210,11 @@ def test_pos_apres_fermeture_de_la_session_refuse(logique: LogiqueServeur) -> No
         ({"y": "loin"}, "nombre"),
         ({"vitesse": 50.0}, "hors limites"),
         ({"segment": "N-S"}, "segment inconnu"),
+        ({"etape": "envol"}, "étape inconnue"),
+        ({"etape": "approche"}, "incohérent"),
+        ({"segment": None}, "incohérent"),
     ],
-    ids=["x-nan", "y-texte", "trop-rapide", "segment-inconnu"],
+    ids=["x-nan", "y-texte", "trop-rapide", "segment-inconnu", "etape-inconnue", "segment-hors-anneau", "anneau-sans-segment"],
 )
 def test_pos_invalide_refuse_sans_toucher_l_usager(
     logique: LogiqueServeur, modifications: dict, motif: str
