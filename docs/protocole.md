@@ -128,6 +128,14 @@ REGLAGE n'est accepté que d'une session de supervision abonnée, avec `regulati
 - Une nouvelle session repart sans consigne : le serveur renvoie celles qui s'appliquent encore.
 - À la fin de son trajet, ou quand on l'arrête, le client envoie un BYE : le serveur le retire du registre sans attendre le timeout.
 
+## Côté supervision
+
+- La supervision ouvre une connexion TCP et envoie un ABONNEMENT, au nom de `supervision`. Le serveur ne l'accuse pas : la session reçoit ensuite un STATE à chaque cadence.
+- Comme un client, elle envoie un PING toutes les `intervalle_ping` secondes, sans quoi le serveur la retirerait au bout de `timeout_client`. Si elle ne reçoit ni PONG ni STATE pendant `timeout_client` secondes, elle considère la connexion perdue, se reconnecte avec le même backoff que les clients, puis se réabonne.
+- Elle envoie un REGLAGE à chaque clic sur l'interrupteur de régulation. Le serveur ne répond pas : l'effet se lit dans le champ `regulation` des STATE suivants, et c'est ce champ que la supervision affiche. Un réglage demandé pendant une coupure est abandonné ; à la reconnexion, l'interrupteur reprend l'état du serveur.
+- Un STATE auquel il manque un champ est journalisé puis ignoré.
+- À la fermeture de la fenêtre, la supervision envoie un BYE.
+
 ## Positions en UDP
 
 Le serveur ne répond pas aux POS. Il n'accepte une position que si son émetteur a une session TCP ouverte, où son HELLO a été accepté : c'est le contrôle d'identité. Il vérifie aussi que `x` et `y` sont des nombres finis, que `vitesse` reste entre 0 et la vitesse maximale de la catégorie, et que `segment` est le nom d'un segment de l'anneau, ou `null` hors de l'anneau.

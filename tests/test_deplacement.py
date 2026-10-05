@@ -7,11 +7,12 @@ import pytest
 from cherrypie.client.deplacement import DISTANCE_SECURITE, Deplacement
 from cherrypie.commun.protocole import CodeNotification
 from cherrypie.modele.rond_point import RondPoint
-from cherrypie.modele.trajectoire import LONGUEUR_BRANCHE, Etape
+from cherrypie.modele.trajectoire import LARGEUR_CHAUSSEE, LONGUEUR_BRANCHE, RECUL_LIGNE_VEHICULE, Etape
 from cherrypie.modele.usager import DECALAGE_DEGAGEMENT, FACTEUR_RALENTISSEMENT, Pieton, Voiture
 
 RAYON = 20.0
 PAS = 0.2
+LIGNE = LONGUEUR_BRANCHE - RECUL_LIGNE_VEHICULE
 
 
 @pytest.fixture
@@ -90,10 +91,17 @@ def test_attendez_arrete_sur_la_ligne_d_entree(deplacement: Deplacement, voiture
     voiture.reagir(CodeNotification.ATTENDEZ)
     for _ in range(100):
         deplacement.avancer(PAS)
-    assert deplacement.avancement == pytest.approx(LONGUEUR_BRANCHE)
+    assert deplacement.avancement == pytest.approx(LIGNE)
     assert voiture.etape is Etape.APPROCHE
     assert voiture.vitesse == 0.0
     assert voiture.segment is None
+
+
+def test_attendez_arrete_au_bord_de_l_anneau(deplacement: Deplacement, voiture: Voiture) -> None:
+    voiture.reagir(CodeNotification.ATTENDEZ)
+    for _ in range(100):
+        deplacement.avancer(PAS)
+    assert math.hypot(voiture.position.x, voiture.position.y) == pytest.approx(RAYON + LARGEUR_CHAUSSEE / 2)
 
 
 def test_ok_passer_relance_l_usager_arrete(deplacement: Deplacement, voiture: Voiture) -> None:
@@ -102,8 +110,8 @@ def test_ok_passer_relance_l_usager_arrete(deplacement: Deplacement, voiture: Vo
         deplacement.avancer(PAS)
     voiture.reagir(CodeNotification.OK_PASSER)
     deplacement.avancer(PAS)
-    assert deplacement.avancement == pytest.approx(LONGUEUR_BRANCHE + Voiture.VITESSE_MAX * PAS)
-    assert voiture.segment == "S-E"
+    assert deplacement.avancement == pytest.approx(LIGNE + Voiture.VITESSE_MAX * PAS)
+    assert voiture.vitesse == pytest.approx(Voiture.VITESSE_MAX)
 
 
 def test_attendez_sans_effet_une_fois_la_ligne_franchie(deplacement: Deplacement, voiture: Voiture) -> None:
@@ -172,7 +180,7 @@ def test_ceder_arrete_sur_la_ligne_d_entree(deplacement: Deplacement, voiture: V
     deplacement.noter_devant(None, ceder=True)
     for _ in range(100):
         deplacement.avancer(PAS)
-    assert deplacement.avancement == pytest.approx(LONGUEUR_BRANCHE)
+    assert deplacement.avancement == pytest.approx(LIGNE)
     assert voiture.etape is Etape.APPROCHE
 
 
@@ -181,7 +189,7 @@ def test_anneau_libre_l_usager_entre(deplacement: Deplacement, voiture: Voiture)
     for _ in range(100):
         deplacement.avancer(PAS)
     deplacement.noter_devant(None, ceder=False)
-    deplacement.avancer(PAS)
+    deplacement.avancer(RECUL_LIGNE_VEHICULE / Voiture.VITESSE_MAX + PAS)
     assert voiture.etape is Etape.ANNEAU
 
 

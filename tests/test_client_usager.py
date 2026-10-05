@@ -307,7 +307,7 @@ def test_attendez_arrete_sur_la_ligne_jusqu_a_ok_passer(
     faux_serveur: FauxServeur, preparer_client: Callable[..., ClientUsager]
 ) -> None:
     client = preparer_client(faux_serveur.config)
-    ligne = client.deplacement.trajectoire.longueur_approche
+    ligne = client.deplacement.trajectoire.ligne_entree
     # Placé à deux mètres de la ligne d'entrée, l'usager l'atteint en quelques pas.
     client.deplacement.avancer((ligne - 2.0) / Voiture.VITESSE_MAX)
     client.start()
@@ -428,7 +428,7 @@ def test_cedez_le_passage_arrete_sur_la_ligne(
     faux_serveur: FauxServeur, preparer_client: Callable[..., ClientUsager]
 ) -> None:
     client = preparer_client(faux_serveur.config)
-    ligne = client.deplacement.trajectoire.longueur_approche
+    ligne = client.deplacement.trajectoire.ligne_entree
     client.deplacement.avancer((ligne - 2.0) / Voiture.VITESSE_MAX)
     client.start()
     faux_serveur.accepter()

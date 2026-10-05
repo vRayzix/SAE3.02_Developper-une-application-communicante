@@ -308,8 +308,10 @@ classDiagram
 
     class Trajectoire {
         -troncons : list[TronconDroit | TronconArc]
+        -recul_ligne : float
         +longueur() float
         +longueur_approche() float
+        +ligne_entree() float
         +segments() list[Segment]
         +pour_vehicule(rond_point: RondPoint, entree: str, sortie: str) Trajectoire$
         +pour_pieton(rond_point: RondPoint, branche: str) Trajectoire$
@@ -329,7 +331,7 @@ classDiagram
 ```
 
 - Une trajectoire est une suite de tronçons parcourus l'un après l'autre : des tronçons droits sur les branches (approche, sortie, passage piéton) et des arcs sur l'anneau, un par segment. Les deux types de tronçons offrent les mêmes membres (`etape`, `longueur`, `segment`, `position_a()`) : la trajectoire trouve le tronçon qui correspond à l'avancement et lui délègue le calcul.
-- L'avancement est la distance parcourue depuis le départ. `longueur_approche` donne la position de la ligne d'entrée, où s'arrête un usager qui a reçu `ATTENDEZ`. Un point situé pile à la jonction de deux tronçons appartient au premier : un usager arrêté sur la ligne est encore en approche.
+- L'avancement est la distance parcourue depuis le départ. `longueur_approche` donne la fin de l'approche, et `ligne_entree` la ligne où s'arrête un usager qui a reçu `ATTENDEZ` ou qui cède le passage. L'approche d'un véhicule rejoint l'axe de l'anneau ; sa ligne est 3,5 m plus tôt, au bord de l'anneau, pour qu'un véhicule à l'arrêt n'empiète pas sur la voie où roulent les autres. Pour un piéton, la ligne est au bord de la chaussée, au bout de l'approche. Un point situé pile à la jonction de deux tronçons appartient au premier.
 - Un véhicule parcourt 50 m d'approche, les segments de l'anneau, puis 50 m de sortie. Un piéton parcourt 4 m de trottoir jusqu'au bord de la chaussée, traverse les 7 m du passage piéton, placé à 8 m de l'anneau, puis repart sur le trottoir d'en face : il croise l'approche des véhicules de cette branche.
 - Le décalage latéral se compte vers la droite du sens de marche ; sur l'anneau, c'est l'extérieur.
 - Les arcs ne font que référencer les segments du rond-point, sans les posséder : agrégation.
@@ -637,7 +639,7 @@ classDiagram
     Deplacement --> Trajectoire
 ```
 
-- Chaque `ClientUsager` est un `threading.Thread` avec ses propres sockets. Il ne dépend pas de Qt : il signale sa position, les consignes reçues et l'état de sa connexion par trois fonctions de rappel, appelées depuis son thread. L'IHM les reliera à des signaux Qt, sans que le client touche jamais un widget. La position est transmise sous forme de copie (`Usager.vers_dict()`), jamais par l'objet partagé.
+- Chaque `ClientUsager` est un `threading.Thread` avec ses propres sockets. Il ne dépend pas de Qt : il signale sa position, les consignes reçues et l'état de sa connexion par trois fonctions de rappel, appelées depuis son thread. L'IHM les relie à des signaux Qt par un `RelaisClient`, sans que le client touche jamais un widget. La position est transmise sous forme de copie (`Usager.vers_dict()`), jamais par l'objet partagé.
 - `rouler()` enchaîne les connexions. Après une coupure, ou un refus provisoire (`InscriptionRefuseeError.reessayer`), il attend avec un délai qui double (1, 2, 4, 8 s, plafonné à 10 s). L'attente se fait sur un `threading.Event` : `arreter()` réveille le client sans attendre la fin du délai. Un refus définitif l'arrête.
 - `circuler()` fait avancer l'usager d'un pas à chaque intervalle de position, envoie le POS en UDP, envoie un PING toutes les `intervalle_ping` secondes et traite les messages reçus. Elle s'arrête si le serveur reste muet plus de `timeout_client` secondes, et dit au revoir (BYE) à la fin du trajet ou à l'arrêt.
 - Les messages lus attendent dans une file (`recus`) : une NOTIF arrivée dans la même lecture que le HELLO_ACK n'est pas perdue.
@@ -646,52 +648,185 @@ classDiagram
 
 Setters prévus : aucun.
 
-## Paquets `ihm` et `bdd`
+## Paquet `ihm`
 
 ```mermaid
 classDiagram
     class QMainWindow
     class QGraphicsScene
+    class QGraphicsView
+    class QGraphicsEllipseItem
+    class QGroupBox
+    class QObject
     class QThread
-    class QWidget
 
     class FenetreSupervision {
+        -config : Configuration
         -scene : SceneRondPoint
-        -thread_reseau : ThreadReseau
+        -vue : VueRondPoint
+        -legende : Legende
         -panneau_creation : PanneauCreation
-        -panneau_stats : PanneauStats
-        -interrupteur_regulation : QCheckBox
-        -afficher_etat(etat: dict) None
-        -basculer_regulation(active: bool) None
+        -etat_connexion : QLabel
+        -indicateur_regulation : QLabel
+        -indicateur_vp : QLabel
+        -case_regulation : QCheckBox
+        -consignes : QListWidget
+        -onglets : QTabWidget
+        -case_a_aligner : bool
+        -fil : QThread
+        -reseau : ReseauSupervision
+        +demarrer() None
+        +arreter() None
         #closeEvent(evenement: QCloseEvent) None
+        -afficher_etat(etat: dict) None
+        -noter_connexion(etat: str, detail: str) None
+        -regler(coche: bool) None
+        -noter_consigne(identifiant: str, code: str, texte: str, appliquee: bool) None
+        -colorer(etiquette: QLabel, texte: str, couleur: QColor) None$
+        -relier() None
+        -disposer() None
     }
 
     class SceneRondPoint {
         -rond_point : RondPoint
-        -marqueurs : dict[str, QGraphicsEllipseItem]
-        +mettre_a_jour(usagers: list[dict], entrees_bloquees: list[str]) None
-        -dessiner_rond_point() None
+        -bandes_densite : dict[str, QGraphicsLineItem]
+        -textes_densite : dict[str, QGraphicsTextItem]
+        -arcs_reserves : dict[str, QGraphicsPathItem]
+        -feux_entree : dict[str, QGraphicsRectItem]
+        -marqueurs : dict[str, MarqueurUsager]
+        +vers_scene(position: Position) QPointF$
+        +afficher_etat(etat: dict) None
+        -afficher_usagers(usagers: list[dict]) None
+        -afficher_densite(nom: str, densite: float) None
+        -dessiner_branche(branche: Branche) None
+        -dessiner_anneau() None
+        -dessiner_passage_pieton(branche: Branche) None
+        -dessiner_densite(branche: Branche) None
+        -dessiner_feu_entree(branche: Branche) None
+        -dessiner_arc_reserve(segment: Segment) None
+        -ajouter_ligne(debut: Position, fin: Position, crayon: QPen) QGraphicsLineItem
+        -ecrire(texte: QGraphicsTextItem, contenu: str, branche: Branche) None$
     }
 
-    class ThreadReseau {
-        +etat_recu : pyqtSignal~dict~
-        +connexion_perdue : pyqtSignal~str~
+    class MarqueurUsager {
+        -categorie : str
+        -halo : QGraphicsEllipseItem | None
+        +afficher(usager: dict) None
+    }
+
+    class VueRondPoint {
+        #resizeEvent(evenement: QResizeEvent) None
+    }
+
+    class Legende {
+        -libelles : list[str]
+        -entrees() list[tuple]
+        -entree(dessin: Callable, libelle: str) QWidget$
+        -disque(remplissage: QColor, contour: QColor, epaisseur: int, halo: bool) Callable$
+        -bande(couleur: QColor) Callable$
+        -carre(couleur: QColor) Callable$
+    }
+
+    class ReseauSupervision {
+        +etat_recu : pyqtSignal$
+        +connexion_changee : pyqtSignal$
+        +termine : pyqtSignal$
         -config : Configuration
-        -actif : bool
-        +run() None
+        -signataire : Signataire
+        -garde : GardeAntiRejeu
+        -arret : threading.Event
+        -reglages : SimpleQueue[bool]
+        -socket : socket | None
+        -decoupeur : DecoupeurTrames
+        -etat : EtatConnexion
+        +tourner() None
         +demander_reglage(regulation: bool) None
         +arreter() None
+        -boucler() None
+        -connecter() None
+        -ecouter() None
+        -lire(attente: float) bool
+        -transmettre_etat(message: Message) None
+        -ouvrir(octets: bytes) Message
+        -envoyer_reglages() None
+        -abandonner_reglages() None
+        -envoyer(message: Message) None
+        -fermer() None
+        -changer_etat(etat: EtatConnexion, detail: str) None
     }
 
     class PanneauCreation {
+        +notification_recue : pyqtSignal$
         -config : Configuration
         -clients : list[ClientUsager]
+        -lignes : dict[str, QTreeWidgetItem]
+        -compteurs : dict[str, int]
         -choix_categorie : QComboBox
         -choix_entree : QComboBox
         -choix_sortie : QComboBox
-        -creer_usager() None
-        +arreter_clients() None
+        -choix_nombre : QSpinBox
+        -bouton_lancer : QPushButton
+        -liste_clients : QTreeWidget
+        +lancer() list[ClientUsager]
+        +arreter_clients(delai: float) None
+        -lancer_un(categorie: str, entree: str, sortie: str) ClientUsager
+        -noter_position(identifiant: str, usager: dict) None
+        -noter_connexion(identifiant: str, etat: str, detail: str) None
+        -adapter_sortie() None
+        -disposer() None
     }
+
+    class RelaisClient {
+        +position_changee : pyqtSignal$
+        +notification_recue : pyqtSignal$
+        +connexion_changee : pyqtSignal$
+        -identifiant : str
+        +sur_position(usager: dict) None
+        +sur_notification(code: CodeNotification, texte: str, appliquee: bool) None
+        +sur_connexion(etat: EtatConnexion, detail: str) None
+    }
+
+    QMainWindow <|-- FenetreSupervision
+    QGraphicsScene <|-- SceneRondPoint
+    QGraphicsView <|-- VueRondPoint
+    QGraphicsEllipseItem <|-- MarqueurUsager
+    QGroupBox <|-- Legende
+    QGroupBox <|-- PanneauCreation
+    QObject <|-- ReseauSupervision
+    QObject <|-- RelaisClient
+    FenetreSupervision *-- SceneRondPoint
+    FenetreSupervision *-- VueRondPoint
+    FenetreSupervision *-- Legende
+    FenetreSupervision *-- PanneauCreation
+    FenetreSupervision *-- QThread
+    FenetreSupervision *-- ReseauSupervision
+    VueRondPoint --> SceneRondPoint
+    SceneRondPoint "1" *-- "0..*" MarqueurUsager
+    SceneRondPoint --> RondPoint
+    PanneauCreation "1" *-- "0..*" ClientUsager
+    ClientUsager --> RelaisClient : rappels
+    RelaisClient ..> PanneauCreation : signaux
+    ReseauSupervision ..> FenetreSupervision : signaux
+```
+
+- Trois sortes de threads se partagent la supervision : le thread de l'IHM, qui possède tous les widgets ; le `QThread` du réseau, où vit `ReseauSupervision` après `moveToThread()` ; un `threading.Thread` par `ClientUsager` lancé depuis le panneau. Seul le thread de l'IHM touche aux widgets. Les deux autres émettent des signaux, que Qt remet aux objets de l'IHM dans leur thread (connexion en file d'attente).
+- Les signaux sont des attributs de classe (`pyqtSignal`), d'où le soulignement. `etat_recu` porte les données d'un STATE (`dict`), `connexion_changee` l'état de la connexion et un détail (`str, str`), `termine` n'a pas d'argument. Les signaux de `RelaisClient` commencent par l'identifiant de l'usager : `position_changee (str, dict)`, `notification_recue (str, str, str, bool)` pour le code, le texte et l'application de la consigne, `connexion_changee (str, str, str)`. `PanneauCreation.notification_recue` relaie ce dernier vers la fenêtre.
+- `ReseauSupervision.tourner()` est relié au signal `started` du `QThread`. Comme le client, la boucle se connecte, s'abonne (ABONNEMENT), envoie un PING toutes les `intervalle_ping` secondes et se reconnecte avec le même backoff. Un STATE auquel il manque un champ est journalisé et ignoré, pour ne jamais faire échouer l'affichage.
+- Tant que `tourner()` s'exécute, le `QThread` ne revient pas à sa boucle d'événements : un slot appelé en file d'attente n'y serait jamais exécuté. Les réglages demandés par l'IHM passent donc par une `SimpleQueue`, que la boucle vide à chaque tour ; l'attente sur la socket est bornée à 0,1 s pour qu'un réglage ou l'arrêt soit pris en compte vite. Les réglages demandés hors connexion sont abandonnés à la connexion suivante.
+- `termine` est relié à `QThread.quit()` en connexion directe : à la fermeture, le thread de l'IHM attend le réseau dans `wait()` et ne traiterait pas un signal en file d'attente.
+- `RelaisClient` adapte les rappels du client, qui ne dépend pas de Qt. Créé dans le thread de l'IHM, il émet un signal à chaque rappel. Le client garde ses fonctions de rappel, donc le relais, aussi longtemps qu'il vit.
+- `SceneRondPoint` travaille en mètres, comme le modèle, avec l'ordonnée inversée (`vers_scene()`), et ne recalcule rien : elle montre l'état reçu. La chaussée est dessinée une fois ; les arcs des segments réservés et les feux des entrées sont posés cachés et rendus visibles d'après le STATE. Le niveau de densité reprend `CalculateurDensite.niveau()`, pour que les seuils restent ceux du serveur. `VueRondPoint` recadre toute la scène à chaque changement de taille.
+- `style.py` réunit couleurs, tailles et libellés : la scène et la légende utilisent les mêmes constantes, si bien qu'une couleur changée l'est partout.
+- L'interrupteur envoie un REGLAGE sur `clicked`, émis seulement par un clic, jamais par `setChecked()`. Après chaque connexion, la case reprend l'état du serveur au premier STATE ; ensuite, seul l'indicateur suit le serveur. Elle est grisée tant que la supervision n'est pas connectée.
+- `closeEvent()` redéfinit la méthode protégée de Qt : il arrête et attend les clients lancés depuis le panneau, puis le réseau, avant de fermer la fenêtre.
+
+Setters prévus : aucun.
+
+## Paquet `bdd` (prévisionnel)
+
+```mermaid
+classDiagram
+    class QWidget
 
     class PanneauStats {
         -acces_bdd : AccesBdd
@@ -712,22 +847,11 @@ classDiagram
         +lire_densites() list[dict]
     }
 
-    QMainWindow <|-- FenetreSupervision
-    QGraphicsScene <|-- SceneRondPoint
-    QThread <|-- ThreadReseau
-    QWidget <|-- PanneauCreation
     QWidget <|-- PanneauStats
-    FenetreSupervision *-- SceneRondPoint
-    FenetreSupervision *-- ThreadReseau
-    FenetreSupervision *-- PanneauCreation
-    FenetreSupervision *-- PanneauStats
-    PanneauCreation "1" *-- "0..*" ClientUsager
     PanneauStats --> AccesBdd
 ```
 
-- `ThreadReseau` ne touche aucun widget. Il reçoit les STATE et émet `etat_recu` ; c'est `FenetreSupervision`, dans le thread graphique, qui met la scène à jour dans `afficher_etat()`.
-- `closeEvent()` redéfinit la méthode protégée de Qt pour arrêter proprement le thread réseau et les clients lancés avant de fermer la fenêtre.
-- `PanneauCreation` lance un `ClientUsager` local pour la catégorie, l'entrée et la sortie choisies. Ce client se connecte au serveur comme n'importe quel autre.
+- `PanneauStats` sera un onglet « Statistiques » de `FenetreSupervision`.
 - `AccesBdd` utilise des requêtes paramétrées et `executemany` pour les instantanés de densité. Le serveur est le seul à écrire ; `PanneauStats` ne fait que lire.
 
 Setters prévus : aucun.

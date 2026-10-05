@@ -43,10 +43,47 @@ Le serveur écoute en TCP sur le port 5050 et en UDP sur le port 5051 (réglable
 
 Ces ports évitent le 5000, que le récepteur AirPlay occupe déjà sur toutes les interfaces sous macOS.
 
+## Lancer la supervision
+
+```bash
+python scripts/lancer_supervision.py                  # lit config.ini à la racine du dépôt
+python scripts/lancer_supervision.py autre_config.ini
+```
+
+La fenêtre peut être ouverte avant le serveur : elle s'y connecte dès qu'il répond, et s'y reconnecte s'il redémarre. Elle montre :
+
+- le rond-point en 2D, dessiné d'après `config.ini`. Chaque usager est un disque coloré selon sa catégorie et cerclé selon la consigne qu'il suit ; le véhicule prioritaire est plus gros et entouré d'un halo ;
+- en orange, les segments de l'anneau réservés au véhicule prioritaire, et un carré rouge au bord de chaque entrée temporisée ;
+- la densité de chaque branche, écrite en pourcentage et rendue par la couleur de la bande le long de la voie d'entrée : vert pour faible, jaune pour moyenne, rouge pour forte ;
+- l'état de la connexion, la régulation en vigueur sur le serveur et la présence d'un véhicule prioritaire ;
+- l'interrupteur « Régulation active », qui active ou coupe la régulation sur le serveur ;
+- le panneau de création : on choisit le type d'usager, l'entrée, la sortie (imposée pour un piéton) et le nombre, puis « Lancer » démarre un client par usager, qui se connecte au serveur comme n'importe quel autre ;
+- les dernières consignes reçues par ces usagers.
+
+Fermer la fenêtre, ou faire Ctrl+C dans la console, arrête les clients lancés depuis la fenêtre et la connexion au serveur.
+
+### Captures
+
+Les trois captures montrent le même trafic : trois voitures en file au sud, deux à l'est, une moto à l'ouest, une trottinette et un piéton au nord. Le véhicule prioritaire part ensuite du sud vers le nord, et les deux dernières captures sont prises 6 s après son départ.
+
+Avant l'arrivée du véhicule prioritaire :
+
+![Rond-point avant l'arrivée du véhicule prioritaire](docs/captures/repos.png)
+
+Avec régulation, les voitures déjà sur l'anneau s'écartent, les entrées qui croisent la trajectoire du véhicule prioritaire sont temporisées, et il roule déjà sur l'anneau :
+
+![Véhicule prioritaire avec régulation](docs/captures/vp_avec_regulation.png)
+
+Sans régulation, il attend encore sur sa branche d'entrée, derrière la file :
+
+![Véhicule prioritaire sans régulation](docs/captures/vp_sans_regulation.png)
+
+`python scripts/generer_captures.py` refait ces images : il lance un serveur et la fenêtre dans le même processus, sans rien afficher à l'écran.
+
 ## Tests
 
 ```bash
-python -m pytest                  # tous les tests, environ 35 s
+python -m pytest                  # tous les tests, environ 40 s
 python -m pytest -m "not lent"    # sans le test de bout en bout, qui joue deux traversées en temps réel
 ```
 
@@ -56,7 +93,7 @@ python -m pytest -m "not lent"    # sans le test de bout en bout, qui joue deux 
 | --- | --- |
 | `src/cherrypie/` | code de l'application : `commun`, `modele`, `serveur`, `client`, `ihm`, `bdd` |
 | `tests/` | tests pytest |
-| `docs/` | documentation technique : diagramme de classes, protocole, sécurité |
-| `scripts/` | scripts de lancement |
+| `docs/` | documentation technique : diagramme de classes, protocole, sécurité, captures d'écran |
+| `scripts/` | scripts de lancement et de génération des captures |
 | `Livrables/` | livrables rendus (QQOQCP, cahier des charges) |
 | `RessourcesProjets/` | consignes et ressources fournies pour la SAÉ |

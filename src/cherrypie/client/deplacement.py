@@ -98,7 +98,7 @@ class Deplacement:
         vitesse = self.__usager.vitesse_autorisee()
         arrivee = self.__avancement + vitesse * duree
         if self.__doit_s_arreter_a_la_ligne():
-            arrivee = min(arrivee, self.__trajectoire.longueur_approche)
+            arrivee = min(arrivee, self.__trajectoire.ligne_entree)
         if self.__limite is not None:
             arrivee = min(arrivee, self.__limite)
         # Un obstacle peut se rapprocher : l'usager s'arrête alors, mais ne recule jamais.
@@ -111,7 +111,7 @@ class Deplacement:
     def __doit_s_arreter_a_la_ligne(self) -> bool:
         """ATTENDEZ ou un cédez-le-passage n'arrêtent un usager que s'il n'a pas encore franchi la ligne."""
         doit_attendre = self.__usager.consigne is CodeNotification.ATTENDEZ or self.__ceder
-        return doit_attendre and self.__avancement <= self.__trajectoire.longueur_approche
+        return doit_attendre and self.__avancement <= self.__trajectoire.ligne_entree
 
     def __placer_usager(self, vitesse: float) -> None:
         """Reporte l'avancement sur l'usager : position (décalage compris), vitesse, segment et étape."""

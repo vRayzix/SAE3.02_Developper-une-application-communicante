@@ -23,6 +23,9 @@ DISTANCE_PASSAGE_PIETON = 8.0
 LARGEUR_CHAUSSEE = 7.0
 # Trottoir parcouru par un piéton avant et après sa traversée, en mètres.
 LONGUEUR_TROTTOIR = 4.0
+# L'approche d'un véhicule rejoint l'axe de l'anneau ; quand il doit attendre, il
+# s'arrête au bord de l'anneau, sans empiéter sur la voie où roulent les autres.
+RECUL_LIGNE_VEHICULE = LARGEUR_CHAUSSEE / 2
 
 
 class Etape(Enum):
@@ -136,18 +139,23 @@ class Trajectoire:
     parcourue depuis son point de départ, en mètres.
     """
 
-    def __init__(self, troncons: list[Troncon]) -> None:
+    def __init__(self, troncons: list[Troncon], recul_ligne: float = 0.0) -> None:
         """Crée une trajectoire.
 
         Args:
             troncons (list[Troncon]): tronçons dans l'ordre de parcours, en commençant par l'approche.
+            recul_ligne (float): distance entre la ligne d'entrée et la fin de l'approche, en mètres.
 
         Raises:
-            ValueError: si la liste est vide ou ne commence pas par une approche.
+            ValueError: si la liste est vide, ne commence pas par une approche, ou si la
+                ligne d'entrée ne tombe pas sur l'approche.
         """
         if not troncons or troncons[0].etape is not Etape.APPROCHE:
             raise ValueError("une trajectoire commence par une approche")
         self.__troncons = list(troncons)
+        if not 0 <= recul_ligne < self.longueur_approche:
+            raise ValueError(f"la ligne d'entrée doit tomber sur l'approche (recul reçu : {recul_ligne})")
+        self.__recul_ligne = recul_ligne
 
     @classmethod
     def pour_vehicule(cls, rond_point: RondPoint, entree: str, sortie: str) -> Trajectoire:
@@ -175,7 +183,7 @@ class Trajectoire:
             TronconArc(segment, rond_point.rayon) for segment in rond_point.segments_entre(entree, sortie)
         ]
         troncon_sortie = TronconDroit(Etape.SORTIE, branche_sortie.point(bord_anneau), branche_sortie.point(extremite))
-        return cls([troncon_approche, *troncons_anneau, troncon_sortie])
+        return cls([troncon_approche, *troncons_anneau, troncon_sortie], RECUL_LIGNE_VEHICULE)
 
     @classmethod
     def pour_pieton(cls, rond_point: RondPoint, branche: str) -> Trajectoire:
@@ -220,13 +228,18 @@ class Trajectoire:
 
     @property
     def longueur_approche(self) -> float:
-        """float: distance jusqu'à la ligne d'entrée, où s'arrête un usager qui doit attendre."""
+        """float: distance jusqu'à la fin de l'approche, où l'usager entre sur l'anneau ou sur la chaussée."""
         longueur = 0.0
         for troncon in self.__troncons:
             if troncon.etape is not Etape.APPROCHE:
                 break
             longueur += troncon.longueur
         return longueur
+
+    @property
+    def ligne_entree(self) -> float:
+        """float: avancement de la ligne d'entrée, où s'arrête un usager qui doit attendre."""
+        return self.longueur_approche - self.__recul_ligne
 
     @property
     def segments(self) -> list[Segment]:
@@ -297,8 +310,8 @@ class Trajectoire:
             raise ValueError(f"l'avancement doit être un nombre positif ou nul (reçu : {avancement})")
         reste = avancement
         for troncon in self.__troncons:
-            # Un point pile à la jonction de deux tronçons appartient au premier :
-            # un usager arrêté sur la ligne d'entrée est encore en approche.
+            # Un point pile à la jonction de deux tronçons appartient au premier : un
+            # piéton arrêté au bord de la chaussée est encore en approche.
             if reste <= troncon.longueur:
                 return troncon, reste
             reste -= troncon.longueur

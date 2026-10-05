@@ -1,6 +1,7 @@
 """Fixtures partagées par les tests : configurations sur des ports libres, serveurs et clients lancés."""
 
 import configparser
+import os
 import socket
 import threading
 from collections.abc import Callable, Iterator
@@ -8,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from outils import DELAI
+from PyQt6.QtWidgets import QApplication
 
 from cherrypie.client.client_usager import ClientUsager
 from cherrypie.commun.config import Configuration
@@ -87,3 +89,11 @@ def preparer_client() -> Iterator[Callable[..., ClientUsager]]:
         client.arreter()
         if client.is_alive():
             client.join(timeout=DELAI)
+
+
+@pytest.fixture(scope="session")
+def qapp() -> QApplication:
+    """Application Qt partagée par les tests d'IHM, sans écran (plateforme offscreen)."""
+    # La plateforme est lue à la création de l'application : il faut la fixer avant.
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    return QApplication.instance() or QApplication([])

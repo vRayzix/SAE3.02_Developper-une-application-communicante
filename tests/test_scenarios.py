@@ -33,7 +33,7 @@ def test_usagers_arretes_font_la_file_sans_s_empiler(simulation: Simulation) -> 
         voiture.reagir(CodeNotification.ATTENDEZ)
     simulation.avancer_jusqu_a(lambda: False, duree_max=20.0)
     avancements = [deplacement.avancement for deplacement in deplacements]
-    assert avancements[0] == pytest.approx(LONGUEUR_BRANCHE)
+    assert avancements[0] == pytest.approx(deplacements[0].trajectoire.ligne_entree)
     for devant, derriere in zip(avancements, avancements[1:]):
         assert devant - derriere >= DISTANCE_SECURITE - 1e-6
     assert all(voiture.vitesse == 0.0 for voiture in voitures)
