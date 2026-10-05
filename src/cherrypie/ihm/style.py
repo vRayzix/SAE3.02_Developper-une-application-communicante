@@ -1,10 +1,11 @@
-"""Couleurs et dimensions de la supervision, partagées par la scène et la légende.
+"""Couleurs, dimensions et libellés de la supervision, partagés par la scène, la légende et les panneaux.
 
 Les dimensions sont en mètres, comme la scène du rond-point.
 """
 
 from PyQt6.QtGui import QColor
 
+from cherrypie.client.client_usager import EtatConnexion
 from cherrypie.serveur.densite import NiveauDensite
 
 COULEUR_FOND = QColor("#f4f5f7")
@@ -71,3 +72,10 @@ ECART_ETIQUETTE = 1.5
 EPAISSEUR_PASSAGE_PIETON = 3.0
 MOTIF_PASSAGE_PIETON = [0.2, 0.2]
 TAILLE_TEXTE = 10
+
+LIBELLES_CONNEXION = {
+    EtatConnexion.CONNEXION: "connexion en cours",
+    EtatConnexion.CONNECTE: "connecté",
+    EtatConnexion.DECONNECTE: "déconnecté",
+    EtatConnexion.TERMINE: "terminé",
+}
