@@ -414,7 +414,8 @@ def test_traversee_d_un_vp_mesuree_par_le_serveur(
     attendre(lambda: len(serveur.logique.passages) == 1)
     (mesure,) = serveur.logique.passages
     quart_d_anneau = 2 * math.pi * 5 / 4
-    assert mesure.duree == pytest.approx(quart_d_anneau / VehiculePrioritaire.VITESSE_MAX, abs=0.15)
+    assert mesure.duree_anneau == pytest.approx(quart_d_anneau / VehiculePrioritaire.VITESSE_MAX, abs=0.15)
+    assert mesure.duree >= mesure.duree_anneau
     assert (mesure.identifiant, mesure.entree, mesure.sortie, mesure.regulation) == ("vp_1", "S", "E", True)
     assert not serveur.logique.vp_actif
 

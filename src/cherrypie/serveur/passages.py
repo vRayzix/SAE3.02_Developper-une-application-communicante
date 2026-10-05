@@ -12,14 +12,18 @@ from cherrypie.modele.trajectoire import Etape
 class PassageVp:
     """Traversée mesurée d'un véhicule prioritaire, prête à être enregistrée.
 
+    La mesure va de l'annonce du VP (VP_ALERT) à sa sortie de l'anneau (VP_FIN), avec la
+    même définition que la régulation soit active ou non.
+
     Attributes:
         identifiant (str): identifiant du VP.
         entree (str): branche d'entrée.
         sortie (str): branche de sortie.
-        debut (datetime): instant d'entrée sur l'anneau.
+        debut (datetime): instant de l'annonce.
         fin (datetime): instant de sortie de l'anneau.
-        duree (float): temps passé sur l'anneau, en secondes.
-        regulation (bool): True si la régulation était active quand le VP est entré sur l'anneau.
+        duree (float): temps de traversée, de l'annonce à la sortie de l'anneau, en secondes.
+        duree_anneau (float | None): temps passé sur l'anneau seul, None si le VP n'y a pas été vu.
+        regulation (bool): True si la régulation était active à l'annonce du VP.
         densite_moyenne (float): densité moyenne des branches pendant la traversée, entre 0 et 1.
     """
 
@@ -29,6 +33,7 @@ class PassageVp:
     debut: datetime
     fin: datetime
     duree: float
+    duree_anneau: float | None
     regulation: bool
     densite_moyenne: float
 
@@ -36,27 +41,38 @@ class PassageVp:
 class PassageEnCours:
     """Véhicule prioritaire annoncé (VP_ALERT) dont la traversée n'est pas finie.
 
-    Il réserve les segments de sa trajectoire. Le chronomètre part quand le VP entre sur
-    l'anneau et s'arrête à son VP_FIN ; entre les deux, la densité moyenne des branches
-    est relevée à chaque cadence du serveur.
+    Il réserve les segments de sa trajectoire. Le chronomètre part à l'annonce et s'arrête
+    au VP_FIN ; la durée passée sur l'anneau seule est gardée à part. Entre les deux, la
+    densité moyenne des branches est relevée à chaque cadence du serveur.
     """
 
-    def __init__(self, identifiant: str, entree: str, sortie: str, segments_reserves: list[str]) -> None:
-        """Ouvre le suivi d'un VP qui vient de s'annoncer.
+    def __init__(
+        self,
+        identifiant: str,
+        entree: str,
+        sortie: str,
+        segments_reserves: list[str],
+        annonce: float,
+        regulation: bool,
+    ) -> None:
+        """Ouvre le suivi d'un VP qui vient de s'annoncer et démarre le chronomètre.
 
         Args:
             identifiant (str): identifiant du VP.
             entree (str): branche d'entrée.
             sortie (str): branche de sortie.
             segments_reserves (list[str]): noms des segments de sa trajectoire sur l'anneau.
+            annonce (float): instant du VP_ALERT, sur l'horloge monotone du serveur.
+            regulation (bool): régulation en vigueur à l'annonce.
         """
         self.__identifiant = identifiant
         self.__entree = entree
         self.__sortie = sortie
         self.__segments_reserves = tuple(segments_reserves)
+        self.__annonce = annonce
+        self.__debut = datetime.now()
+        self.__regulation = regulation
         self.__entree_anneau: float | None = None
-        self.__debut: datetime | None = None
-        self.__regulation: bool | None = None
         self.__releves_densite: list[float] = []
 
     @property
@@ -80,19 +96,24 @@ class PassageEnCours:
         return self.__segments_reserves
 
     @property
-    def entree_anneau(self) -> float | None:
-        """float | None: instant d'entrée sur l'anneau (horloge monotone), None avant."""
-        return self.__entree_anneau
+    def annonce(self) -> float:
+        """float: instant de l'annonce, sur l'horloge monotone du serveur."""
+        return self.__annonce
 
     @property
-    def debut(self) -> datetime | None:
-        """datetime | None: date et heure d'entrée sur l'anneau, None avant."""
+    def debut(self) -> datetime:
+        """datetime: date et heure de l'annonce."""
         return self.__debut
 
     @property
-    def regulation(self) -> bool | None:
-        """bool | None: régulation en vigueur à l'entrée sur l'anneau, None avant."""
+    def regulation(self) -> bool:
+        """bool: régulation en vigueur à l'annonce."""
         return self.__regulation
+
+    @property
+    def entree_anneau(self) -> float | None:
+        """float | None: instant d'entrée sur l'anneau (horloge monotone), None avant."""
+        return self.__entree_anneau
 
     @property
     def releves_densite(self) -> list[float]:
@@ -104,40 +125,35 @@ class PassageEnCours:
         """bool: True une fois que le VP a été vu sur l'anneau."""
         return self.__entree_anneau is not None
 
-    def noter_etape(self, etape: Etape, maintenant: float, regulation: bool) -> None:
-        """Démarre le chronomètre au premier POS reçu du VP sur l'anneau.
+    def noter_etape(self, etape: Etape, maintenant: float) -> None:
+        """Note l'entrée du VP sur l'anneau, à son premier POS reçu sur l'anneau.
 
         Args:
             etape (Etape): étape annoncée par le dernier POS du VP.
             maintenant (float): instant de réception, sur l'horloge monotone du serveur.
-            regulation (bool): régulation en vigueur à cet instant.
         """
         if etape is Etape.ANNEAU and self.__entree_anneau is None:
             self.__entree_anneau = maintenant
-            self.__debut = datetime.now()
-            self.__regulation = regulation
 
     def noter_densite(self, densite_moyenne: float) -> None:
-        """Relève la densité moyenne des branches, si le VP est sur l'anneau.
+        """Relève la densité moyenne des branches pendant la traversée.
 
         Args:
             densite_moyenne (float): moyenne des densités des branches, entre 0 et 1.
         """
-        if self.sur_l_anneau:
-            self.__releves_densite.append(densite_moyenne)
+        self.__releves_densite.append(densite_moyenne)
 
-    def terminer(self, maintenant: float) -> PassageVp | None:
+    def terminer(self, maintenant: float) -> PassageVp:
         """Arrête le chronomètre à la sortie de l'anneau.
 
         Args:
             maintenant (float): instant du VP_FIN, sur l'horloge monotone du serveur.
 
         Returns:
-            PassageVp | None: la mesure de la traversée, None si le VP n'a jamais été vu sur l'anneau.
+            PassageVp: la mesure de la traversée.
         """
-        if self.__entree_anneau is None:
-            return None
-        duree = maintenant - self.__entree_anneau
+        duree = maintenant - self.__annonce
+        duree_anneau = None if self.__entree_anneau is None else maintenant - self.__entree_anneau
         releves = self.__releves_densite
         densite_moyenne = sum(releves) / len(releves) if releves else 0.0
         return PassageVp(
@@ -147,6 +163,7 @@ class PassageEnCours:
             self.__debut,
             self.__debut + timedelta(seconds=duree),
             duree,
+            duree_anneau,
             self.__regulation,
             densite_moyenne,
         )

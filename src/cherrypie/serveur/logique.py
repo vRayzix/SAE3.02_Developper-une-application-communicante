@@ -188,7 +188,7 @@ class LogiqueServeur:
         if message.type is TypeMessage.BYE:
             return Reponse(fermer=True)
         if message.type is TypeMessage.VP_ALERT:
-            return self.__signaler_vp(session, message)
+            return self.__signaler_vp(session, message, maintenant)
         if message.type is TypeMessage.VP_FIN:
             return self.__terminer_vp(session, maintenant)
         raise TrameInvalideError(f"message {message.type.value} inattendu sur une session TCP")
@@ -196,8 +196,8 @@ class LogiqueServeur:
     def traiter_udp(self, message: Message, maintenant: float) -> None:
         """Met à jour un usager à partir d'une position reçue en UDP.
 
-        Si l'usager est un VP annoncé, sa première position sur l'anneau démarre la mesure
-        de sa traversée.
+        Si l'usager est un VP annoncé, sa première position sur l'anneau note son entrée
+        sur l'anneau.
 
         Args:
             message (Message): message déjà authentifié (HMAC et anti-rejeu vérifiés).
@@ -236,7 +236,7 @@ class LogiqueServeur:
         usager.position = position
         passage = self.__passages_en_cours.get(usager.identifiant)
         if passage is not None:
-            passage.noter_etape(etape, maintenant, self.__regulation_active)
+            passage.noter_etape(etape, maintenant)
 
     def sessions_expirees(self, maintenant: float) -> list[int]:
         """Liste les sessions restées silencieuses plus longtemps que le timeout.
@@ -341,8 +341,8 @@ class LogiqueServeur:
         self.__rond_point.branche(usager.branche_sortie)
         return usager
 
-    def __signaler_vp(self, session: Session, message: Message) -> Reponse:
-        """Enregistre l'annonce d'un VP et réserve les segments de sa trajectoire."""
+    def __signaler_vp(self, session: Session, message: Message, maintenant: float) -> Reponse:
+        """Enregistre l'annonce d'un VP, réserve les segments de sa trajectoire et démarre son chronomètre."""
         vp = self.__usager_de(session)
         if not isinstance(vp, VehiculePrioritaire):
             raise TrameInvalideError(f"VP_ALERT de {vp.identifiant}, qui n'est pas un véhicule prioritaire")
@@ -356,7 +356,7 @@ class LogiqueServeur:
         if vp.identifiant not in self.__passages_en_cours:
             segments = [segment.nom for segment in vp.calculer_trajectoire(self.__rond_point).segments]
             self.__passages_en_cours[vp.identifiant] = PassageEnCours(
-                vp.identifiant, vp.branche_entree, vp.branche_sortie, segments
+                vp.identifiant, vp.branche_entree, vp.branche_sortie, segments, maintenant, self.__regulation_active
             )
             journal.info(
                 "VP %s annoncé de %s vers %s, à l'anneau dans %.1f s ; segments réservés : %s",
@@ -371,14 +371,11 @@ class LogiqueServeur:
         if passage is None:
             raise TrameInvalideError(f"VP_FIN de {vp.identifiant} sans VP_ALERT")
         mesure = passage.terminer(maintenant)
-        if mesure is None:
-            journal.warning("VP %s sorti sans avoir été vu sur l'anneau : pas de mesure", vp.identifiant)
-        else:
-            self.__passages.append(mesure)
-            journal.info(
-                "VP %s : %.1f s sur l'anneau, régulation %s",
-                vp.identifiant, mesure.duree, "active" if mesure.regulation else "inactive",
-            )
+        self.__passages.append(mesure)
+        journal.info(
+            "VP %s : traversée en %.1f s, régulation %s",
+            vp.identifiant, mesure.duree, "active" if mesure.regulation else "inactive",
+        )
         return Reponse()
 
     def __usager_de(self, session: Session) -> Usager:

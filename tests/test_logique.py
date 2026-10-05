@@ -348,7 +348,8 @@ def test_traversee_mesuree_de_l_entree_sur_l_anneau_au_vp_fin(logique: LogiqueSe
     logique.traiter_udp(pos("vp_1", segment="E-N"), 4.0)
     logique.traiter_tcp(numero, Message(TypeMessage.VP_FIN, "vp_1"), 8.5)
     (mesure,) = logique.passages
-    assert mesure.duree == pytest.approx(5.5)
+    assert mesure.duree == pytest.approx(7.5)
+    assert mesure.duree_anneau == pytest.approx(5.5)
     assert mesure.regulation is True
     assert not logique.vp_actif
 
