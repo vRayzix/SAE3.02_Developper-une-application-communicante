@@ -59,6 +59,7 @@ Dans le code, `Message` porte `type`, `id` et `donnees` ; `Enveloppe` y ajoute `
 | PING | client → serveur | TCP | `{}` |
 | PONG | serveur → client | TCP | `{}` |
 | BYE | client → serveur | TCP | `{}` |
+| DEVANT | serveur → client | TCP | `{"distance": 12.4, "ceder": false}`, voir « Ce que voit un conducteur » |
 
 Chaque élément de la liste `usagers` d'un STATE décrit un usager connecté :
 
@@ -73,6 +74,17 @@ Chaque élément de la liste `usagers` d'un STATE décrit un usager connecté :
 - `segments_reserves` : segments de l'anneau réservés aux VP en cours de traversée, triés par nom, pour que la supervision puisse les afficher.
 - `entrees_bloquees` : branches dont l'entrée est retenue par la régulation.
 - `regulation` : `true` si la régulation est active.
+
+## Ce que voit un conducteur (DEVANT)
+
+Chaque client roule sans voir les autres : sans aide, deux voitures pourraient se traverser, et un VP ne serait jamais gêné par le trafic. Le serveur, qui connaît toutes les positions, simule donc ce qu'un conducteur verrait par son pare-brise. **DEVANT n'est pas une consigne de régulation** : il part à chaque cadence vers chaque véhicule, que la régulation soit active ou non. Les piétons n'en reçoivent pas.
+
+- `distance` : distance, en mètres, jusqu'à l'obstacle le plus proche devant le véhicule sur sa voie, ou `null` si rien ne gêne dans les 50 m. Un obstacle est un autre véhicule sur la même voie (même branche et même sens, ou anneau jusqu'à la sortie du véhicule), ou un piéton en train de traverser le passage piéton. Un véhicule rangé sur le côté (décalé par DEGAGEZ ou CHANGEZ_VOIE) n'est plus sur la voie et ne gêne pas ceux qui roulent au milieu.
+- `ceder` : `true` si le véhicule doit attendre sur sa ligne d'entrée, parce que l'anneau n'est pas libre sur 15 m avant et 10 m après son point d'entrée (cédez-le-passage). Un véhicule rangé sur le côté de l'anneau ne compte pas.
+
+Le client garde une distance de sécurité de 6 m avec l'obstacle signalé, qui couvre aussi le retard d'un pas de la position vue par le serveur. Il ne recule jamais, et s'arrête sur sa ligne d'entrée tant que `ceder` vaut `true`. Les usagers arrêtés forment ainsi une vraie file au lieu de s'empiler au même point.
+
+Les marges du cédez-le-passage empêchent l'anneau de se remplir au point de se bloquer en boucle : pour qu'un véhicule entre, il faut 25 m libres autour de son point d'entrée, ce qui interdit d'aligner sur tout l'anneau des véhicules espacés seulement de la distance de sécurité.
 
 ## Véhicules prioritaires
 
