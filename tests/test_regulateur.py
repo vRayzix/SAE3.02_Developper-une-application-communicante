@@ -233,3 +233,41 @@ def test_pas_de_dosage_pendant_le_passage_d_un_vp(
 def test_pieton_jamais_temporise_par_le_dosage(regulateur: Regulateur, registre: Registre, placer) -> None:
     placer(Pieton("pieton_1", "E", "E"), 1.0)
     assert regulateur.decider(registre, [], {"N": 0.8, "E": 0.125, "S": 0.0, "O": 0.0}) == []
+
+
+# ---------- Régulation coupée ----------
+
+def test_regulation_coupee_libere_une_fois_puis_se_tait(
+    regulateur: Regulateur, registre: Registre, placer, vp_sud_nord: PassageEnCours
+) -> None:
+    placer(Voiture("voiture_1", "E", "O"), 20.0)
+    regulateur.decider(registre, [vp_sud_nord], SANS_CHARGE)
+    regulateur.active = False
+    (liberation,) = regulateur.decider(registre, [vp_sud_nord], SANS_CHARGE)
+    assert (liberation.destinataire, liberation.code) == ("voiture_1", OK_PASSER)
+    assert regulateur.decider(registre, [vp_sud_nord], SANS_CHARGE) == []
+    assert regulateur.entrees_bloquees == []
+
+
+def test_regulation_coupee_aucune_consigne_meme_avec_un_vp(
+    regulateur: Regulateur, registre: Registre, placer, vp_sud_nord: PassageEnCours
+) -> None:
+    regulateur.active = False
+    placer(Voiture("voiture_1", "E", "O"), 20.0)
+    assert regulateur.decider(registre, [vp_sud_nord], {"N": 0.8, "E": 0.125, "S": 0.0, "O": 0.0}) == []
+
+
+def test_regulation_reactivee_renvoie_les_consignes(
+    regulateur: Regulateur, registre: Registre, placer, vp_sud_nord: PassageEnCours
+) -> None:
+    placer(Voiture("voiture_1", "E", "O"), 20.0)
+    regulateur.active = False
+    regulateur.decider(registre, [vp_sud_nord], SANS_CHARGE)
+    regulateur.active = True
+    (notification,) = regulateur.decider(registre, [vp_sud_nord], SANS_CHARGE)
+    assert notification.code is ATTENDEZ
+
+
+def test_interrupteur_non_booleen_refuse(regulateur: Regulateur) -> None:
+    with pytest.raises(TypeError, match="active ou non"):
+        regulateur.active = "non"
