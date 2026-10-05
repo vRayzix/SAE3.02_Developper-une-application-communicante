@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 
 from PyQt6.QtCore import QPointF, QRectF, Qt
-from PyQt6.QtGui import QBrush, QFontDatabase, QPainterPath, QPen, QTextOption, QTransform
+from PyQt6.QtGui import QBrush, QFontDatabase, QPainter, QPainterPath, QPen, QResizeEvent, QTextOption, QTransform
 from PyQt6.QtWidgets import (
     QGraphicsEllipseItem,
     QGraphicsItem,
@@ -14,6 +14,8 @@ from PyQt6.QtWidgets import (
     QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsTextItem,
+    QGraphicsView,
+    QWidget,
 )
 
 from cherrypie.ihm.style import (
@@ -56,6 +58,8 @@ from cherrypie.serveur.densite import CalculateurDensite, NiveauDensite
 
 TOUR_COMPLET = 360.0
 POURCENT = 100
+# Côté minimal de la vue, en pixels, pour que les usagers restent visibles.
+TAILLE_MIN_VUE = 400
 
 
 class MarqueurUsager(QGraphicsEllipseItem):
@@ -332,3 +336,29 @@ class SceneRondPoint(QGraphicsScene):
         decalage_x = (math.sin(angle) - 1) * cadre.width() / 2
         decalage_y = (math.cos(angle) - 1) * cadre.height() / 2
         texte.setTransform(QTransform.fromTranslate(decalage_x, decalage_y))
+
+
+class VueRondPoint(QGraphicsView):
+    """Vue de la scène, qui montre tout le rond-point quelle que soit la taille de la fenêtre."""
+
+    def __init__(self, scene: SceneRondPoint, parent: QWidget | None = None) -> None:
+        """Crée la vue, lissée et sans barres de défilement.
+
+        Args:
+            scene (SceneRondPoint): scène affichée.
+            parent (QWidget | None): widget parent.
+        """
+        super().__init__(scene, parent)
+        self.setRenderHint(QPainter.RenderHint.Antialiasing)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setMinimumSize(TAILLE_MIN_VUE, TAILLE_MIN_VUE)
+
+    def resizeEvent(self, evenement: QResizeEvent) -> None:
+        """Recadre la scène entière à chaque changement de taille de la vue.
+
+        Args:
+            evenement (QResizeEvent): changement de taille reçu de Qt.
+        """
+        super().resizeEvent(evenement)
+        self.fitInView(self.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)

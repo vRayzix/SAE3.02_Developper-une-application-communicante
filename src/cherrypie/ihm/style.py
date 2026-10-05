@@ -73,6 +73,10 @@ EPAISSEUR_PASSAGE_PIETON = 3.0
 MOTIF_PASSAGE_PIETON = [0.2, 0.2]
 TAILLE_TEXTE = 10
 
+# Indicateurs du panneau « Serveur » : en vert ce qui fonctionne, en gris ce qui est coupé ou inconnu.
+COULEUR_INDICATEUR_ACTIF = QColor("#2e9e5b")
+COULEUR_INDICATEUR_INACTIF = QColor("#7f8c8d")
+
 LIBELLES_CONNEXION = {
     EtatConnexion.CONNEXION: "connexion en cours",
     EtatConnexion.CONNECTE: "connecté",
