@@ -24,7 +24,8 @@ from cherrypie.commun.protocole import CodeNotification, Enveloppe, Message, Typ
 from cherrypie.commun.securite import GardeAntiRejeu, Signataire
 from cherrypie.commun.trame import DecoupeurTrames
 from cherrypie.modele.rond_point import RondPoint
-from cherrypie.modele.usager import Usager
+from cherrypie.modele.trajectoire import Etape
+from cherrypie.modele.usager import Usager, VehiculePrioritaire
 
 # Octets demandés à chaque lecture de la socket TCP.
 TAILLE_LECTURE = 65536
@@ -53,6 +54,9 @@ class ClientUsager(threading.Thread):
     tombe ou que l'inscription est refusée pour l'instant, le client réessaie avec un délai
     qui double à chaque échec (backoff, plafonné à backoff_max). Il dit au revoir (BYE) à
     la fin du trajet ou quand on l'arrête.
+
+    Un véhicule prioritaire s'annonce (VP_ALERT) dès son inscription, tant qu'il n'a pas
+    quitté l'anneau, et signale sa sortie de l'anneau (VP_FIN).
 
     Les fonctions de rappel sont appelées depuis le thread du client : elles ne doivent
     jamais toucher un widget directement.
@@ -92,6 +96,7 @@ class ClientUsager(threading.Thread):
         self.__decoupeur = DecoupeurTrames()
         self.__recus: deque[Message] = deque()
         self.__etat = EtatConnexion.DECONNECTE
+        self.__vp_annonce = False
         self.__sur_position = sur_position
         self.__sur_notification = sur_notification
         self.__sur_connexion = sur_connexion
@@ -140,6 +145,11 @@ class ClientUsager(threading.Thread):
     def decoupeur(self) -> DecoupeurTrames:
         """DecoupeurTrames: tampon des octets reçus sur la connexion en cours."""
         return self.__decoupeur
+
+    @property
+    def vp_annonce(self) -> bool:
+        """bool: True entre le VP_ALERT et le VP_FIN d'un véhicule prioritaire, sur la connexion en cours."""
+        return self.__vp_annonce
 
     @property
     def recus(self) -> list[Message]:
@@ -239,6 +249,11 @@ class ClientUsager(threading.Thread):
         # Une nouvelle session repart sans consigne : le serveur renverra celles qui valent encore.
         usager.reagir(CodeNotification.OK_PASSER)
         self.__changer_etat(EtatConnexion.CONNECTE, "inscrit auprès du serveur")
+        # Le serveur oublie l'annonce d'un VP à la fermeture de sa session : on la refait
+        # à chaque connexion, tant que le VP n'a pas quitté l'anneau.
+        self.__vp_annonce = False
+        if isinstance(usager, VehiculePrioritaire) and usager.etape in (Etape.APPROCHE, Etape.ANNEAU):
+            self.__annoncer_vp()
 
     def __circuler(self) -> None:
         """Fait avancer l'usager, envoie positions et PING, et lit le serveur tant que la connexion tient.
@@ -274,7 +289,7 @@ class ClientUsager(threading.Thread):
         self.__envoyer(Message(TypeMessage.BYE, self.usager.identifiant))
 
     def __faire_un_pas(self) -> None:
-        """Avance d'un pas, à la cadence des positions, puis envoie et signale la nouvelle position."""
+        """Avance d'un pas, envoie et signale la nouvelle position ; un VP signale aussi sa sortie de l'anneau."""
         self.__deplacement.avancer(self.__config.intervalle_position)
         usager = self.usager
         donnees = {
@@ -291,6 +306,17 @@ class ClientUsager(threading.Thread):
             # UDP ne garantit rien : une position perdue est remplacée par la suivante.
             journal.debug("position de %s non envoyée : %s", usager.identifiant, erreur)
         self.__appeler(self.__sur_position, usager.vers_dict())
+        if self.__vp_annonce and usager.etape is Etape.SORTIE:
+            self.__envoyer(Message(TypeMessage.VP_FIN, usager.identifiant))
+            self.__vp_annonce = False
+
+    def __annoncer_vp(self) -> None:
+        """Annonce le VP au serveur, avec le temps qu'il lui faut pour atteindre l'anneau."""
+        usager = self.usager
+        reste = max(0.0, self.__deplacement.trajectoire.longueur_approche - self.__deplacement.avancement)
+        annonce = {"entree": usager.branche_entree, "sortie": usager.branche_sortie, "eta": reste / usager.VITESSE_MAX}
+        self.__envoyer(Message(TypeMessage.VP_ALERT, usager.identifiant, annonce))
+        self.__vp_annonce = True
 
     def __traiter(self, message: Message) -> None:
         """Applique un message du serveur : seule une NOTIF demande une réaction."""
