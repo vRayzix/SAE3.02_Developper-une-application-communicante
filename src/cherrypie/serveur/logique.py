@@ -21,6 +21,7 @@ from cherrypie.serveur.circulation import Circulation
 from cherrypie.serveur.densite import CalculateurDensite
 from cherrypie.serveur.passages import PassageEnCours, PassageVp
 from cherrypie.serveur.registre import Registre
+from cherrypie.serveur.regulateur import Regulateur
 from cherrypie.serveur.session import Session
 
 IDENTIFIANT_SERVEUR = "serveur"
@@ -62,11 +63,11 @@ class LogiqueServeur:
         self.__timeout_client = timeout_client
         self.__calculateur = CalculateurDensite(rond_point)
         self.__circulation = Circulation(rond_point)
+        self.__regulateur = Regulateur(rond_point)
         self.__registre = Registre()
         self.__sessions: dict[int, Session] = {}
         self.__passages_en_cours: dict[str, PassageEnCours] = {}
         self.__passages: list[PassageVp] = []
-        self.__regulation_active = True
         self.__total_sessions = 0
 
     @property
@@ -88,6 +89,11 @@ class LogiqueServeur:
     def circulation(self) -> Circulation:
         """Circulation: calcule ce que voit chaque conducteur."""
         return self.__circulation
+
+    @property
+    def regulateur(self) -> Regulateur:
+        """Regulateur: décide des consignes envoyées aux usagers."""
+        return self.__regulateur
 
     @property
     def registre(self) -> Registre:
@@ -117,7 +123,7 @@ class LogiqueServeur:
     @property
     def regulation_active(self) -> bool:
         """bool: True si le serveur régule le trafic, False s'il sert de référence pour la mesure."""
-        return self.__regulation_active
+        return self.__regulateur.active
 
     @property
     def vp_actif(self) -> bool:
@@ -157,6 +163,8 @@ class LogiqueServeur:
             return None
         if self.__passages_en_cours.pop(session.identifiant, None) is not None:
             journal.warning("VP %s disparu avant son VP_FIN : sa réservation est levée, sans mesure", session.identifiant)
+        # S'il revient sur une nouvelle session, la consigne qui vaut encore lui sera renvoyée.
+        self.__regulateur.oublier(session.identifiant)
         return self.__registre.retirer(session.identifiant)
 
     def traiter_tcp(self, numero: int, message: Message, maintenant: float) -> Reponse:
@@ -267,9 +275,10 @@ class LogiqueServeur:
     def cadencer(self) -> list[tuple[int, Message]]:
         """Fait le travail de chaque cadence du serveur.
 
-        La densité moyenne des branches est relevée pour les VP en cours de traversée,
-        puis un STATE part vers chaque supervision, et chaque véhicule reçoit ce qu'il voit
-        devant lui (DEVANT), que la régulation soit active ou non.
+        La densité moyenne des branches est relevée pour les VP en cours de traversée. Le
+        régulateur décide ensuite des consignes (NOTIF), puis un STATE part vers chaque
+        supervision, et chaque véhicule reçoit ce qu'il voit devant lui (DEVANT), que la
+        régulation soit active ou non.
 
         Returns:
             list[tuple[int, Message]]: messages à envoyer, avec le numéro de leur session.
@@ -278,8 +287,14 @@ class LogiqueServeur:
         densite_moyenne = sum(densites.values()) / len(densites)
         for passage in self.__passages_en_cours.values():
             passage.noter_densite(densite_moyenne)
+        numeros = {session.identifiant: session.numero for session in self.__sessions.values() if session.identifiant}
+        notifications = self.__regulateur.decider(self.__registre, self.passages_en_cours, densites)
+        envois = [
+            (numeros[notification.destinataire], notification.vers_message(IDENTIFIANT_SERVEUR))
+            for notification in notifications
+        ]
         etat = self.__etat(densites)
-        envois = [(numero, etat) for numero in self.superviseurs()]
+        envois += [(numero, etat) for numero in self.superviseurs()]
         vues = self.__circulation.voir(self.__registre)
         for session in self.__sessions.values():
             vue = vues.get(session.identifiant)
@@ -303,8 +318,8 @@ class LogiqueServeur:
             "densite": densites,
             "vp_actif": self.vp_actif,
             "segments_reserves": self.segments_reserves,
-            "entrees_bloquees": [],
-            "regulation": self.__regulation_active,
+            "entrees_bloquees": self.__regulateur.entrees_bloquees,
+            "regulation": self.__regulateur.active,
         }
         return Message(TypeMessage.STATE, IDENTIFIANT_SERVEUR, donnees)
 
@@ -356,7 +371,7 @@ class LogiqueServeur:
         if vp.identifiant not in self.__passages_en_cours:
             segments = [segment.nom for segment in vp.calculer_trajectoire(self.__rond_point).segments]
             self.__passages_en_cours[vp.identifiant] = PassageEnCours(
-                vp.identifiant, vp.branche_entree, vp.branche_sortie, segments, maintenant, self.__regulation_active
+                vp.identifiant, vp.branche_entree, vp.branche_sortie, segments, maintenant, self.__regulateur.active
             )
             journal.info(
                 "VP %s annoncé de %s vers %s, à l'anneau dans %.1f s ; segments réservés : %s",
