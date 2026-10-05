@@ -1,4 +1,4 @@
-"""Fixtures partagées par les tests : configurations sur des ports libres et serveurs lancés."""
+"""Fixtures partagées par les tests : configurations sur des ports libres, serveurs et clients lancés."""
 
 import configparser
 import socket
@@ -9,7 +9,9 @@ from pathlib import Path
 import pytest
 from outils import DELAI
 
+from cherrypie.client.client_usager import ClientUsager
 from cherrypie.commun.config import Configuration
+from cherrypie.modele.usager import Usager, Voiture
 from cherrypie.serveur.serveur import Serveur
 
 CHEMIN_EXEMPLE = Path(__file__).resolve().parent.parent / "config.exemple.ini"
@@ -68,3 +70,20 @@ def lancer_serveur(fabrique_config: Callable[..., Configuration]) -> Iterator[Ca
     for serveur, fil in lances:
         serveur.arreter()
         fil.join(timeout=DELAI)
+
+
+@pytest.fixture
+def preparer_client() -> Iterator[Callable[..., ClientUsager]]:
+    """Prépare des clients, à démarrer avec start(), puis les arrête à la fin du test."""
+    prepares: list[ClientUsager] = []
+
+    def preparer(config: Configuration, usager: Usager | None = None, **rappels: Callable) -> ClientUsager:
+        client = ClientUsager(config, usager or Voiture("voiture_12", "S", "N"), **rappels)
+        prepares.append(client)
+        return client
+
+    yield preparer
+    for client in prepares:
+        client.arreter()
+        if client.is_alive():
+            client.join(timeout=DELAI)

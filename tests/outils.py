@@ -7,9 +7,9 @@ from collections.abc import Callable
 DELAI = 2.0
 
 
-def attendre(condition: Callable[[], bool]) -> None:
-    """Attend qu'une condition devienne vraie, au plus DELAI secondes."""
-    limite = time.monotonic() + DELAI
+def attendre(condition: Callable[[], bool], delai: float = DELAI) -> None:
+    """Attend qu'une condition devienne vraie, au plus `delai` secondes."""
+    limite = time.monotonic() + delai
     while not condition():
         assert time.monotonic() < limite, "la condition n'est jamais devenue vraie"
         time.sleep(0.01)

@@ -19,7 +19,7 @@ from cherrypie.commun.protocole import CodeNotification, Enveloppe, Message, Typ
 from cherrypie.commun.securite import Signataire
 from cherrypie.commun.trame import DecoupeurTrames
 from cherrypie.modele.trajectoire import LONGUEUR_BRANCHE
-from cherrypie.modele.usager import FACTEUR_RALENTISSEMENT, Usager, VehiculePrioritaire, Voiture
+from cherrypie.modele.usager import FACTEUR_RALENTISSEMENT, VehiculePrioritaire, Voiture
 from cherrypie.serveur.serveur import Serveur
 
 # Délais courts, pour que les tests de heartbeat et de reconnexion restent rapides.
@@ -109,23 +109,6 @@ def faux_serveur(fabrique_config: Callable[..., Configuration]) -> Iterator[Faux
     serveur = FauxServeur(fabrique_config(**{**DELAIS_RAPIDES, "timeout_client": "5"}))
     yield serveur
     serveur.fermer()
-
-
-@pytest.fixture
-def preparer_client() -> Iterator[Callable[..., ClientUsager]]:
-    """Prépare des clients, à démarrer avec start(), puis les arrête à la fin du test."""
-    prepares: list[ClientUsager] = []
-
-    def preparer(config: Configuration, usager: Usager | None = None, **rappels: Callable) -> ClientUsager:
-        client = ClientUsager(config, usager or Voiture("voiture_12", "S", "N"), **rappels)
-        prepares.append(client)
-        return client
-
-    yield preparer
-    for client in prepares:
-        client.arreter()
-        if client.is_alive():
-            client.join(timeout=DELAI)
 
 
 @pytest.fixture
