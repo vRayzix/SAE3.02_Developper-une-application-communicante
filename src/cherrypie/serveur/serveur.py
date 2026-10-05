@@ -228,7 +228,7 @@ class Serveur:
         except BlockingIOError:
             return
         try:
-            self.__logique.traiter_udp(self.__ouvrir(octets))
+            self.__logique.traiter_udp(self.__ouvrir(octets), time.monotonic())
         except UsagerInconnuError as erreur:
             # Fréquent juste après la fermeture d'une session : ses derniers POS arrivent encore.
             journal.info("position ignorée : %s", erreur)

@@ -8,6 +8,7 @@ se teste sans réseau.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 
 from cherrypie.commun.erreurs import BrancheInconnueError, TrameInvalideError
@@ -15,7 +16,8 @@ from cherrypie.commun.protocole import Message, TypeMessage
 from cherrypie.modele.position import Position
 from cherrypie.modele.rond_point import RondPoint
 from cherrypie.modele.trajectoire import Etape
-from cherrypie.modele.usager import Usager
+from cherrypie.modele.usager import Usager, VehiculePrioritaire
+from cherrypie.serveur.passages import PassageEnCours, PassageVp
 from cherrypie.serveur.registre import Registre
 from cherrypie.serveur.session import Session
 
@@ -58,6 +60,9 @@ class LogiqueServeur:
         self.__timeout_client = timeout_client
         self.__registre = Registre()
         self.__sessions: dict[int, Session] = {}
+        self.__passages_en_cours: dict[str, PassageEnCours] = {}
+        self.__passages: list[PassageVp] = []
+        self.__regulation_active = True
         self.__total_sessions = 0
 
     @property
@@ -85,6 +90,26 @@ class LogiqueServeur:
         """int: nombre de sessions ouvertes depuis le démarrage, qui sert aussi à les numéroter."""
         return self.__total_sessions
 
+    @property
+    def passages_en_cours(self) -> list[PassageEnCours]:
+        """list[PassageEnCours]: VP annoncés dont la traversée n'est pas finie (copie)."""
+        return list(self.__passages_en_cours.values())
+
+    @property
+    def passages(self) -> list[PassageVp]:
+        """list[PassageVp]: traversées de VP mesurées depuis le démarrage, à enregistrer en base (copie)."""
+        return list(self.__passages)
+
+    @property
+    def regulation_active(self) -> bool:
+        """bool: True si le serveur régule le trafic, False s'il sert de référence pour la mesure."""
+        return self.__regulation_active
+
+    @property
+    def vp_actif(self) -> bool:
+        """bool: True si au moins un VP annoncé n'a pas fini sa traversée."""
+        return bool(self.__passages_en_cours)
+
     def ouvrir_session(self, maintenant: float) -> int:
         """Ouvre une session pour une nouvelle connexion TCP.
 
@@ -111,6 +136,8 @@ class LogiqueServeur:
         session = self.__sessions.pop(numero, None)
         if session is None or session.identifiant is None:
             return None
+        if self.__passages_en_cours.pop(session.identifiant, None) is not None:
+            journal.warning("VP %s disparu avant son VP_FIN : sa réservation est levée, sans mesure", session.identifiant)
         return self.__registre.retirer(session.identifiant)
 
     def traiter_tcp(self, numero: int, message: Message, maintenant: float) -> Reponse:
@@ -141,13 +168,21 @@ class LogiqueServeur:
             return self.__abonner(session)
         if message.type is TypeMessage.BYE:
             return Reponse(fermer=True)
+        if message.type is TypeMessage.VP_ALERT:
+            return self.__signaler_vp(session, message)
+        if message.type is TypeMessage.VP_FIN:
+            return self.__terminer_vp(session, maintenant)
         raise TrameInvalideError(f"message {message.type.value} inattendu sur une session TCP")
 
-    def traiter_udp(self, message: Message) -> None:
+    def traiter_udp(self, message: Message, maintenant: float) -> None:
         """Met à jour un usager à partir d'une position reçue en UDP.
+
+        Si l'usager est un VP annoncé, sa première position sur l'anneau démarre la mesure
+        de sa traversée.
 
         Args:
             message (Message): message déjà authentifié (HMAC et anti-rejeu vérifiés).
+            maintenant (float): instant de réception, sur l'horloge monotone du serveur.
 
         Raises:
             TrameInvalideError: si le message n'est pas un POS ou si ses données sont invalides.
@@ -180,6 +215,9 @@ class LogiqueServeur:
         usager.segment = donnees["segment"]
         usager.etape = etape
         usager.position = position
+        passage = self.__passages_en_cours.get(usager.identifiant)
+        if passage is not None:
+            passage.noter_etape(etape, maintenant, self.__regulation_active)
 
     def sessions_expirees(self, maintenant: float) -> list[int]:
         """Liste les sessions restées silencieuses plus longtemps que le timeout.
@@ -248,6 +286,52 @@ class LogiqueServeur:
         self.__rond_point.branche(usager.branche_entree)
         self.__rond_point.branche(usager.branche_sortie)
         return usager
+
+    def __signaler_vp(self, session: Session, message: Message) -> Reponse:
+        """Enregistre l'annonce d'un VP et réserve les segments de sa trajectoire."""
+        vp = self.__usager_de(session)
+        if not isinstance(vp, VehiculePrioritaire):
+            raise TrameInvalideError(f"VP_ALERT de {vp.identifiant}, qui n'est pas un véhicule prioritaire")
+        donnees = message.donnees
+        if (donnees.get("entree"), donnees.get("sortie")) != (vp.branche_entree, vp.branche_sortie):
+            raise TrameInvalideError(f"VP_ALERT de {vp.identifiant} différent du trajet annoncé dans son HELLO")
+        eta = donnees.get("eta")
+        # bool est une sous-classe de int ; et écrit ainsi, le test refuse aussi NaN.
+        if isinstance(eta, bool) or not isinstance(eta, (int, float)) or not 0 <= eta < math.inf:
+            raise TrameInvalideError(f"VP_ALERT de {vp.identifiant} avec un eta invalide : {eta!r}")
+        if vp.identifiant not in self.__passages_en_cours:
+            segments = [segment.nom for segment in vp.calculer_trajectoire(self.__rond_point).segments]
+            self.__passages_en_cours[vp.identifiant] = PassageEnCours(
+                vp.identifiant, vp.branche_entree, vp.branche_sortie, segments
+            )
+            journal.info(
+                "VP %s annoncé de %s vers %s, à l'anneau dans %.1f s ; segments réservés : %s",
+                vp.identifiant, vp.branche_entree, vp.branche_sortie, eta, ", ".join(segments),
+            )
+        return Reponse()
+
+    def __terminer_vp(self, session: Session, maintenant: float) -> Reponse:
+        """Clôt la traversée d'un VP sorti de l'anneau et conserve sa mesure."""
+        vp = self.__usager_de(session)
+        passage = self.__passages_en_cours.pop(vp.identifiant, None)
+        if passage is None:
+            raise TrameInvalideError(f"VP_FIN de {vp.identifiant} sans VP_ALERT")
+        mesure = passage.terminer(maintenant)
+        if mesure is None:
+            journal.warning("VP %s sorti sans avoir été vu sur l'anneau : pas de mesure", vp.identifiant)
+        else:
+            self.__passages.append(mesure)
+            journal.info(
+                "VP %s : %.1f s sur l'anneau, régulation %s",
+                vp.identifiant, mesure.duree, "active" if mesure.regulation else "inactive",
+            )
+        return Reponse()
+
+    def __usager_de(self, session: Session) -> Usager:
+        """Renvoie l'usager inscrit sur une session, pour un message qui en exige un."""
+        if session.identifiant is None:
+            raise TrameInvalideError(f"message réservé à une session d'usager inscrit (session {session.numero})")
+        return self.__registre.obtenir(session.identifiant)
 
     def __abonner(self, session: Session) -> Reponse:
         """Abonne une session de supervision aux STATE."""

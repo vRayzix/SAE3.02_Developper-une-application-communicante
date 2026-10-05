@@ -178,7 +178,7 @@ def pos(identifiant: str = "voiture_12", **modifications: object) -> Message:
 
 def test_pos_met_a_jour_l_usager(logique: LogiqueServeur) -> None:
     session_inscrite(logique)
-    logique.traiter_udp(pos())
+    logique.traiter_udp(pos(), 1.0)
     usager = logique.registre.obtenir("voiture_12")
     assert usager.position == Position(3.5, -20.0)
     assert usager.vitesse == pytest.approx(4.2)
@@ -188,19 +188,19 @@ def test_pos_met_a_jour_l_usager(logique: LogiqueServeur) -> None:
 
 def test_pos_hors_de_l_anneau_sans_segment(logique: LogiqueServeur) -> None:
     session_inscrite(logique)
-    logique.traiter_udp(pos(segment=None, etape="approche"))
+    logique.traiter_udp(pos(segment=None, etape="approche"), 1.0)
     assert logique.registre.obtenir("voiture_12").segment is None
 
 
 def test_pos_d_un_usager_sans_session_refuse(logique: LogiqueServeur) -> None:
     with pytest.raises(UsagerInconnuError, match="voiture_99"):
-        logique.traiter_udp(pos("voiture_99"))
+        logique.traiter_udp(pos("voiture_99"), 1.0)
 
 
 def test_pos_apres_fermeture_de_la_session_refuse(logique: LogiqueServeur) -> None:
     logique.fermer_session(session_inscrite(logique))
     with pytest.raises(UsagerInconnuError):
-        logique.traiter_udp(pos())
+        logique.traiter_udp(pos(), 1.0)
 
 
 @pytest.mark.parametrize(
@@ -221,7 +221,7 @@ def test_pos_invalide_refuse_sans_toucher_l_usager(
 ) -> None:
     session_inscrite(logique)
     with pytest.raises(TrameInvalideError, match=motif):
-        logique.traiter_udp(pos(**modifications))
+        logique.traiter_udp(pos(**modifications), 1.0)
     usager = logique.registre.obtenir("voiture_12")
     assert usager.position is None
     assert usager.vitesse == 0.0
@@ -231,13 +231,13 @@ def test_pos_incomplet_refuse(logique: LogiqueServeur) -> None:
     session_inscrite(logique)
     incomplet = Message(TypeMessage.POS, "voiture_12", {"x": 0.0, "y": 0.0, "vitesse": 1.0})
     with pytest.raises(TrameInvalideError, match="il manque : segment, etape"):
-        logique.traiter_udp(incomplet)
+        logique.traiter_udp(incomplet, 1.0)
 
 
 def test_autre_message_qu_un_pos_refuse_en_udp(logique: LogiqueServeur) -> None:
     session_inscrite(logique)
     with pytest.raises(TrameInvalideError, match="seuls les POS"):
-        logique.traiter_udp(Message(TypeMessage.PING, "voiture_12"))
+        logique.traiter_udp(Message(TypeMessage.PING, "voiture_12"), 1.0)
 
 
 # ---------- Heartbeat et STATE ----------
@@ -269,7 +269,7 @@ def test_etat_sans_usager(logique: LogiqueServeur) -> None:
 
 def test_etat_liste_les_usagers_et_leur_derniere_position(logique: LogiqueServeur) -> None:
     session_inscrite(logique, "voiture_12")
-    logique.traiter_udp(pos())
+    logique.traiter_udp(pos(), 1.0)
     (usager,) = logique.construire_etat().donnees["usagers"]
     assert usager["id"] == "voiture_12"
     assert usager["categorie"] == "voiture"
