@@ -46,7 +46,8 @@ Ces ports évitent le 5000, que le récepteur AirPlay occupe déjà sur toutes l
 ## Tests
 
 ```bash
-python -m pytest
+python -m pytest                  # tous les tests, environ 35 s
+python -m pytest -m "not lent"    # sans le test de bout en bout, qui joue deux traversées en temps réel
 ```
 
 ## Organisation du dépôt

@@ -4,6 +4,7 @@ import random
 import socket
 from collections.abc import Callable
 
+import pytest
 from outils import DELAI, attendre
 
 from cherrypie.client.client_usager import ClientUsager
@@ -81,6 +82,7 @@ def traversee(
     return serveur.logique.passages[0]
 
 
+@pytest.mark.lent
 def test_vp_traverse_plus_vite_avec_la_regulation(
     lancer_serveur: Callable[..., Serveur], preparer_client: Callable[..., ClientUsager]
 ) -> None:
