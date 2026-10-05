@@ -178,6 +178,7 @@ def test_vers_dict_nouvel_usager(voiture: Voiture) -> None:
         "y": None,
         "vitesse": 0.0,
         "segment": None,
+        "etape": "approche",
         "consigne": None,
     }
 

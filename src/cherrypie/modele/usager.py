@@ -5,7 +5,7 @@ from __future__ import annotations
 from cherrypie.commun.protocole import CodeNotification
 from cherrypie.modele.position import Position
 from cherrypie.modele.rond_point import RondPoint
-from cherrypie.modele.trajectoire import Trajectoire
+from cherrypie.modele.trajectoire import Etape, Trajectoire
 
 # 1 km/h en m/s : les vitesses se lisent en km/h, les calculs se font en m/s.
 KMH = 1 / 3.6
@@ -55,6 +55,8 @@ class Usager:
         self.__position: Position | None = None
         self.__vitesse = 0.0
         self.__segment: str | None = None
+        # Un usager qui vient de se présenter arrive par sa branche d'entrée.
+        self.__etape = Etape.APPROCHE
         self.__consigne: CodeNotification | None = None
 
     @classmethod
@@ -89,6 +91,8 @@ class Usager:
             usager.position = Position(contenu["x"], contenu["y"])
         usager.vitesse = contenu.get("vitesse", 0.0)
         usager.segment = contenu.get("segment")
+        if contenu.get("etape") is not None:
+            usager.etape = Etape(contenu["etape"])
         if contenu.get("consigne") is not None:
             usager.reagir(CodeNotification(contenu["consigne"]))
         return usager
@@ -164,6 +168,22 @@ class Usager:
         self.__segment = valeur
 
     @property
+    def etape(self) -> Etape:
+        """Etape: partie du trajet où se trouve l'usager (approche, anneau, traversée ou sortie)."""
+        return self.__etape
+
+    @etape.setter
+    def etape(self, valeur: Etape) -> None:
+        """Enregistre l'étape où se trouve l'usager.
+
+        Raises:
+            TypeError: si la valeur n'est pas une Etape.
+        """
+        if not isinstance(valeur, Etape):
+            raise TypeError(f"étape invalide : {valeur!r}")
+        self.__etape = valeur
+
+    @property
     def consigne(self) -> CodeNotification | None:
         """CodeNotification | None: consigne en cours, None si l'usager circule librement."""
         return self.__consigne
@@ -225,7 +245,7 @@ class Usager:
 
         Returns:
             dict: identité, trajet, position (x et y à None si elle est inconnue),
-                vitesse, segment et consigne.
+                vitesse, segment, étape et consigne.
         """
         return {
             "id": self.__identifiant,
@@ -236,6 +256,7 @@ class Usager:
             "y": None if self.__position is None else self.__position.y,
             "vitesse": self.__vitesse,
             "segment": self.__segment,
+            "etape": self.__etape.value,
             "consigne": None if self.__consigne is None else self.__consigne.value,
         }
 
