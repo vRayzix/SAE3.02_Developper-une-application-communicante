@@ -382,12 +382,13 @@ classDiagram
         -timeout_client : float
         -calculateur : CalculateurDensite
         -circulation : Circulation
+        -regulateur : Regulateur
         -registre : Registre
         -sessions : dict[int, Session]
         -total_sessions : int
         -passages_en_cours : dict[str, PassageEnCours]
         -passages : list[PassageVp]
-        -regulation_active : bool
+        +regulation_active() bool
         +vp_actif() bool
         +segments_reserves() list[str]
         +ouvrir_session(maintenant: float) int
@@ -400,6 +401,7 @@ classDiagram
         +construire_etat() Message
         -signaler_vp(session: Session, message: Message) Reponse
         -terminer_vp(session: Session, maintenant: float) Reponse
+        -regler(session: Session, message: Message) Reponse
     }
 
     class Reponse {
@@ -433,6 +435,7 @@ classDiagram
     LogiqueServeur --> RondPoint
     LogiqueServeur *-- CalculateurDensite
     LogiqueServeur *-- Circulation
+    LogiqueServeur *-- Regulateur
     LogiqueServeur "1" *-- "0..*" PassageEnCours
     LogiqueServeur "1" *-- "0..*" PassageVp
     Registre "1" o-- "0..*" Usager
@@ -468,14 +471,15 @@ classDiagram
         -entree : str
         -sortie : str
         -segments_reserves : tuple[str, ...]
+        -annonce : float
+        -debut : datetime
+        -regulation : bool
         -entree_anneau : float | None
-        -debut : datetime | None
-        -regulation : bool | None
         -releves_densite : list[float]
         +sur_l_anneau() bool
-        +noter_etape(etape: Etape, maintenant: float, regulation: bool) None
+        +noter_etape(etape: Etape, maintenant: float) None
         +noter_densite(densite_moyenne: float) None
-        +terminer(maintenant: float) PassageVp | None
+        +terminer(maintenant: float) PassageVp
     }
 
     class PassageVp {
@@ -486,6 +490,7 @@ classDiagram
         +debut : datetime
         +fin : datetime
         +duree : float
+        +duree_anneau : float | None
         +regulation : bool
         +densite_moyenne : float
     }
@@ -496,7 +501,7 @@ classDiagram
 ```
 
 - `CalculateurDensite` compte, pour chaque branche, les usagers en approche sur cette branche (ceux qui roulent vers l'anneau ou attendent d'y entrer) et divise par sa capacité, en bornant à 1. `niveau()` applique les seuils du cahier des charges : faible en dessous de 0,4, moyenne en dessous de 0,7, forte au-delà.
-- Un VP_ALERT crée un `PassageEnCours`, qui réserve les segments de la trajectoire du VP. Le premier POS du VP sur l'anneau démarre le chronomètre, et `cadencer()` y relève la densité moyenne des branches à chaque cadence. Le VP_FIN produit un `PassageVp`, une mesure figée que `LogiqueServeur.passages` conserve pour l'enregistrement en base.
+- Un VP_ALERT crée un `PassageEnCours`, qui réserve les segments de la trajectoire du VP et démarre le chronomètre, en notant le mode de régulation en vigueur. Le premier POS du VP sur l'anneau note son entrée sur l'anneau, et `cadencer()` relève la densité moyenne des branches à chaque cadence. Le VP_FIN produit un `PassageVp`, une mesure figée (durée de l'annonce au VP_FIN, durée sur l'anneau seule) que `LogiqueServeur.passages` conserve pour l'enregistrement en base.
 - `cadencer()` regroupe ce que la logique fait à chaque cadence : relevés de densité, puis un STATE par supervision. La boucle réseau n'a plus qu'à envoyer ce qu'elle renvoie.
 
 ### Ce que voit chaque conducteur
@@ -527,15 +532,24 @@ classDiagram
 - Deux véhicules sont sur la même voie si leurs décalages latéraux diffèrent de moins d'un mètre : un usager rangé sur le côté ne gêne pas ceux qui roulent au milieu.
 - Le cédez-le-passage demande 15 m libres en amont et 10 m en aval du point d'entrée, ce qui empêche l'anneau de se bloquer en boucle.
 
-### Régulation (prévue)
+### Régulation
 
 ```mermaid
 classDiagram
     class Regulateur {
         -rond_point : RondPoint
+        -active : bool
         -consignes_envoyees : dict[str, CodeNotification]
         -entrees_bloquees : set[str]
-        +decider(registre: Registre, densites: dict[str, float], segments_reserves: list[str]) list[Notification]
+        +decider(registre: Registre, passages: list[PassageEnCours], densites: dict[str, float]) list[Notification]
+        +oublier(identifiant: str) None
+        -consigne_voulue(usager: Usager, ...) tuple | None
+        -consigne_de_dosage(usager: Usager, branche_temporisee: str | None) tuple | None$
+        -branche_a_temporiser(densites: dict[str, float]) str | None$
+        -changement(identifiant: str, voulue: tuple | None) Notification | None
+        -tout_liberer() list[Notification]
+        -chemin_restant(usager: Usager) list[str]
+        -segments_devant(vp: Usager, passage: PassageEnCours) set[str]$
     }
 
     class Notification {
@@ -543,16 +557,20 @@ classDiagram
         +destinataire : str
         +code : CodeNotification
         +texte : str
-        +vers_message() Message
+        +vers_message(emetteur: str) Message
     }
 
-    LogiqueServeur *-- Regulateur
     Regulateur ..> Notification : produit
+    Regulateur ..> PassageEnCours : lit
+    Regulateur ..> CalculateurDensite : niveaux
 ```
 
-- `Regulateur.decider()` sera appelé à chaque cadence. Il comparera la situation (VP en cours, densités, étape des usagers) aux consignes déjà envoyées et ne renverra que les nouvelles notifications. Quand la régulation est désactivée, il ne renverra rien.
+- `Regulateur.decider()` est appelé à chaque cadence par `cadencer()`. Il calcule la consigne voulue pour chaque usager, la compare à celle déjà envoyée (`consignes_envoyees`) et ne renvoie que les changements ; un usager libéré reçoit OK_PASSER.
+- Autour d'un VP : DEGAGEZ pour qui est ou va passer sur un segment réservé devant le VP, CHANGEZ_VOIE pour la file sur la branche d'entrée du VP, ATTENDEZ pour qui entrerait sur un segment réservé, et ATTENDEZ pour les piétons devant les passages de l'entrée et de la sortie du VP. Sans VP, le dosage temporise la moins chargée des entrées occupées quand une branche est en densité forte.
+- `oublier()` est appelé à la fermeture d'une session : après une reconnexion, la consigne qui vaut encore est renvoyée.
+- Régulation coupée (`active` à False, message REGLAGE), `decider()` lève une fois les consignes en cours puis ne renvoie plus rien.
 
-Setters prévus : `LogiqueServeur.regulation_active` (message REGLAGE).
+Setters : `Regulateur.active` (message REGLAGE).
 
 ## Paquet `client`
 
