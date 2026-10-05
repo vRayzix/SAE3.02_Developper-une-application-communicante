@@ -19,6 +19,9 @@ peut se vider.
 Dans tous les autres cas, l'usager circule librement ; s'il avait une consigne, il
 reçoit OK_PASSER. Le régulateur se souvient de la dernière consigne envoyée à chaque
 usager et ne renvoie que les changements.
+
+Régulation coupée, le régulateur libère une fois ceux qui avaient une consigne, puis
+n'envoie plus rien : c'est la référence pour mesurer ce qu'apporte la régulation.
 """
 
 from __future__ import annotations
@@ -51,6 +54,7 @@ class Regulateur:
             rond_point (RondPoint): rond-point régulé.
         """
         self.__rond_point = rond_point
+        self.__active = True
         self.__consignes_envoyees: dict[str, CodeNotification] = {}
         self.__entrees_bloquees: set[str] = set()
 
@@ -58,6 +62,22 @@ class Regulateur:
     def rond_point(self) -> RondPoint:
         """RondPoint: rond-point régulé."""
         return self.__rond_point
+
+    @property
+    def active(self) -> bool:
+        """bool: True si le régulateur envoie des consignes, False s'il sert de référence."""
+        return self.__active
+
+    @active.setter
+    def active(self, valeur: bool) -> None:
+        """Active ou coupe la régulation (message REGLAGE).
+
+        Raises:
+            TypeError: si la valeur n'est pas un booléen.
+        """
+        if not isinstance(valeur, bool):
+            raise TypeError(f"la régulation est active ou non (reçu : {valeur!r})")
+        self.__active = valeur
 
     @property
     def consignes_envoyees(self) -> dict[str, CodeNotification]:
@@ -82,6 +102,8 @@ class Regulateur:
         Returns:
             list[Notification]: consignes nouvelles ou levées, à envoyer à leurs destinataires.
         """
+        if not self.__active:
+            return self.__tout_liberer()
         vps = [(registre.obtenir(passage.identifiant), passage) for passage in passages]
         devant_les_vps = set().union(*(self.__segments_devant(vp, passage) for vp, passage in vps))
         branche_temporisee = None if vps else self.__branche_a_temporiser(densites)
@@ -97,6 +119,16 @@ class Regulateur:
             if self.__consignes_envoyees.get(usager.identifiant) is CodeNotification.ATTENDEZ
         }
         return notifications
+
+    def __tout_liberer(self) -> list[Notification]:
+        """Lève toutes les consignes en cours ; sans elles, des usagers attendraient pour toujours."""
+        liberations = [
+            Notification(identifiant, CodeNotification.OK_PASSER, TEXTE_OK_PASSER)
+            for identifiant in self.__consignes_envoyees
+        ]
+        self.__consignes_envoyees.clear()
+        self.__entrees_bloquees = set()
+        return liberations
 
     def oublier(self, identifiant: str) -> None:
         """Oublie la consigne d'un usager parti.
