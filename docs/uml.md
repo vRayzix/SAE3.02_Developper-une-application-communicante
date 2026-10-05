@@ -171,6 +171,7 @@ classDiagram
         -position : Position | None
         -vitesse : float
         -segment : str | None
+        -etape : Etape
         -consigne : CodeNotification | None
         +reagir(code: CodeNotification) bool
         +vitesse_autorisee() float
@@ -232,7 +233,7 @@ classDiagram
 - `depuis_dict()` instancie la bonne sous-classe d'après la catégorie reçue dans le HELLO.
 - `Position` a son propre module (`modele/position.py`), partagé par les usagers, le rond-point et les trajectoires. Elle refuse les coordonnées infinies ou NaN.
 
-Setters : `Usager.position`, `Usager.vitesse` (entre 0 et la vitesse maximale de la catégorie) et `Usager.segment`, mis à jour par le client quand il avance et par le serveur à chaque POS reçu.
+Setters : `Usager.position`, `Usager.vitesse` (entre 0 et la vitesse maximale de la catégorie), `Usager.segment` et `Usager.etape`, mis à jour par le client quand il avance et par le serveur à chaque POS reçu. L'étape vaut `APPROCHE` tant que l'usager n'a pas bougé.
 
 ### Rond-point
 
@@ -379,16 +380,25 @@ classDiagram
     class LogiqueServeur {
         -rond_point : RondPoint
         -timeout_client : float
+        -calculateur : CalculateurDensite
         -registre : Registre
         -sessions : dict[int, Session]
         -total_sessions : int
+        -passages_en_cours : dict[str, PassageEnCours]
+        -passages : list[PassageVp]
+        -regulation_active : bool
+        +vp_actif() bool
+        +segments_reserves() list[str]
         +ouvrir_session(maintenant: float) int
         +fermer_session(numero: int) Usager | None
         +traiter_tcp(numero: int, message: Message, maintenant: float) Reponse
-        +traiter_udp(message: Message) None
+        +traiter_udp(message: Message, maintenant: float) None
         +sessions_expirees(maintenant: float) list[int]
         +superviseurs() list[int]
+        +cadencer() list[tuple[int, Message]]
         +construire_etat() Message
+        -signaler_vp(session: Session, message: Message) Reponse
+        -terminer_vp(session: Session, maintenant: float) Reponse
     }
 
     class Reponse {
@@ -420,6 +430,9 @@ classDiagram
     LogiqueServeur "1" *-- "0..*" Session
     LogiqueServeur ..> Reponse : renvoie
     LogiqueServeur --> RondPoint
+    LogiqueServeur *-- CalculateurDensite
+    LogiqueServeur "1" *-- "0..*" PassageEnCours
+    LogiqueServeur "1" *-- "0..*" PassageVp
     Registre "1" o-- "0..*" Usager
 ```
 
@@ -431,7 +444,7 @@ classDiagram
 
 Setters : `Session.identifiant` (une seule fois, au HELLO), `Session.superviseur` (à l'ABONNEMENT) et `Session.derniere_activite` (à chaque message reçu, jamais en arrière).
 
-### Régulation (prévue)
+### Densité et véhicules prioritaires
 
 ```mermaid
 classDiagram
@@ -448,16 +461,51 @@ classDiagram
         +niveau(densite: float) NiveauDensite$
     }
 
+    class PassageEnCours {
+        -identifiant : str
+        -entree : str
+        -sortie : str
+        -segments_reserves : tuple[str, ...]
+        -entree_anneau : float | None
+        -debut : datetime | None
+        -regulation : bool | None
+        -releves_densite : list[float]
+        +sur_l_anneau() bool
+        +noter_etape(etape: Etape, maintenant: float, regulation: bool) None
+        +noter_densite(densite_moyenne: float) None
+        +terminer(maintenant: float) PassageVp | None
+    }
+
+    class PassageVp {
+        <<dataclass>>
+        +identifiant : str
+        +entree : str
+        +sortie : str
+        +debut : datetime
+        +fin : datetime
+        +duree : float
+        +regulation : bool
+        +densite_moyenne : float
+    }
+
+    CalculateurDensite ..> NiveauDensite
+    CalculateurDensite ..> Registre : lit
+    PassageEnCours ..> PassageVp : produit
+```
+
+- `CalculateurDensite` compte, pour chaque branche, les usagers en approche sur cette branche (ceux qui roulent vers l'anneau ou attendent d'y entrer) et divise par sa capacité, en bornant à 1. `niveau()` applique les seuils du cahier des charges : faible en dessous de 0,4, moyenne en dessous de 0,7, forte au-delà.
+- Un VP_ALERT crée un `PassageEnCours`, qui réserve les segments de la trajectoire du VP. Le premier POS du VP sur l'anneau démarre le chronomètre, et `cadencer()` y relève la densité moyenne des branches à chaque cadence. Le VP_FIN produit un `PassageVp`, une mesure figée que `LogiqueServeur.passages` conserve pour l'enregistrement en base.
+- `cadencer()` regroupe ce que la logique fait à chaque cadence : relevés de densité, puis un STATE par supervision. La boucle réseau n'a plus qu'à envoyer ce qu'elle renvoie.
+
+### Régulation (prévue)
+
+```mermaid
+classDiagram
     class Regulateur {
         -rond_point : RondPoint
-        -active : bool
-        -vp_actif : str | None
-        -segments_reserves : set[str]
-        -entrees_bloquees : set[str]
         -consignes_envoyees : dict[str, CodeNotification]
-        +signaler_vp(identifiant: str, entree: str, sortie: str) None
-        +terminer_vp(identifiant: str) None
-        +decider(registre: Registre, densites: dict[str, float]) list[Notification]
+        -entrees_bloquees : set[str]
+        +decider(registre: Registre, densites: dict[str, float], segments_reserves: list[str]) list[Notification]
     }
 
     class Notification {
@@ -468,16 +516,13 @@ classDiagram
         +vers_message() Message
     }
 
-    LogiqueServeur *-- CalculateurDensite
     LogiqueServeur *-- Regulateur
-    CalculateurDensite ..> NiveauDensite
     Regulateur ..> Notification : produit
 ```
 
-- `Regulateur.decider()` sera appelé à chaque cadence. Il compare la situation (VP actif ou non, densités, position des usagers) aux consignes déjà envoyées et ne renvoie que les nouvelles notifications. Quand la régulation est désactivée, il ne renvoie rien.
-- `CalculateurDensite.niveau()` appliquera les seuils du cahier des charges : faible en dessous de 0,4, moyenne en dessous de 0,7, forte au-delà.
+- `Regulateur.decider()` sera appelé à chaque cadence. Il comparera la situation (VP en cours, densités, étape des usagers) aux consignes déjà envoyées et ne renverra que les nouvelles notifications. Quand la régulation est désactivée, il ne renverra rien.
 
-Setters prévus : `Regulateur.active` (message REGLAGE).
+Setters prévus : `LogiqueServeur.regulation_active` (message REGLAGE).
 
 ## Paquet `client`
 
@@ -504,6 +549,7 @@ classDiagram
         -decoupeur : DecoupeurTrames
         -recus : deque[Message]
         -etat : EtatConnexion
+        -vp_annonce : bool
         -sur_position : Callable | None
         -sur_notification : Callable | None
         -sur_connexion : Callable | None
@@ -513,6 +559,7 @@ classDiagram
         -connecter() None
         -circuler() None
         -faire_un_pas() None
+        -annoncer_vp() None
         -traiter(message: Message) None
         -attendre(type_attendu: TypeMessage) Message
         -lire(attente: float) bool
@@ -543,7 +590,7 @@ classDiagram
 - `circuler()` fait avancer l'usager d'un pas à chaque intervalle de position, envoie le POS en UDP, envoie un PING toutes les `intervalle_ping` secondes et traite les messages reçus. Elle s'arrête si le serveur reste muet plus de `timeout_client` secondes, et dit au revoir (BYE) à la fin du trajet ou à l'arrêt.
 - Les messages lus attendent dans une file (`recus`) : une NOTIF arrivée dans la même lecture que le HELLO_ACK n'est pas perdue.
 - `Deplacement` contient les règles de mouvement, sans réseau, ce qui permet de les tester seules. À chaque pas, l'usager parcourt la distance que permet sa consigne et s'arrête sur la ligne d'entrée pendant un ATTENDEZ s'il ne l'a pas encore franchie. Le décalage et le ralentissement viennent de `reagir()`.
-- L'envoi de VP_ALERT et de VP_FIN par un client `vp` viendra avec la régulation.
+- Un client de VP envoie VP_ALERT à chaque connexion tant que le VP n'a pas quitté l'anneau, avec son `eta` (le temps qu'il lui faut pour atteindre l'anneau), puis VP_FIN au pas où il passe en étape de sortie.
 
 Setters prévus : aucun.
 
