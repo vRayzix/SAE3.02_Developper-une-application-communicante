@@ -308,8 +308,10 @@ classDiagram
 
     class Trajectoire {
         -troncons : list[TronconDroit | TronconArc]
+        -recul_ligne : float
         +longueur() float
         +longueur_approche() float
+        +ligne_entree() float
         +segments() list[Segment]
         +pour_vehicule(rond_point: RondPoint, entree: str, sortie: str) Trajectoire$
         +pour_pieton(rond_point: RondPoint, branche: str) Trajectoire$
@@ -329,7 +331,7 @@ classDiagram
 ```
 
 - Une trajectoire est une suite de tronçons parcourus l'un après l'autre : des tronçons droits sur les branches (approche, sortie, passage piéton) et des arcs sur l'anneau, un par segment. Les deux types de tronçons offrent les mêmes membres (`etape`, `longueur`, `segment`, `position_a()`) : la trajectoire trouve le tronçon qui correspond à l'avancement et lui délègue le calcul.
-- L'avancement est la distance parcourue depuis le départ. `longueur_approche` donne la position de la ligne d'entrée, où s'arrête un usager qui a reçu `ATTENDEZ`. Un point situé pile à la jonction de deux tronçons appartient au premier : un usager arrêté sur la ligne est encore en approche.
+- L'avancement est la distance parcourue depuis le départ. `longueur_approche` donne la fin de l'approche, et `ligne_entree` la ligne où s'arrête un usager qui a reçu `ATTENDEZ` ou qui cède le passage. L'approche d'un véhicule rejoint l'axe de l'anneau ; sa ligne est 3,5 m plus tôt, au bord de l'anneau, pour qu'un véhicule à l'arrêt n'empiète pas sur la voie où roulent les autres. Pour un piéton, la ligne est au bord de la chaussée, au bout de l'approche. Un point situé pile à la jonction de deux tronçons appartient au premier.
 - Un véhicule parcourt 50 m d'approche, les segments de l'anneau, puis 50 m de sortie. Un piéton parcourt 4 m de trottoir jusqu'au bord de la chaussée, traverse les 7 m du passage piéton, placé à 8 m de l'anneau, puis repart sur le trottoir d'en face : il croise l'approche des véhicules de cette branche.
 - Le décalage latéral se compte vers la droite du sens de marche ; sur l'anneau, c'est l'extérieur.
 - Les arcs ne font que référencer les segments du rond-point, sans les posséder : agrégation.

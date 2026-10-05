@@ -48,8 +48,21 @@ def test_longueur_totale(sud_vers_nord: Trajectoire) -> None:
     assert sud_vers_nord.longueur == pytest.approx(2 * LONGUEUR_BRANCHE + 2 * QUART_DE_TOUR)
 
 
-def test_ligne_d_entree_au_bout_de_l_approche(sud_vers_nord: Trajectoire) -> None:
+def test_approche_jusqu_a_l_axe_de_l_anneau(sud_vers_nord: Trajectoire) -> None:
     assert sud_vers_nord.longueur_approche == pytest.approx(LONGUEUR_BRANCHE)
+
+
+def test_ligne_d_entree_au_bord_de_l_anneau(sud_vers_nord: Trajectoire) -> None:
+    ligne = sud_vers_nord.position_a(sud_vers_nord.ligne_entree)
+    assert coordonnees(ligne) == pytest.approx((0.0, -(RAYON + LARGEUR_CHAUSSEE / 2)), abs=1e-9)
+    assert sud_vers_nord.etape_a(sud_vers_nord.ligne_entree) is Etape.APPROCHE
+
+
+@pytest.mark.parametrize("recul", [-1.0, LONGUEUR_BRANCHE])
+def test_ligne_hors_de_l_approche_refusee(recul: float) -> None:
+    approche = TronconDroit(Etape.APPROCHE, Position(0.0, 70.0), Position(0.0, 20.0))
+    with pytest.raises(ValueError, match="ligne"):
+        Trajectoire([approche], recul)
 
 
 def test_segments_parcourus_dans_l_ordre(sud_vers_nord: Trajectoire) -> None:
@@ -174,6 +187,7 @@ def test_pieton_ne_prend_pas_l_anneau(traversee_nord: Trajectoire) -> None:
 def test_longueur_de_la_traversee(traversee_nord: Trajectoire) -> None:
     assert traversee_nord.longueur == pytest.approx(LARGEUR_CHAUSSEE + 2 * LONGUEUR_TROTTOIR)
     assert traversee_nord.longueur_approche == pytest.approx(LONGUEUR_TROTTOIR)
+    assert traversee_nord.ligne_entree == pytest.approx(LONGUEUR_TROTTOIR)
 
 
 def test_pieton_attend_au_bord_de_la_chaussee(traversee_nord: Trajectoire) -> None:
