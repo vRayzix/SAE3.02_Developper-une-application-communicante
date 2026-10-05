@@ -429,3 +429,44 @@ def test_pas_de_devant_pour_un_pieton_ni_une_supervision(logique: LogiqueServeur
     supervision = logique.ouvrir_session(0.0)
     logique.traiter_tcp(supervision, Message(TypeMessage.ABONNEMENT, "supervision"), 0.5)
     assert [message.type for _, message in logique.cadencer()] == [TypeMessage.STATE]
+
+
+# ---------- Régulation ----------
+
+def voiture_en_approche(logique: LogiqueServeur, identifiant: str, entree: str, sortie: str) -> int:
+    """Inscrit une voiture et transmet une position sur sa branche d'entrée."""
+    numero = logique.ouvrir_session(0.0)
+    logique.traiter_tcp(numero, hello(identifiant, entree=entree, sortie=sortie), 0.5)
+    logique.traiter_udp(pos(identifiant, segment=None, etape="approche"), 1.0)
+    return numero
+
+
+def notifications(envois: list[tuple[int, Message]]) -> dict[int, str]:
+    return {numero: message.donnees["code"] for numero, message in envois if message.type is TypeMessage.NOTIF}
+
+
+def test_cadence_envoie_la_consigne_a_la_session_du_destinataire(logique: LogiqueServeur) -> None:
+    voiture = voiture_en_approche(logique, "voiture_1", "E", "O")
+    vp = vp_inscrit(logique)
+    logique.traiter_tcp(vp, alerte(), 1.0)
+    assert notifications(logique.cadencer()) == {voiture: "ATTENDEZ"}
+    assert logique.construire_etat().donnees["entrees_bloquees"] == ["E"]
+
+
+def test_consigne_renvoyee_apres_une_reconnexion(logique: LogiqueServeur) -> None:
+    premiere = voiture_en_approche(logique, "voiture_1", "E", "O")
+    vp = vp_inscrit(logique)
+    logique.traiter_tcp(vp, alerte(), 1.0)
+    logique.cadencer()
+    logique.fermer_session(premiere)
+    seconde = voiture_en_approche(logique, "voiture_1", "E", "O")
+    assert notifications(logique.cadencer()) == {seconde: "ATTENDEZ"}
+
+
+def test_fin_du_vp_libere_par_ok_passer(logique: LogiqueServeur) -> None:
+    voiture = voiture_en_approche(logique, "voiture_1", "E", "O")
+    vp = vp_inscrit(logique)
+    logique.traiter_tcp(vp, alerte(), 1.0)
+    logique.cadencer()
+    logique.traiter_tcp(vp, Message(TypeMessage.VP_FIN, "vp_1"), 2.0)
+    assert notifications(logique.cadencer()) == {voiture: "OK_PASSER"}
