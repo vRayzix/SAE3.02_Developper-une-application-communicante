@@ -209,7 +209,9 @@ def test_reconnexion_apres_coupure_du_serveur(
     attendre(lambda: premier.ecoute_tcp.fileno() == -1 and premier.socket_udp.fileno() == -1)
     second = lancer_serveur(premier.config)
     attendre(lambda: second.logique.registre.contient("voiture_12"))
-    assert etats.count(EtatConnexion.CONNECTE) == 2
+    # Le serveur inscrit l'usager juste avant que le client reçoive le HELLO_ACK : on
+    # attend le second CONNECTE au lieu de le supposer déjà signalé.
+    attendre(lambda: etats.count(EtatConnexion.CONNECTE) == 2)
 
 
 def test_essais_espaces_par_un_delai_qui_double(
