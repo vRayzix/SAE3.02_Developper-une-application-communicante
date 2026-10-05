@@ -14,6 +14,7 @@ COULEUR_PASSAGE_PIETON = QColor("#ffffff")
 COULEUR_TEXTE = QColor("#2d3436")
 
 # Une couleur et une taille par catégorie d'usager ; le VP ressort par sa couleur et sa taille.
+# Les tailles sont un peu exagérées pour rester lisibles quand la vue montre tout le rond-point.
 COULEURS_CATEGORIE = {
     "voiture": QColor("#2f6fb3"),
     "moto": QColor("#7b4fa3"),
@@ -28,9 +29,12 @@ NOMS_CATEGORIE = {
     "pieton": "Piéton",
     "vp": "Véhicule prioritaire",
 }
-RAYONS_CATEGORIE = {"voiture": 1.8, "moto": 1.2, "trottinette": 1.0, "pieton": 0.8, "vp": 2.4}
+RAYONS_CATEGORIE = {"voiture": 2.2, "moto": 1.8, "trottinette": 1.5, "pieton": 1.3, "vp": 3.0}
 COULEUR_CONTOUR_USAGER = QColor("#ffffff")
 EPAISSEUR_CONTOUR_USAGER = 0.3
+# Halo translucide autour du VP, pour le repérer d'un coup d'œil.
+COULEUR_HALO_VP = QColor(214, 40, 40, 60)
+RAYON_HALO_VP = 6.0
 
 # Un usager qui suit une consigne est cerclé de la couleur de cette consigne.
 COULEURS_CONSIGNE = {
@@ -42,8 +46,10 @@ EPAISSEUR_CONTOUR_CONSIGNE = 0.7
 
 COULEUR_RESERVE = QColor(255, 159, 28, 150)
 LARGEUR_RESERVE = 4.0
-COULEUR_BLOQUEE = QColor("#c0392b")
-EPAISSEUR_BARRE_BLOQUEE = 1.2
+# Feu carré posé au bord de la voie d'entrée, à hauteur de la ligne, quand l'entrée est temporisée.
+COULEUR_FEU_ENTREE = QColor("#c0392b")
+COTE_FEU_ENTREE = 3.0
+ECART_FEU_ENTREE = 0.5
 
 COULEURS_DENSITE = {
     NiveauDensite.FAIBLE: QColor("#2e9e5b"),
@@ -52,9 +58,15 @@ COULEURS_DENSITE = {
 }
 LARGEUR_BANDE_DENSITE = 1.5
 
-# Marge autour du dessin, et écart entre le bout d'une branche et son nom.
-MARGE_SCENE = 14.0
-ECART_NOM_BRANCHE = 6.0
+# Ordre d'empilement : la chaussée en dessous, puis les marques de régulation, puis les usagers.
+PLAN_MARQUE = 1
+PLAN_USAGER = 2
+PLAN_VP = 3
+
+MARGE_SCENE = 6.0
+# Étiquette de branche : posée côté sortie, à côté de la chaussée, un peu avant le bout de la branche.
+RECUL_ETIQUETTE = 8.0
+ECART_ETIQUETTE = 1.5
 # Passage piéton : bandes blanches de 0,6 m, espacées d'autant (motif en largeurs de trait).
 EPAISSEUR_PASSAGE_PIETON = 3.0
 MOTIF_PASSAGE_PIETON = [0.2, 0.2]

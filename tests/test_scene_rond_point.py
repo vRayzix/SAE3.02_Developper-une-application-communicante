@@ -37,7 +37,7 @@ def test_scene_englobe_les_branches_et_la_marge(scene: SceneRondPoint) -> None:
 
 def test_scene_une_bande_et_un_texte_par_branche(scene: SceneRondPoint) -> None:
     assert list(scene.bandes_densite) == ["N", "E", "S", "O"]
-    assert [texte.text() for texte in scene.textes_densite.values()] == ["N", "E", "S", "O"]
+    assert [texte.toPlainText() for texte in scene.textes_densite.values()] == ["N", "E", "S", "O"]
 
 
 def test_scene_bandes_de_densite_faible_au_depart(scene: SceneRondPoint) -> None:
