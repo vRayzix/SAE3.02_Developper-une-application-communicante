@@ -6,7 +6,7 @@ Ce document décrit les messages échangés entre le serveur du rond-point, les 
 
 | Transport | Port | Usage |
 | --- | --- | --- |
-| TCP | 5050 | messages qui doivent arriver : HELLO, VP_ALERT, VP_FIN, BYE, PING, PONG, NOTIF, STATE, ABONNEMENT, REGLAGE |
+| TCP | 5050 | messages qui doivent arriver : HELLO, VP_ALERT, VP_FIN, BYE, PING, PONG, NOTIF, STATE, ABONNEMENT, REGLAGE, DEVANT |
 | UDP | 5051 | positions (POS), environ toutes les 200 ms ; une position perdue est remplacée par la suivante |
 
 Les ports et les délais se règlent dans `config.ini`.
@@ -55,7 +55,7 @@ Dans le code, `Message` porte `type`, `id` et `donnees` ; `Enveloppe` y ajoute `
 | NOTIF | serveur → client | TCP | `{"code": "DEGAGEZ", "message": "..."}`, code parmi `DEGAGEZ`, `CHANGEZ_VOIE`, `ATTENDEZ`, `OK_PASSER` |
 | STATE | serveur → supervision | TCP | `{"usagers": [...], "densite": {"N": 0.25, ...}, "vp_actif": true, "segments_reserves": ["E-N", "S-E"], "entrees_bloquees": [], "regulation": true}`, voir plus bas |
 | ABONNEMENT | supervision → serveur | TCP | `{}` : la connexion reçoit ensuite les STATE |
-| REGLAGE | supervision → serveur | TCP | `{"regulation": false}` |
+| REGLAGE | supervision → serveur | TCP | `{"regulation": false}`, voir « Régulation » |
 | PING | client → serveur | TCP | `{}` |
 | PONG | serveur → client | TCP | `{}` |
 | BYE | client → serveur | TCP | `{}` |
@@ -72,7 +72,7 @@ Chaque élément de la liste `usagers` d'un STATE décrit un usager connecté :
 - `densite` : pour chaque branche, le nombre d'usagers en approche sur cette branche divisé par sa capacité, borné entre 0 et 1. Faible en dessous de 0,4, moyenne en dessous de 0,7, forte au-delà.
 - `vp_actif` : `true` si au moins un VP annoncé n'a pas fini sa traversée.
 - `segments_reserves` : segments de l'anneau réservés aux VP en cours de traversée, triés par nom, pour que la supervision puisse les afficher.
-- `entrees_bloquees` : branches dont l'entrée est retenue par la régulation.
+- `entrees_bloquees` : branches où au moins un usager attend sur ordre du régulateur (ATTENDEZ), triées par nom.
 - `regulation` : `true` si la régulation est active.
 
 ## Ce que voit un conducteur (DEVANT)
@@ -89,8 +89,25 @@ Les marges du cédez-le-passage empêchent l'anneau de se remplir au point de se
 ## Véhicules prioritaires
 
 - Un VP s'annonce par VP_ALERT dès que son HELLO est accepté. Le serveur ne l'accepte que d'un usager inscrit de catégorie `vp`, avec la même entrée et la même sortie que son HELLO et un `eta` positif ou nul. Il réserve alors les segments de la trajectoire du VP. Un VP_ALERT répété pour un VP déjà annoncé ne change rien.
-- Le VP envoie VP_FIN au moment où il quitte l'anneau. Le serveur lève sa réservation et conserve la mesure de sa traversée : le temps entre son premier POS reçu sur l'anneau et son VP_FIN, avec le mode de régulation en vigueur quand il est entré sur l'anneau et la densité moyenne des branches pendant ce temps.
+- Le VP envoie VP_FIN au moment où il quitte l'anneau. Le serveur lève sa réservation et conserve la mesure de sa traversée : le temps entre son VP_ALERT et son VP_FIN, le temps passé sur l'anneau seul (depuis son premier POS reçu sur l'anneau), le mode de régulation en vigueur à l'annonce et la densité moyenne des branches pendant la traversée. La définition est la même que la régulation soit active ou non.
 - Si la session d'un VP se ferme avant son VP_FIN, sa réservation est levée sans mesure. Après une reconnexion, le VP se réannonce tant qu'il n'a pas quitté l'anneau.
+
+## Régulation (NOTIF et REGLAGE)
+
+À chaque cadence, le régulateur du serveur décide de la consigne de chaque usager et n'envoie une NOTIF que si elle change. Quand un VP traverse, ses segments réservés qu'il n'a pas encore quittés doivent rester libres :
+
+1. un usager sur l'anneau qui est, ou va passer, sur un de ces segments reçoit DEGAGEZ (il ralentit et se range sur la droite) ;
+2. un usager en file sur la branche d'entrée d'un VP encore en approche reçoit CHANGEZ_VOIE (il se range pour le laisser passer) ;
+3. un usager en approche dont le trajet passe par un de ces segments reçoit ATTENDEZ (il s'arrête sur sa ligne d'entrée) ;
+4. un piéton qui attend devant le passage de la branche d'entrée ou de sortie d'un VP reçoit ATTENDEZ (« attendez pour traverser »).
+
+Sans VP, le régulateur dose les entrées : si une branche est en densité forte, la moins chargée des autres entrées occupées, si elle n'est pas elle-même en densité forte, reçoit ATTENDEZ. Dans tous les autres cas, l'usager circule librement : s'il avait une consigne, il reçoit OK_PASSER. Le VP ne reçoit jamais de consigne.
+
+Le champ `message` d'une NOTIF explique la consigne en une phrase (par exemple « Véhicule prioritaire en approche : attendez pour traverser. »).
+
+Quand la session d'un usager se ferme, le régulateur oublie sa consigne : après une reconnexion, la consigne qui vaut encore lui est renvoyée à la cadence suivante.
+
+REGLAGE n'est accepté que d'une session de supervision abonnée, avec `regulation` booléen. Régulation coupée, le régulateur envoie une seule fois OK_PASSER à ceux qui avaient une consigne, sans quoi ils attendraient pour toujours, puis plus aucune NOTIF : c'est la référence pour mesurer ce qu'apporte la régulation. DEVANT continue de partir, puisqu'il simule ce que voient les conducteurs.
 
 ## Sessions et heartbeat
 
