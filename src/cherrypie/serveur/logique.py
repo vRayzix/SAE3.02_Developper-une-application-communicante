@@ -17,6 +17,7 @@ from cherrypie.modele.position import Position
 from cherrypie.modele.rond_point import RondPoint
 from cherrypie.modele.trajectoire import Etape
 from cherrypie.modele.usager import Usager, VehiculePrioritaire
+from cherrypie.serveur.circulation import Circulation
 from cherrypie.serveur.densite import CalculateurDensite
 from cherrypie.serveur.passages import PassageEnCours, PassageVp
 from cherrypie.serveur.registre import Registre
@@ -60,6 +61,7 @@ class LogiqueServeur:
         self.__rond_point = rond_point
         self.__timeout_client = timeout_client
         self.__calculateur = CalculateurDensite(rond_point)
+        self.__circulation = Circulation(rond_point)
         self.__registre = Registre()
         self.__sessions: dict[int, Session] = {}
         self.__passages_en_cours: dict[str, PassageEnCours] = {}
@@ -81,6 +83,11 @@ class LogiqueServeur:
     def calculateur(self) -> CalculateurDensite:
         """CalculateurDensite: calcule la densité de chaque branche."""
         return self.__calculateur
+
+    @property
+    def circulation(self) -> Circulation:
+        """Circulation: calcule ce que voit chaque conducteur."""
+        return self.__circulation
 
     @property
     def registre(self) -> Registre:
@@ -261,7 +268,8 @@ class LogiqueServeur:
         """Fait le travail de chaque cadence du serveur.
 
         La densité moyenne des branches est relevée pour les VP en cours de traversée,
-        puis un STATE part vers chaque supervision.
+        puis un STATE part vers chaque supervision, et chaque véhicule reçoit ce qu'il voit
+        devant lui (DEVANT), que la régulation soit active ou non.
 
         Returns:
             list[tuple[int, Message]]: messages à envoyer, avec le numéro de leur session.
@@ -271,7 +279,14 @@ class LogiqueServeur:
         for passage in self.__passages_en_cours.values():
             passage.noter_densite(densite_moyenne)
         etat = self.__etat(densites)
-        return [(numero, etat) for numero in self.superviseurs()]
+        envois = [(numero, etat) for numero in self.superviseurs()]
+        vues = self.__circulation.voir(self.__registre)
+        for session in self.__sessions.values():
+            vue = vues.get(session.identifiant)
+            if vue is not None:
+                devant = {"distance": vue.distance, "ceder": vue.ceder}
+                envois.append((session.numero, Message(TypeMessage.DEVANT, IDENTIFIANT_SERVEUR, devant)))
+        return envois
 
     def construire_etat(self) -> Message:
         """Construit le STATE diffusé aux supervisions.
