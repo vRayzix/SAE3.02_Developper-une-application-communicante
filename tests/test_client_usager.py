@@ -1,5 +1,6 @@
 """Tests du client usager face à un vrai serveur, sur 127.0.0.1."""
 
+import math
 import os
 import socket
 import subprocess
@@ -16,6 +17,7 @@ from cherrypie.commun.config import Configuration
 from cherrypie.commun.protocole import CodeNotification, Enveloppe, Message, TypeMessage
 from cherrypie.commun.securite import Signataire
 from cherrypie.commun.trame import DecoupeurTrames
+from cherrypie.modele.trajectoire import LONGUEUR_BRANCHE
 from cherrypie.modele.usager import FACTEUR_RALENTISSEMENT, Usager, VehiculePrioritaire, Voiture
 from cherrypie.serveur.serveur import Serveur
 
@@ -68,13 +70,17 @@ class FauxServeur:
         """Accepte la connexion du client et renvoie son HELLO, sans y répondre."""
         self.__connexion, _ = self.__ecoute.accept()
         self.__connexion.settimeout(DELAI)
+        return self.recevoir(TypeMessage.HELLO)
+
+    def recevoir(self, type_attendu: TypeMessage) -> Message:
+        """Renvoie le prochain message du client du type attendu, en sautant les autres (PING...)."""
         while True:
             octets = self.__connexion.recv(65536)
             if not octets:
                 raise ConnectionError("le client a fermé la connexion")
             for trame in self.__decoupeur.ajouter(octets):
                 message = Enveloppe.depuis_octets(trame).message
-                if message.type is TypeMessage.HELLO:
+                if message.type is type_attendu:
                     return message
 
     def envoyer(self, *messages: Message) -> None:
@@ -378,3 +384,33 @@ def test_consigne_inconnue_ignoree(
     attendre(lambda: client.usager.consigne is CodeNotification.ATTENDEZ)
     assert "consigne inconnue" in caplog.text
     assert client.etat is EtatConnexion.CONNECTE
+
+
+# ---------- Véhicule prioritaire ----------
+
+def test_vp_s_annonce_des_son_inscription(faux_serveur: FauxServeur, preparer_client: Callable[..., ClientUsager]) -> None:
+    client = preparer_client(faux_serveur.config, VehiculePrioritaire("vp_1", "S", "N"))
+    client.start()
+    faux_serveur.accepter()
+    faux_serveur.envoyer(accuse_d_inscription())
+    annonce = faux_serveur.recevoir(TypeMessage.VP_ALERT)
+    eta = LONGUEUR_BRANCHE / VehiculePrioritaire.VITESSE_MAX
+    assert annonce.donnees == {"entree": "S", "sortie": "N", "eta": pytest.approx(eta)}
+
+
+def test_traversee_d_un_vp_mesuree_par_le_serveur(
+    lancer_serveur: Callable[..., Serveur], preparer_client: Callable[..., ClientUsager]
+) -> None:
+    # Petit anneau et VP placé juste avant la ligne : la traversée dure moins d'une seconde.
+    serveur = lancer_serveur(**DELAIS_RAPIDES, rayon="5")
+    client = preparer_client(serveur.config, VehiculePrioritaire("vp_1", "S", "E"))
+    ligne = client.deplacement.trajectoire.longueur_approche
+    client.deplacement.avancer((ligne - 1.0) / VehiculePrioritaire.VITESSE_MAX)
+    client.start()
+    attendre(lambda: serveur.logique.vp_actif)
+    attendre(lambda: len(serveur.logique.passages) == 1)
+    (mesure,) = serveur.logique.passages
+    quart_d_anneau = 2 * math.pi * 5 / 4
+    assert mesure.duree == pytest.approx(quart_d_anneau / VehiculePrioritaire.VITESSE_MAX, abs=0.15)
+    assert (mesure.identifiant, mesure.entree, mesure.sortie, mesure.regulation) == ("vp_1", "S", "E", True)
+    assert not serveur.logique.vp_actif
