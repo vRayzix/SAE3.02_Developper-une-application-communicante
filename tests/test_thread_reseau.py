@@ -28,24 +28,43 @@ class Recepteur:
     """Note ce que le travailleur signale, et dans quel thread chaque signal arrive."""
 
     def __init__(self, reseau: ReseauSupervision) -> None:
-        self.etats: list[dict] = []
-        self.connexions: list[str] = []
-        self.termine = False
-        self.threads: set[threading.Thread] = set()
-        reseau.etat_recu.connect(self.noter_etat)
-        reseau.connexion_changee.connect(self.noter_connexion)
-        reseau.termine.connect(self.noter_fin)
+        self.__etats: list[dict] = []
+        self.__connexions: list[str] = []
+        self.__termine = False
+        self.__threads: set[threading.Thread] = set()
+        reseau.etat_recu.connect(self.__noter_etat)
+        reseau.connexion_changee.connect(self.__noter_connexion)
+        reseau.termine.connect(self.__noter_fin)
 
-    def noter_etat(self, etat: dict) -> None:
-        self.threads.add(threading.current_thread())
-        self.etats.append(etat)
+    @property
+    def etats(self) -> list[dict]:
+        return list(self.__etats)
 
-    def noter_connexion(self, etat: str, detail: str) -> None:
-        self.threads.add(threading.current_thread())
-        self.connexions.append(etat)
+    @property
+    def connexions(self) -> list[str]:
+        return list(self.__connexions)
 
-    def noter_fin(self) -> None:
-        self.termine = True
+    @property
+    def termine(self) -> bool:
+        return self.__termine
+
+    @property
+    def threads(self) -> set[threading.Thread]:
+        return set(self.__threads)
+
+    def oublier_etats(self) -> None:
+        self.__etats.clear()
+
+    def __noter_etat(self, etat: dict) -> None:
+        self.__threads.add(threading.current_thread())
+        self.__etats.append(etat)
+
+    def __noter_connexion(self, etat: str, detail: str) -> None:
+        self.__threads.add(threading.current_thread())
+        self.__connexions.append(etat)
+
+    def __noter_fin(self) -> None:
+        self.__termine = True
 
 
 @pytest.fixture
@@ -138,7 +157,7 @@ def test_reconnexion_apres_redemarrage_du_serveur(
     attendre_qt(lambda: bool(recepteur.etats))
     serveur.arreter()
     attendre_qt(lambda: EtatConnexion.DECONNECTE.value in recepteur.connexions)
-    recepteur.etats.clear()
+    recepteur.oublier_etats()
     relance = lancer_serveur(serveur.config)
     attendre_qt(lambda: bool(recepteur.etats))
     assert recepteur.connexions.count(EtatConnexion.CONNECTE.value) == 2

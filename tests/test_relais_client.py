@@ -17,15 +17,23 @@ class Recepteur:
     """Note les signaux reçus et le thread où chacun arrive."""
 
     def __init__(self, relais: RelaisClient) -> None:
-        self.recus: list[tuple] = []
-        self.threads: set[threading.Thread] = set()
-        relais.position_changee.connect(self.noter)
-        relais.notification_recue.connect(self.noter)
-        relais.connexion_changee.connect(self.noter)
+        self.__recus: list[tuple] = []
+        self.__threads: set[threading.Thread] = set()
+        relais.position_changee.connect(self.__noter)
+        relais.notification_recue.connect(self.__noter)
+        relais.connexion_changee.connect(self.__noter)
 
-    def noter(self, *arguments: object) -> None:
-        self.threads.add(threading.current_thread())
-        self.recus.append(arguments)
+    @property
+    def recus(self) -> list[tuple]:
+        return list(self.__recus)
+
+    @property
+    def threads(self) -> set[threading.Thread]:
+        return set(self.__threads)
+
+    def __noter(self, *arguments: object) -> None:
+        self.__threads.add(threading.current_thread())
+        self.__recus.append(arguments)
 
 
 def depuis_un_thread(appel: Callable[[], None]) -> None:
