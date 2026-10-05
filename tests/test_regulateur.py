@@ -9,7 +9,12 @@ from cherrypie.commun.protocole import CodeNotification
 from cherrypie.modele.rond_point import RondPoint
 from cherrypie.modele.trajectoire import LONGUEUR_BRANCHE, LONGUEUR_TROTTOIR
 from cherrypie.modele.usager import Pieton, Usager, VehiculePrioritaire, Voiture
-from cherrypie.serveur.notifications import TEXTE_ATTENDEZ_PIETON, TEXTE_ATTENDEZ_VP, TEXTE_OK_PASSER
+from cherrypie.serveur.notifications import (
+    TEXTE_ATTENDEZ_DOSAGE,
+    TEXTE_ATTENDEZ_PIETON,
+    TEXTE_ATTENDEZ_VP,
+    TEXTE_OK_PASSER,
+)
 from cherrypie.serveur.passages import PassageEnCours
 from cherrypie.serveur.registre import Registre
 from cherrypie.serveur.regulateur import Regulateur
@@ -185,3 +190,46 @@ def test_entrees_bloquees_la_ou_des_usagers_attendent(
     placer(Voiture("voiture_3", "S", "E"), 20.0)
     regulateur.decider(registre, [vp_sud_nord], SANS_CHARGE)
     assert regulateur.entrees_bloquees == ["E", "N"]
+
+
+# ---------- Dosage des entrées sans VP ----------
+
+def test_entree_la_moins_chargee_temporisee_quand_une_branche_sature(
+    regulateur: Regulateur, registre: Registre, placer
+) -> None:
+    placer(Voiture("voiture_1", "E", "O"), 20.0)
+    placer(Voiture("voiture_2", "S", "N"), 20.0)
+    densites = {"N": 0.8, "E": 0.125, "S": 0.25, "O": 0.0}
+    notifications = regulateur.decider(registre, [], densites)
+    assert [(notification.destinataire, notification.code) for notification in notifications] == [("voiture_1", ATTENDEZ)]
+    assert notifications[0].texte == TEXTE_ATTENDEZ_DOSAGE
+    assert regulateur.entrees_bloquees == ["E"]
+
+
+def test_pas_de_dosage_sans_branche_saturee(regulateur: Regulateur, registre: Registre, placer) -> None:
+    placer(Voiture("voiture_1", "E", "O"), 20.0)
+    assert regulateur.decider(registre, [], {"N": 0.6, "E": 0.125, "S": 0.0, "O": 0.0}) == []
+
+
+def test_entree_elle_meme_saturee_pas_temporisee(regulateur: Regulateur, registre: Registre, placer) -> None:
+    placer(Voiture("voiture_1", "E", "O"), 20.0)
+    assert regulateur.decider(registre, [], {"N": 0.8, "E": 0.9, "S": 0.0, "O": 0.0}) == []
+
+
+def test_dosage_leve_quand_la_branche_se_vide(regulateur: Regulateur, registre: Registre, placer) -> None:
+    placer(Voiture("voiture_1", "E", "O"), 20.0)
+    regulateur.decider(registre, [], {"N": 0.8, "E": 0.125, "S": 0.0, "O": 0.0})
+    (notification,) = regulateur.decider(registre, [], {"N": 0.5, "E": 0.125, "S": 0.0, "O": 0.0})
+    assert notification.code is OK_PASSER
+
+
+def test_pas_de_dosage_pendant_le_passage_d_un_vp(
+    regulateur: Regulateur, registre: Registre, placer, vp_sud_nord: PassageEnCours
+) -> None:
+    placer(Voiture("voiture_1", "O", "S"), 20.0)
+    assert regulateur.decider(registre, [vp_sud_nord], {"N": 0.8, "E": 0.0, "S": 0.125, "O": 0.125}) == []
+
+
+def test_pieton_jamais_temporise_par_le_dosage(regulateur: Regulateur, registre: Registre, placer) -> None:
+    placer(Pieton("pieton_1", "E", "E"), 1.0)
+    assert regulateur.decider(registre, [], {"N": 0.8, "E": 0.125, "S": 0.0, "O": 0.0}) == []
