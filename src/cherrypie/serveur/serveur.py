@@ -159,12 +159,11 @@ class Serveur:
                 self.__proteger(numeros[prise], self.__lire_tcp)
 
     def __cadencer(self) -> None:
-        """Retire les clients silencieux, puis envoie le STATE aux supervisions."""
+        """Retire les clients silencieux, puis envoie ce que la logique prévoit à chaque cadence."""
         for numero in self.__logique.sessions_expirees(time.monotonic()):
             self.__fermer(numero, f"aucune nouvelle depuis plus de {self.__config.timeout_client:g} s")
-        etat = self.__logique.construire_etat()
-        for numero in self.__logique.superviseurs():
-            self.__envoyer(numero, etat)
+        for numero, message in self.__logique.cadencer():
+            self.__envoyer(numero, message)
 
     def __proteger(self, numero: int, action: Callable[[int], None]) -> None:
         """Exécute une action sur une session sans qu'une erreur imprévue n'arrête le serveur."""

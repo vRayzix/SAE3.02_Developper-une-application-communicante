@@ -17,6 +17,7 @@ from cherrypie.modele.position import Position
 from cherrypie.modele.rond_point import RondPoint
 from cherrypie.modele.trajectoire import Etape
 from cherrypie.modele.usager import Usager, VehiculePrioritaire
+from cherrypie.serveur.densite import CalculateurDensite
 from cherrypie.serveur.passages import PassageEnCours, PassageVp
 from cherrypie.serveur.registre import Registre
 from cherrypie.serveur.session import Session
@@ -58,6 +59,7 @@ class LogiqueServeur:
             raise ValueError(f"le timeout des clients doit être positif (reçu : {timeout_client})")
         self.__rond_point = rond_point
         self.__timeout_client = timeout_client
+        self.__calculateur = CalculateurDensite(rond_point)
         self.__registre = Registre()
         self.__sessions: dict[int, Session] = {}
         self.__passages_en_cours: dict[str, PassageEnCours] = {}
@@ -74,6 +76,11 @@ class LogiqueServeur:
     def timeout_client(self) -> float:
         """float: silence au-delà duquel une session expire, en secondes."""
         return self.__timeout_client
+
+    @property
+    def calculateur(self) -> CalculateurDensite:
+        """CalculateurDensite: calcule la densité de chaque branche."""
+        return self.__calculateur
 
     @property
     def registre(self) -> Registre:
@@ -109,6 +116,11 @@ class LogiqueServeur:
     def vp_actif(self) -> bool:
         """bool: True si au moins un VP annoncé n'a pas fini sa traversée."""
         return bool(self.__passages_en_cours)
+
+    @property
+    def segments_reserves(self) -> list[str]:
+        """list[str]: segments de l'anneau réservés aux VP en cours de traversée, triés par nom."""
+        return sorted({segment for passage in self.__passages_en_cours.values() for segment in passage.segments_reserves})
 
     def ouvrir_session(self, maintenant: float) -> int:
         """Ouvre une session pour une nouvelle connexion TCP.
@@ -245,14 +257,41 @@ class LogiqueServeur:
         """
         return [session.numero for session in self.__sessions.values() if session.superviseur]
 
+    def cadencer(self) -> list[tuple[int, Message]]:
+        """Fait le travail de chaque cadence du serveur.
+
+        La densité moyenne des branches est relevée pour les VP en cours de traversée,
+        puis un STATE part vers chaque supervision.
+
+        Returns:
+            list[tuple[int, Message]]: messages à envoyer, avec le numéro de leur session.
+        """
+        densites = self.__calculateur.calculer(self.__registre)
+        densite_moyenne = sum(densites.values()) / len(densites)
+        for passage in self.__passages_en_cours.values():
+            passage.noter_densite(densite_moyenne)
+        etat = self.__etat(densites)
+        return [(numero, etat) for numero in self.superviseurs()]
+
     def construire_etat(self) -> Message:
         """Construit le STATE diffusé aux supervisions.
 
         Returns:
-            Message: STATE qui liste les usagers connectés et leur dernier état connu.
+            Message: STATE avec les usagers, la densité des branches, les VP et la régulation.
         """
-        usagers = [usager.vers_dict() for usager in self.__registre.usagers]
-        return Message(TypeMessage.STATE, IDENTIFIANT_SERVEUR, {"usagers": usagers})
+        return self.__etat(self.__calculateur.calculer(self.__registre))
+
+    def __etat(self, densites: dict[str, float]) -> Message:
+        """Construit le STATE à partir de densités déjà calculées."""
+        donnees = {
+            "usagers": [usager.vers_dict() for usager in self.__registre.usagers],
+            "densite": densites,
+            "vp_actif": self.vp_actif,
+            "segments_reserves": self.segments_reserves,
+            "entrees_bloquees": [],
+            "regulation": self.__regulation_active,
+        }
+        return Message(TypeMessage.STATE, IDENTIFIANT_SERVEUR, donnees)
 
     def __accueillir(self, session: Session, message: Message) -> Reponse:
         """Inscrit l'usager annoncé par un HELLO, ou lui explique pourquoi il est refusé."""

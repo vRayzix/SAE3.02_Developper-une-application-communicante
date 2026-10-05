@@ -264,7 +264,14 @@ def test_superviseurs_seules_sessions_abonnees(logique: LogiqueServeur) -> None:
 def test_etat_sans_usager(logique: LogiqueServeur) -> None:
     etat = logique.construire_etat()
     assert etat.type is TypeMessage.STATE
-    assert etat.donnees == {"usagers": []}
+    assert etat.donnees == {
+        "usagers": [],
+        "densite": {"N": 0.0, "E": 0.0, "S": 0.0, "O": 0.0},
+        "vp_actif": False,
+        "segments_reserves": [],
+        "entrees_bloquees": [],
+        "regulation": True,
+    }
 
 
 def test_etat_liste_les_usagers_et_leur_derniere_position(logique: LogiqueServeur) -> None:
