@@ -10,7 +10,8 @@ from cherrypie.client.deplacement import DISTANCE_SECURITE
 from cherrypie.commun.protocole import CodeNotification
 from cherrypie.modele.rond_point import RondPoint
 from cherrypie.modele.trajectoire import LONGUEUR_BRANCHE, Etape
-from cherrypie.modele.usager import Moto, Trottinette, Voiture
+from cherrypie.modele.usager import Moto, Pieton, Trottinette, VehiculePrioritaire, Voiture
+from cherrypie.serveur.passages import PassageVp
 
 BRANCHES = ["N", "E", "S", "O"]
 RAYON = 20.0
@@ -82,3 +83,37 @@ def test_anneau_charge_ne_se_bloque_pas(simulation: Simulation) -> None:
 
     assert simulation.avancer_jusqu_a(tous_sortis, duree_max=300.0), "l'anneau s'est bloqué"
     assert ecart_minimal >= ECART_SANS_CHEVAUCHEMENT
+
+
+# ---------- Régulation ----------
+
+def traversee_du_vp(graine: int, regulation: bool) -> PassageVp:
+    """Fait traverser un VP du sud au nord dans un trafic tiré au hasard, toujours le même pour une graine."""
+    simulation = Simulation(RondPoint(BRANCHES, RAYON, 8))
+    simulation.regler(regulation)
+    hasard = random.Random(graine)
+    for rang in range(3):
+        sortie = hasard.choice(["E", "N", "O"])
+        simulation.ajouter(Voiture(f"voiture_S{rang}", "S", sortie), avancement=40.0 - rang * 12.0)
+    for entree in ["E", "O", "N"]:
+        for rang in range(3):
+            categorie = hasard.choice([Voiture, Moto, Trottinette])
+            sortie = hasard.choice([branche for branche in BRANCHES if branche != entree])
+            simulation.ajouter(categorie(f"{categorie.CATEGORIE}_{entree}{rang}", entree, sortie), avancement=45.0 - rang * 10.0)
+    for branche in ["S", "N"]:
+        simulation.ajouter(Pieton(f"pieton_{branche}", branche, branche), avancement=hasard.uniform(0.0, 3.0))
+    simulation.ajouter(VehiculePrioritaire("vp_1", "S", "N"))
+    assert simulation.avancer_jusqu_a(lambda: bool(simulation.logique.passages), duree_max=120.0)
+    return simulation.logique.passages[0]
+
+
+@pytest.mark.parametrize("graine", [1, 2, 3])
+def test_vp_plus_rapide_avec_regulation(graine: int) -> None:
+    avec = traversee_du_vp(graine, regulation=True)
+    sans = traversee_du_vp(graine, regulation=False)
+    assert (avec.regulation, sans.regulation) == (True, False)
+    assert avec.duree < sans.duree
+
+
+def test_meme_scenario_meme_resultat() -> None:
+    assert traversee_du_vp(1, regulation=False).duree == traversee_du_vp(1, regulation=False).duree

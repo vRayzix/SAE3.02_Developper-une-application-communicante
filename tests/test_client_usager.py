@@ -19,7 +19,7 @@ from cherrypie.commun.protocole import CodeNotification, Enveloppe, Message, Typ
 from cherrypie.commun.securite import Signataire
 from cherrypie.commun.trame import DecoupeurTrames
 from cherrypie.modele.trajectoire import LONGUEUR_BRANCHE
-from cherrypie.modele.usager import FACTEUR_RALENTISSEMENT, Usager, VehiculePrioritaire, Voiture
+from cherrypie.modele.usager import FACTEUR_RALENTISSEMENT, VehiculePrioritaire, Voiture
 from cherrypie.serveur.serveur import Serveur
 
 # Délais courts, pour que les tests de heartbeat et de reconnexion restent rapides.
@@ -109,23 +109,6 @@ def faux_serveur(fabrique_config: Callable[..., Configuration]) -> Iterator[Faux
     serveur = FauxServeur(fabrique_config(**{**DELAIS_RAPIDES, "timeout_client": "5"}))
     yield serveur
     serveur.fermer()
-
-
-@pytest.fixture
-def preparer_client() -> Iterator[Callable[..., ClientUsager]]:
-    """Prépare des clients, à démarrer avec start(), puis les arrête à la fin du test."""
-    prepares: list[ClientUsager] = []
-
-    def preparer(config: Configuration, usager: Usager | None = None, **rappels: Callable) -> ClientUsager:
-        client = ClientUsager(config, usager or Voiture("voiture_12", "S", "N"), **rappels)
-        prepares.append(client)
-        return client
-
-    yield preparer
-    for client in prepares:
-        client.arreter()
-        if client.is_alive():
-            client.join(timeout=DELAI)
 
 
 @pytest.fixture
@@ -414,7 +397,8 @@ def test_traversee_d_un_vp_mesuree_par_le_serveur(
     attendre(lambda: len(serveur.logique.passages) == 1)
     (mesure,) = serveur.logique.passages
     quart_d_anneau = 2 * math.pi * 5 / 4
-    assert mesure.duree == pytest.approx(quart_d_anneau / VehiculePrioritaire.VITESSE_MAX, abs=0.15)
+    assert mesure.duree_anneau == pytest.approx(quart_d_anneau / VehiculePrioritaire.VITESSE_MAX, abs=0.15)
+    assert mesure.duree >= mesure.duree_anneau
     assert (mesure.identifiant, mesure.entree, mesure.sortie, mesure.regulation) == ("vp_1", "S", "E", True)
     assert not serveur.logique.vp_actif
 

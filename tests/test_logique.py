@@ -348,7 +348,8 @@ def test_traversee_mesuree_de_l_entree_sur_l_anneau_au_vp_fin(logique: LogiqueSe
     logique.traiter_udp(pos("vp_1", segment="E-N"), 4.0)
     logique.traiter_tcp(numero, Message(TypeMessage.VP_FIN, "vp_1"), 8.5)
     (mesure,) = logique.passages
-    assert mesure.duree == pytest.approx(5.5)
+    assert mesure.duree == pytest.approx(7.5)
+    assert mesure.duree_anneau == pytest.approx(5.5)
     assert mesure.regulation is True
     assert not logique.vp_actif
 
@@ -428,3 +429,97 @@ def test_pas_de_devant_pour_un_pieton_ni_une_supervision(logique: LogiqueServeur
     supervision = logique.ouvrir_session(0.0)
     logique.traiter_tcp(supervision, Message(TypeMessage.ABONNEMENT, "supervision"), 0.5)
     assert [message.type for _, message in logique.cadencer()] == [TypeMessage.STATE]
+
+
+# ---------- Régulation ----------
+
+def voiture_en_approche(logique: LogiqueServeur, identifiant: str, entree: str, sortie: str) -> int:
+    """Inscrit une voiture et transmet une position sur sa branche d'entrée."""
+    numero = logique.ouvrir_session(0.0)
+    logique.traiter_tcp(numero, hello(identifiant, entree=entree, sortie=sortie), 0.5)
+    logique.traiter_udp(pos(identifiant, segment=None, etape="approche"), 1.0)
+    return numero
+
+
+def notifications(envois: list[tuple[int, Message]]) -> dict[int, str]:
+    return {numero: message.donnees["code"] for numero, message in envois if message.type is TypeMessage.NOTIF}
+
+
+def test_cadence_envoie_la_consigne_a_la_session_du_destinataire(logique: LogiqueServeur) -> None:
+    voiture = voiture_en_approche(logique, "voiture_1", "E", "O")
+    vp = vp_inscrit(logique)
+    logique.traiter_tcp(vp, alerte(), 1.0)
+    assert notifications(logique.cadencer()) == {voiture: "ATTENDEZ"}
+    assert logique.construire_etat().donnees["entrees_bloquees"] == ["E"]
+
+
+def test_consigne_renvoyee_apres_une_reconnexion(logique: LogiqueServeur) -> None:
+    premiere = voiture_en_approche(logique, "voiture_1", "E", "O")
+    vp = vp_inscrit(logique)
+    logique.traiter_tcp(vp, alerte(), 1.0)
+    logique.cadencer()
+    logique.fermer_session(premiere)
+    seconde = voiture_en_approche(logique, "voiture_1", "E", "O")
+    assert notifications(logique.cadencer()) == {seconde: "ATTENDEZ"}
+
+
+def test_fin_du_vp_libere_par_ok_passer(logique: LogiqueServeur) -> None:
+    voiture = voiture_en_approche(logique, "voiture_1", "E", "O")
+    vp = vp_inscrit(logique)
+    logique.traiter_tcp(vp, alerte(), 1.0)
+    logique.cadencer()
+    logique.traiter_tcp(vp, Message(TypeMessage.VP_FIN, "vp_1"), 2.0)
+    assert notifications(logique.cadencer()) == {voiture: "OK_PASSER"}
+
+
+# ---------- REGLAGE ----------
+
+def supervision_abonnee(logique: LogiqueServeur) -> int:
+    numero = logique.ouvrir_session(0.0)
+    logique.traiter_tcp(numero, Message(TypeMessage.ABONNEMENT, "supervision"), 0.1)
+    return numero
+
+
+def reglage(regulation: object) -> Message:
+    return Message(TypeMessage.REGLAGE, "supervision", {"regulation": regulation})
+
+
+def test_reglage_coupe_puis_reactive_la_regulation(logique: LogiqueServeur) -> None:
+    supervision = supervision_abonnee(logique)
+    assert logique.traiter_tcp(supervision, reglage(False), 1.0) == Reponse()
+    assert logique.construire_etat().donnees["regulation"] is False
+    logique.traiter_tcp(supervision, reglage(True), 2.0)
+    assert logique.regulation_active
+
+
+def test_regulation_coupee_aucune_consigne_mais_devant_toujours_envoye(logique: LogiqueServeur) -> None:
+    supervision = supervision_abonnee(logique)
+    logique.traiter_tcp(supervision, reglage(False), 0.5)
+    voiture = voiture_en_approche(logique, "voiture_1", "E", "O")
+    vp = vp_inscrit(logique)
+    logique.traiter_tcp(vp, alerte(), 1.0)
+    envois = logique.cadencer()
+    assert notifications(envois) == {}
+    assert (voiture, TypeMessage.DEVANT) in [(numero, message.type) for numero, message in envois]
+
+
+def test_vp_annonce_regulation_coupee_mesure_en_mode_reference(logique: LogiqueServeur) -> None:
+    supervision = supervision_abonnee(logique)
+    logique.traiter_tcp(supervision, reglage(False), 0.5)
+    vp = vp_inscrit(logique)
+    logique.traiter_tcp(vp, alerte(), 1.0)
+    logique.traiter_tcp(vp, Message(TypeMessage.VP_FIN, "vp_1"), 5.0)
+    assert logique.passages[0].regulation is False
+
+
+def test_reglage_d_un_usager_refuse(logique: LogiqueServeur) -> None:
+    numero = session_inscrite(logique)
+    with pytest.raises(TrameInvalideError, match="pas une supervision"):
+        logique.traiter_tcp(numero, Message(TypeMessage.REGLAGE, "voiture_12", {"regulation": False}), 1.0)
+    assert logique.regulation_active
+
+
+def test_reglage_sans_booleen_refuse(logique: LogiqueServeur) -> None:
+    supervision = supervision_abonnee(logique)
+    with pytest.raises(TrameInvalideError, match="REGLAGE invalide"):
+        logique.traiter_tcp(supervision, reglage("off"), 1.0)
