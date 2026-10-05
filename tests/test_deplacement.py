@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from cherrypie.client.deplacement import Deplacement
+from cherrypie.client.deplacement import DISTANCE_SECURITE, Deplacement
 from cherrypie.commun.protocole import CodeNotification
 from cherrypie.modele.rond_point import RondPoint
 from cherrypie.modele.trajectoire import LONGUEUR_BRANCHE, Etape
@@ -143,3 +143,56 @@ def test_pieton_attend_au_bord_de_la_chaussee(rond_point: RondPoint) -> None:
         deplacement.avancer(PAS)
     assert deplacement.avancement == pytest.approx(deplacement.trajectoire.longueur_approche)
     assert deplacement.trajectoire.etape_a(deplacement.avancement) is Etape.APPROCHE
+
+
+# ---------- Ce que voit le conducteur ----------
+
+def test_distance_de_securite_gardee_avec_l_obstacle(deplacement: Deplacement) -> None:
+    deplacement.noter_devant(20.0, ceder=False)
+    deplacement.avancer(10.0)
+    assert deplacement.avancement == pytest.approx(20.0 - DISTANCE_SECURITE)
+
+
+def test_obstacle_trop_proche_arrete_sans_reculer(deplacement: Deplacement, voiture: Voiture) -> None:
+    amener_a(deplacement, 10.0)
+    deplacement.noter_devant(2.0, ceder=False)
+    deplacement.avancer(PAS)
+    assert deplacement.avancement == pytest.approx(10.0)
+    assert voiture.vitesse == 0.0
+
+
+def test_voie_libre_leve_la_limite(deplacement: Deplacement) -> None:
+    deplacement.noter_devant(8.0, ceder=False)
+    deplacement.noter_devant(None, ceder=False)
+    deplacement.avancer(PAS)
+    assert deplacement.avancement == pytest.approx(Voiture.VITESSE_MAX * PAS)
+
+
+def test_ceder_arrete_sur_la_ligne_d_entree(deplacement: Deplacement, voiture: Voiture) -> None:
+    deplacement.noter_devant(None, ceder=True)
+    for _ in range(100):
+        deplacement.avancer(PAS)
+    assert deplacement.avancement == pytest.approx(LONGUEUR_BRANCHE)
+    assert voiture.etape is Etape.APPROCHE
+
+
+def test_anneau_libre_l_usager_entre(deplacement: Deplacement, voiture: Voiture) -> None:
+    deplacement.noter_devant(None, ceder=True)
+    for _ in range(100):
+        deplacement.avancer(PAS)
+    deplacement.noter_devant(None, ceder=False)
+    deplacement.avancer(PAS)
+    assert voiture.etape is Etape.ANNEAU
+
+
+def test_ceder_sans_effet_une_fois_sur_l_anneau(deplacement: Deplacement) -> None:
+    amener_a(deplacement, LONGUEUR_BRANCHE + 3.0)
+    deplacement.noter_devant(None, ceder=True)
+    avant = deplacement.avancement
+    deplacement.avancer(PAS)
+    assert deplacement.avancement == pytest.approx(avant + Voiture.VITESSE_MAX * PAS)
+
+
+def test_distance_negative_refusee(deplacement: Deplacement) -> None:
+    with pytest.raises(ValueError, match="distance"):
+        deplacement.noter_devant(-1.0, ceder=False)
