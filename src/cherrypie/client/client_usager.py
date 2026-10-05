@@ -50,7 +50,8 @@ class ClientUsager(threading.Thread):
     position en UDP ; un PING part toutes les intervalle_ping secondes. Les consignes reçues
     (NOTIF) passent par reagir() de l'usager, dont le déplacement tient compte au pas
     suivant : arrêt sur la ligne d'entrée pour ATTENDEZ jusqu'à OK_PASSER, ralentissement
-    et décalage pour DEGAGEZ, décalage pour CHANGEZ_VOIE. Quand la connexion
+    et décalage pour DEGAGEZ, décalage pour CHANGEZ_VOIE. Ce que voit le conducteur
+    (DEVANT) règle sa distance avec l'obstacle de devant et son cédez-le-passage. Quand la connexion
     tombe ou que l'inscription est refusée pour l'instant, le client réessaie avec un délai
     qui double à chaque échec (backoff, plafonné à backoff_max). Il dit au revoir (BYE) à
     la fin du trajet ou quand on l'arrête.
@@ -319,7 +320,10 @@ class ClientUsager(threading.Thread):
         self.__vp_annonce = True
 
     def __traiter(self, message: Message) -> None:
-        """Applique un message du serveur : seule une NOTIF demande une réaction."""
+        """Applique un message du serveur : DEVANT règle le déplacement, NOTIF demande une réaction."""
+        if message.type is TypeMessage.DEVANT:
+            self.__voir_devant(message)
+            return
         if message.type is not TypeMessage.NOTIF:
             # PONG et autres : leur arrivée suffit à montrer que le serveur répond.
             return
@@ -334,6 +338,22 @@ class ClientUsager(threading.Thread):
             "client %s : consigne %s %s", self.usager.identifiant, code.value, "appliquée" if appliquee else "ignorée"
         )
         self.__appeler(self.__sur_notification, code, texte, appliquee)
+
+    def __voir_devant(self, message: Message) -> None:
+        """Transmet au déplacement ce que voit le conducteur ; un DEVANT malformé est ignoré."""
+        distance = message.donnees.get("distance")
+        ceder = message.donnees.get("ceder")
+        # bool est une sous-classe de int : sans ce test, true passerait pour une distance.
+        if isinstance(distance, bool) or not (distance is None or isinstance(distance, (int, float))):
+            journal.warning("DEVANT invalide reçu par %s : distance %r", self.usager.identifiant, distance)
+            return
+        if not isinstance(ceder, bool):
+            journal.warning("DEVANT invalide reçu par %s : ceder %r", self.usager.identifiant, ceder)
+            return
+        try:
+            self.__deplacement.noter_devant(distance, ceder)
+        except ValueError as erreur:
+            journal.warning("DEVANT invalide reçu par %s : %s", self.usager.identifiant, erreur)
 
     def __attendre(self, type_attendu: TypeMessage) -> Message:
         """Attend un message d'un type donné, au plus timeout_client secondes.

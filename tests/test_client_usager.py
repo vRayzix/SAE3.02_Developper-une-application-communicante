@@ -13,6 +13,7 @@ import pytest
 from outils import DELAI, attendre
 
 from cherrypie.client.client_usager import ClientUsager, EtatConnexion
+from cherrypie.client.deplacement import DISTANCE_SECURITE
 from cherrypie.commun.config import Configuration
 from cherrypie.commun.protocole import CodeNotification, Enveloppe, Message, TypeMessage
 from cherrypie.commun.securite import Signataire
@@ -416,3 +417,66 @@ def test_traversee_d_un_vp_mesuree_par_le_serveur(
     assert mesure.duree == pytest.approx(quart_d_anneau / VehiculePrioritaire.VITESSE_MAX, abs=0.15)
     assert (mesure.identifiant, mesure.entree, mesure.sortie, mesure.regulation) == ("vp_1", "S", "E", True)
     assert not serveur.logique.vp_actif
+
+
+# ---------- Ce que voit le conducteur ----------
+
+def devant(distance: float | None, ceder: bool = False) -> Message:
+    return Message(TypeMessage.DEVANT, "serveur", {"distance": distance, "ceder": ceder})
+
+
+def test_distance_de_securite_gardee_puis_voie_libre(
+    faux_serveur: FauxServeur, preparer_client: Callable[..., ClientUsager]
+) -> None:
+    client = preparer_client(faux_serveur.config)
+    client.start()
+    faux_serveur.accepter()
+    faux_serveur.envoyer(accuse_d_inscription(), devant(10.0))
+    attendre(lambda: client.deplacement.limite is not None)
+    limite = client.deplacement.limite
+    time.sleep(10 * float(DELAIS_RAPIDES["intervalle_position"]))
+    assert client.deplacement.avancement == pytest.approx(limite)
+    faux_serveur.envoyer(devant(None))
+    attendre(lambda: client.deplacement.avancement > limite + 1.0)
+
+
+def test_cedez_le_passage_arrete_sur_la_ligne(
+    faux_serveur: FauxServeur, preparer_client: Callable[..., ClientUsager]
+) -> None:
+    client = preparer_client(faux_serveur.config)
+    ligne = client.deplacement.trajectoire.longueur_approche
+    client.deplacement.avancer((ligne - 2.0) / Voiture.VITESSE_MAX)
+    client.start()
+    faux_serveur.accepter()
+    faux_serveur.envoyer(accuse_d_inscription(), devant(None, ceder=True))
+    attendre(lambda: client.deplacement.avancement == pytest.approx(ligne))
+    faux_serveur.envoyer(devant(None, ceder=False))
+    attendre(lambda: client.deplacement.avancement > ligne + 1.0)
+
+
+def test_devant_malforme_ignore(
+    faux_serveur: FauxServeur, preparer_client: Callable[..., ClientUsager], caplog: pytest.LogCaptureFixture
+) -> None:
+    client = preparer_client(faux_serveur.config)
+    client.start()
+    faux_serveur.accepter()
+    malforme = Message(TypeMessage.DEVANT, "serveur", {"distance": "proche", "ceder": False})
+    faux_serveur.envoyer(accuse_d_inscription(), malforme, consigne(CodeNotification.ATTENDEZ))
+    attendre(lambda: client.usager.consigne is CodeNotification.ATTENDEZ)
+    assert "DEVANT invalide" in caplog.text
+    assert client.deplacement.limite is None
+
+
+def test_deux_voitures_sur_la_meme_branche_gardent_leurs_distances(
+    serveur: Serveur, preparer_client: Callable[..., ClientUsager]
+) -> None:
+    devant_client = preparer_client(serveur.config, Voiture("voiture_1", "N", "S"))
+    derriere_client = preparer_client(serveur.config, Voiture("voiture_2", "N", "S"))
+    # Elles partent à 3 m l'une de l'autre : celle de derrière doit se laisser distancer.
+    devant_client.deplacement.avancer(3.0 / Voiture.VITESSE_MAX)
+    devant_client.start()
+    derriere_client.start()
+    attendre(lambda: devant_client.deplacement.avancement > 15.0)
+    ecart = devant_client.deplacement.avancement - derriere_client.deplacement.avancement
+    pas_maximal = Voiture.VITESSE_MAX * float(DELAIS_RAPIDES["intervalle_position"])
+    assert ecart >= DISTANCE_SECURITE - pas_maximal

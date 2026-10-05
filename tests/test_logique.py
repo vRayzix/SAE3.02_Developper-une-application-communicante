@@ -405,3 +405,26 @@ def test_densite_relevee_pendant_la_traversee_du_vp(logique: LogiqueServeur) -> 
     logique.traiter_tcp(numero, Message(TypeMessage.VP_FIN, "vp_1"), 3.0)
     # Quatre voitures en approche sur N (capacité 8) : densité 0,5 sur N, 0 ailleurs.
     assert logique.passages[0].densite_moyenne == pytest.approx(0.5 / 4)
+
+
+# ---------- Ce que voit chaque conducteur ----------
+
+def test_cadence_envoie_devant_a_chaque_vehicule_positionne(logique: LogiqueServeur) -> None:
+    devant = session_inscrite(logique, "voiture_1")
+    derriere = session_inscrite(logique, "voiture_2")
+    logique.traiter_udp(pos("voiture_1", x=0.0, y=40.0, segment=None, etape="approche"), 1.0)
+    logique.traiter_udp(pos("voiture_2", x=0.0, y=55.0, segment=None, etape="approche"), 1.0)
+    vues = {numero: message.donnees for numero, message in logique.cadencer() if message.type is TypeMessage.DEVANT}
+    assert vues == {
+        devant: {"distance": None, "ceder": False},
+        derriere: {"distance": pytest.approx(15.0), "ceder": False},
+    }
+
+
+def test_pas_de_devant_pour_un_pieton_ni_une_supervision(logique: LogiqueServeur) -> None:
+    pieton = logique.ouvrir_session(0.0)
+    logique.traiter_tcp(pieton, hello("pieton_1", categorie="pieton", entree="N", sortie="N"), 0.5)
+    logique.traiter_udp(pos("pieton_1", x=-7.5, y=28.0, vitesse=1.0, segment=None, etape="approche"), 1.0)
+    supervision = logique.ouvrir_session(0.0)
+    logique.traiter_tcp(supervision, Message(TypeMessage.ABONNEMENT, "supervision"), 0.5)
+    assert [message.type for _, message in logique.cadencer()] == [TypeMessage.STATE]

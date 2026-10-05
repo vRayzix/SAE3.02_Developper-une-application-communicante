@@ -34,6 +34,7 @@ class TypeMessage(Enum):
     PING = "PING"
     PONG = "PONG"
     BYE = "BYE"
+    DEVANT = "DEVANT"
 
 
 class CodeNotification(Enum):
