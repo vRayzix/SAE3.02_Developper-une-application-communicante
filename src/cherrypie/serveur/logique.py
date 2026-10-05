@@ -199,6 +199,8 @@ class LogiqueServeur:
             return self.__signaler_vp(session, message, maintenant)
         if message.type is TypeMessage.VP_FIN:
             return self.__terminer_vp(session, maintenant)
+        if message.type is TypeMessage.REGLAGE:
+            return self.__regler(session, message)
         raise TrameInvalideError(f"message {message.type.value} inattendu sur une session TCP")
 
     def traiter_udp(self, message: Message, maintenant: float) -> None:
@@ -391,6 +393,17 @@ class LogiqueServeur:
             "VP %s : traversée en %.1f s, régulation %s",
             vp.identifiant, mesure.duree, "active" if mesure.regulation else "inactive",
         )
+        return Reponse()
+
+    def __regler(self, session: Session, message: Message) -> Reponse:
+        """Active ou coupe la régulation, sur demande d'une supervision."""
+        if not session.superviseur:
+            raise TrameInvalideError(f"REGLAGE reçu sur la session {session.numero}, qui n'est pas une supervision")
+        regulation = message.donnees.get("regulation")
+        if not isinstance(regulation, bool):
+            raise TrameInvalideError(f"REGLAGE invalide : regulation vaut {regulation!r}")
+        self.__regulateur.active = regulation
+        journal.info("régulation %s par la supervision (session %d)", "activée" if regulation else "coupée", session.numero)
         return Reponse()
 
     def __usager_de(self, session: Session) -> Usager:
