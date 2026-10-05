@@ -274,3 +274,88 @@ def test_etat_liste_les_usagers_et_leur_derniere_position(logique: LogiqueServeu
     assert usager["id"] == "voiture_12"
     assert usager["categorie"] == "voiture"
     assert (usager["x"], usager["y"]) == (3.5, -20.0)
+
+
+# ---------- Véhicules prioritaires ----------
+
+def vp_inscrit(logique: LogiqueServeur, identifiant: str = "vp_1") -> int:
+    """Ouvre une session et y inscrit un VP qui va du sud au nord."""
+    numero = logique.ouvrir_session(0.0)
+    logique.traiter_tcp(numero, hello(identifiant, categorie="vp", entree="S", sortie="N"), 0.5)
+    return numero
+
+
+def alerte(identifiant: str = "vp_1", **modifications: object) -> Message:
+    donnees = {"entree": "S", "sortie": "N", "eta": 6.0} | modifications
+    return Message(TypeMessage.VP_ALERT, identifiant, donnees)
+
+
+def test_vp_alert_reserve_la_trajectoire(logique: LogiqueServeur) -> None:
+    numero = vp_inscrit(logique)
+    assert logique.traiter_tcp(numero, alerte(), 1.0) == Reponse()
+    (passage,) = logique.passages_en_cours
+    assert passage.segments_reserves == ("S-E", "E-N")
+    assert logique.vp_actif
+
+
+def test_vp_alert_repete_sans_double_reservation(logique: LogiqueServeur) -> None:
+    numero = vp_inscrit(logique)
+    logique.traiter_tcp(numero, alerte(), 1.0)
+    logique.traiter_tcp(numero, alerte(eta=3.0), 2.0)
+    assert len(logique.passages_en_cours) == 1
+
+
+@pytest.mark.parametrize(
+    ("message", "motif"),
+    [
+        (alerte(sortie="E"), "différent du trajet"),
+        (alerte(eta=-1.0), "eta invalide"),
+        (alerte(eta="bientôt"), "eta invalide"),
+    ],
+    ids=["trajet-different", "eta-negatif", "eta-texte"],
+)
+def test_vp_alert_invalide_refuse(logique: LogiqueServeur, message: Message, motif: str) -> None:
+    numero = vp_inscrit(logique)
+    with pytest.raises(TrameInvalideError, match=motif):
+        logique.traiter_tcp(numero, message, 1.0)
+    assert not logique.vp_actif
+
+
+def test_vp_alert_d_une_voiture_refuse(logique: LogiqueServeur) -> None:
+    numero = session_inscrite(logique, "voiture_12")
+    with pytest.raises(TrameInvalideError, match="pas un véhicule prioritaire"):
+        logique.traiter_tcp(numero, alerte("voiture_12"), 1.0)
+
+
+def test_vp_alert_avant_le_hello_refuse(logique: LogiqueServeur) -> None:
+    numero = logique.ouvrir_session(0.0)
+    with pytest.raises(TrameInvalideError, match="usager inscrit"):
+        logique.traiter_tcp(numero, alerte(), 1.0)
+
+
+def test_traversee_mesuree_de_l_entree_sur_l_anneau_au_vp_fin(logique: LogiqueServeur) -> None:
+    numero = vp_inscrit(logique)
+    logique.traiter_tcp(numero, alerte(), 1.0)
+    logique.traiter_udp(pos("vp_1", segment=None, etape="approche"), 2.0)
+    logique.traiter_udp(pos("vp_1", segment="S-E"), 3.0)
+    logique.traiter_udp(pos("vp_1", segment="E-N"), 4.0)
+    logique.traiter_tcp(numero, Message(TypeMessage.VP_FIN, "vp_1"), 8.5)
+    (mesure,) = logique.passages
+    assert mesure.duree == pytest.approx(5.5)
+    assert mesure.regulation is True
+    assert not logique.vp_actif
+
+
+def test_vp_fin_sans_vp_alert_refuse(logique: LogiqueServeur) -> None:
+    numero = vp_inscrit(logique)
+    with pytest.raises(TrameInvalideError, match="sans VP_ALERT"):
+        logique.traiter_tcp(numero, Message(TypeMessage.VP_FIN, "vp_1"), 1.0)
+
+
+def test_vp_disparu_leve_sa_reservation_sans_mesure(logique: LogiqueServeur) -> None:
+    numero = vp_inscrit(logique)
+    logique.traiter_tcp(numero, alerte(), 1.0)
+    logique.traiter_udp(pos("vp_1"), 2.0)
+    logique.fermer_session(numero)
+    assert not logique.vp_actif
+    assert logique.passages == []
