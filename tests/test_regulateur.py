@@ -17,6 +17,7 @@ from cherrypie.serveur.regulateur import Regulateur
 RAYON = 20.0
 QUART = 2 * math.pi * RAYON / 4
 ANNEAU = LONGUEUR_BRANCHE
+SANS_CHARGE = {"N": 0.0, "E": 0.0, "S": 0.0, "O": 0.0}
 
 ATTENDEZ = CodeNotification.ATTENDEZ
 CHANGEZ_VOIE = CodeNotification.CHANGEZ_VOIE
@@ -61,14 +62,14 @@ def vp_sud_nord(rond_point: RondPoint, placer) -> PassageEnCours:
 
 
 def consignes(regulateur: Regulateur, registre: Registre, passages: list[PassageEnCours]) -> dict:
-    return {notification.destinataire: notification.code for notification in regulateur.decider(registre, passages)}
+    return {notification.destinataire: notification.code for notification in regulateur.decider(registre, passages, SANS_CHARGE)}
 
 
 # ---------- Sans VP ----------
 
 def test_sans_vp_aucune_consigne(regulateur: Regulateur, registre: Registre, placer) -> None:
     placer(Voiture("voiture_1", "N", "S"), 10.0)
-    assert regulateur.decider(registre, []) == []
+    assert regulateur.decider(registre, [], SANS_CHARGE) == []
 
 
 # ---------- VP en approche ----------
@@ -126,7 +127,7 @@ def test_pieton_attend_pour_traverser(
     attendue: CodeNotification | None,
 ) -> None:
     placer(Pieton("pieton_1", branche, branche), avancement)
-    notifications = regulateur.decider(registre, [vp_sud_nord])
+    notifications = regulateur.decider(registre, [vp_sud_nord], SANS_CHARGE)
     assert {notification.code for notification in notifications} == ({attendue} if attendue else set())
     if attendue:
         assert notifications[0].texte == TEXTE_ATTENDEZ_PIETON
@@ -152,15 +153,15 @@ def test_consigne_deja_envoyee_pas_renvoyee(
     regulateur: Regulateur, registre: Registre, placer, vp_sud_nord: PassageEnCours
 ) -> None:
     placer(Voiture("voiture_1", "E", "O"), 20.0)
-    assert len(regulateur.decider(registre, [vp_sud_nord])) == 1
-    assert regulateur.decider(registre, [vp_sud_nord]) == []
+    assert len(regulateur.decider(registre, [vp_sud_nord], SANS_CHARGE)) == 1
+    assert regulateur.decider(registre, [vp_sud_nord], SANS_CHARGE) == []
 
 
 def test_fin_du_vp_libere_tout_le_monde(regulateur: Regulateur, registre: Registre, placer, vp_sud_nord: PassageEnCours) -> None:
     placer(Voiture("voiture_1", "E", "O"), 20.0)
     placer(Voiture("voiture_2", "S", "E"), 20.0)
-    regulateur.decider(registre, [vp_sud_nord])
-    liberations = regulateur.decider(registre, [])
+    regulateur.decider(registre, [vp_sud_nord], SANS_CHARGE)
+    liberations = regulateur.decider(registre, [], SANS_CHARGE)
     assert {notification.destinataire for notification in liberations} == {"voiture_1", "voiture_2"}
     assert {(notification.code, notification.texte) for notification in liberations} == {(OK_PASSER, TEXTE_OK_PASSER)}
     assert regulateur.consignes_envoyees == {}
@@ -170,9 +171,9 @@ def test_usager_oublie_recoit_a_nouveau_sa_consigne(
     regulateur: Regulateur, registre: Registre, placer, vp_sud_nord: PassageEnCours
 ) -> None:
     placer(Voiture("voiture_1", "E", "O"), 20.0)
-    regulateur.decider(registre, [vp_sud_nord])
+    regulateur.decider(registre, [vp_sud_nord], SANS_CHARGE)
     regulateur.oublier("voiture_1")
-    (notification,) = regulateur.decider(registre, [vp_sud_nord])
+    (notification,) = regulateur.decider(registre, [vp_sud_nord], SANS_CHARGE)
     assert (notification.code, notification.texte) == (ATTENDEZ, TEXTE_ATTENDEZ_VP)
 
 
@@ -182,5 +183,5 @@ def test_entrees_bloquees_la_ou_des_usagers_attendent(
     placer(Voiture("voiture_1", "E", "O"), 20.0)
     placer(Voiture("voiture_2", "N", "E"), 20.0)
     placer(Voiture("voiture_3", "S", "E"), 20.0)
-    regulateur.decider(registre, [vp_sud_nord])
+    regulateur.decider(registre, [vp_sud_nord], SANS_CHARGE)
     assert regulateur.entrees_bloquees == ["E", "N"]
