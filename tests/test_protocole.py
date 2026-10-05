@@ -24,6 +24,10 @@ def test_type_message_retrouve_depuis_sa_valeur() -> None:
     assert TypeMessage("VP_ALERT") is TypeMessage.VP_ALERT
 
 
+def test_type_devant_retrouve_depuis_sa_valeur() -> None:
+    assert TypeMessage("DEVANT") is TypeMessage.DEVANT
+
+
 def test_code_notification_retrouve_depuis_sa_valeur() -> None:
     assert CodeNotification("OK_PASSER") is CodeNotification.OK_PASSER
 
