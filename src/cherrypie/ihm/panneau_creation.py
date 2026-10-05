@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QFormLayout,
     QGroupBox,
+    QHeaderView,
     QPushButton,
     QSpinBox,
     QTreeWidget,
@@ -72,6 +73,7 @@ class PanneauCreation(QGroupBox):
         self.__liste_clients = QTreeWidget()
         self.__liste_clients.setHeaderLabels(COLONNES_CLIENTS)
         self.__liste_clients.setRootIsDecorated(False)
+        self.__liste_clients.header().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.__disposer()
         self.__choix_categorie.currentIndexChanged.connect(self.__adapter_sortie)
         self.__choix_entree.currentIndexChanged.connect(self.__adapter_sortie)
@@ -162,7 +164,8 @@ class PanneauCreation(QGroupBox):
             sur_notification=relais.sur_notification,
             sur_connexion=relais.sur_connexion,
         )
-        ligne = QTreeWidgetItem([identifiant, f"{entree} vers {sortie}", "", SANS_CONSIGNE])
+        trajet = f"traverse {entree}" if categorie == Pieton.CATEGORIE else f"{entree} vers {sortie}"
+        ligne = QTreeWidgetItem([identifiant, trajet, "", SANS_CONSIGNE])
         self.__liste_clients.addTopLevelItem(ligne)
         self.__lignes[identifiant] = ligne
         self.__clients.append(client)
