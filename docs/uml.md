@@ -64,11 +64,23 @@ classDiagram
         -intervalle_position : float
         -backoff_initial : float
         -backoff_max : float
-        -branches : list[str]
+        -branches : list[ParametresBranche]
         -rayon : float
+        -largeur_voie_anneau : float
+        -largeur_chaussee : float
+        -longueur_branche : float
         -capacite_par_branche : int
         -parametres_bdd : dict[str, str | int]
         +depuis_fichier(chemin: str | Path) Configuration$
+    }
+
+    class ParametresBranche {
+        <<dataclass>>
+        +nom : str
+        +libelle : str
+        +cap : float
+        +terre_plein : float
+        +passage_pieton : float
     }
 
     class TypeMessage {
@@ -137,11 +149,13 @@ classDiagram
 
     Message --> TypeMessage
     Enveloppe *-- Message
+    Configuration "1" *-- "3..*" ParametresBranche
     Signataire ..> Enveloppe : crée et vérifie
     GardeAntiRejeu ..> Enveloppe : contrôle
 ```
 
 - `Enveloppe` est la forme transmise sur le réseau : le `Message`, plus l'horodatage, le nonce et le HMAC. `Signataire.signer()` la construit ; à la réception, `Signataire.verifier()` puis `GardeAntiRejeu.controler()` la valident.
+- `ParametresBranche` décrit une branche telle que la donne sa section `[branche.<identifiant>]` de `config.ini` : identifiant (celui du protocole), libellé affiché, cap depuis le nord, largeur du terre-plein et distance du passage piéton. La configuration refuse un identifiant qui n'est pas en minuscules sans accents, une section sans branche, deux branches au même cap, ou une voie d'anneau plus large que le rayon.
 - `CodeNotification` fait partie du protocole plutôt que du serveur, parce que le client en a besoin pour réagir aux consignes.
 - `DecoupeurTrames` tient le tampon d'une socket TCP : `ajouter()` renvoie les trames complètes et garde le reste pour la lecture suivante.
 
@@ -169,13 +183,15 @@ classDiagram
         -branche_entree : str
         -branche_sortie : str
         -position : Position | None
+        -cap : float | None
         -vitesse : float
         -segment : str | None
         -etape : Etape
         -consigne : CodeNotification | None
         +reagir(code: CodeNotification) bool
         +vitesse_autorisee() float
-        +decalage_lateral() float
+        +se_range() bool
+        +verifier_cap(valeur: object) float$
         +calculer_trajectoire(rond_point: RondPoint) Trajectoire
         +vers_dict() dict
         +depuis_dict(contenu: dict) Usager$
@@ -207,6 +223,7 @@ classDiagram
         +CATEGORIE$
         +VITESSE_MAX$
         +CONSIGNES_SUIVIES$
+        +calculer_trajectoire(rond_point: RondPoint) Trajectoire
     }
 
     Usager <|-- Voiture
@@ -226,14 +243,15 @@ classDiagram
 | `Moto` | `moto` | 8,3 m/s (30 km/h) | toutes | approche, anneau, sortie |
 | `Trottinette` | `trottinette` | 5,6 m/s (20 km/h) | toutes | approche, anneau, sortie |
 | `Pieton` | `pieton` | 1,4 m/s (5 km/h) | `ATTENDEZ`, `OK_PASSER` | traversée de sa branche |
-| `VehiculePrioritaire` | `vp` | 11,1 m/s (40 km/h) | aucune, c'est lui qu'on laisse passer | approche, anneau, sortie |
+| `VehiculePrioritaire` | `vp` | 11,1 m/s (40 km/h) | aucune, c'est lui qu'on laisse passer | approche, anneau sur la voie intérieure, sortie |
 
-- `vitesse_autorisee()` et `decalage_lateral()` traduisent la consigne en cours : vitesse réduite de moitié et décalage de 2 m pour `DEGAGEZ`, décalage seul pour `CHANGEZ_VOIE`. `ATTENDEZ` ne change pas la vitesse : l'usager avance jusqu'à la ligne d'entrée de sa trajectoire et s'y arrête. `OK_PASSER` lève la consigne.
-- `Pieton` redéfinit `calculer_trajectoire()` : il ne prend pas l'anneau, il traverse une seule branche, qui est à la fois son entrée et sa sortie.
+- `vitesse_autorisee()` et `se_range()` traduisent la consigne en cours : vitesse réduite de moitié pour `DEGAGEZ`, et rangement sur la droite pour `DEGAGEZ` et `CHANGEZ_VOIE`. La place disponible dépend de l'endroit (bord de la chaussée sur une branche, voie extérieure sur l'anneau) : c'est la trajectoire qui la donne, et le déplacement qui l'applique. `ATTENDEZ` ne change pas la vitesse : l'usager avance jusqu'à la ligne d'entrée de sa trajectoire et s'y arrête. `OK_PASSER` lève la consigne.
+- `Pieton` redéfinit `calculer_trajectoire()` : il ne prend pas l'anneau, il traverse une seule branche, qui est à la fois son entrée et sa sortie. `VehiculePrioritaire` la redéfinit aussi, pour rester sur la voie intérieure de l'anneau.
+- Le cap est la direction de marche, en degrés depuis le nord. `verifier_cap()` sert au setter et au serveur, qui contrôle le cap d'un POS avant de modifier l'usager.
 - `depuis_dict()` instancie la bonne sous-classe d'après la catégorie reçue dans le HELLO.
 - `Position` a son propre module (`modele/position.py`), partagé par les usagers, le rond-point et les trajectoires. Elle refuse les coordonnées infinies ou NaN.
 
-Setters : `Usager.position`, `Usager.vitesse` (entre 0 et la vitesse maximale de la catégorie), `Usager.segment` et `Usager.etape`, mis à jour par le client quand il avance et par le serveur à chaque POS reçu. L'étape vaut `APPROCHE` tant que l'usager n'a pas bougé.
+Setters : `Usager.position`, `Usager.cap` (entre 0 et 360), `Usager.vitesse` (entre 0 et la vitesse maximale de la catégorie), `Usager.segment` et `Usager.etape`, mis à jour par le client quand il avance et par le serveur à chaque POS reçu. L'étape vaut `APPROCHE` tant que l'usager n'a pas bougé.
 
 ### Rond-point
 
@@ -241,9 +259,16 @@ Setters : `Usager.position`, `Usager.vitesse` (entre 0 et la vitesse maximale de
 classDiagram
     class RondPoint {
         -rayon : float
+        -largeur_voie_anneau : float
+        -longueur_branche : float
         -branches : list[Branche]
         -segments : list[Segment]
+        +rayon_voie_interieure() float
+        +rayon_voie_exterieure() float
+        +rayon_ilot() float
+        +rayon_bord() float
         +branche(nom: str) Branche
+        +ecart_raccord(branche: Branche) float
         +segments_entre(entree: str, sortie: str) list[Segment]
         +depuis_config(config: Configuration) RondPoint$
         -segment_partant_de(branche: Branche) Segment
@@ -251,8 +276,15 @@ classDiagram
 
     class Branche {
         -nom : str
-        -angle : float
+        -libelle : str
+        -cap : float
         -capacite : int
+        -terre_plein : float
+        -passage_pieton : float
+        -largeur_chaussee : float
+        +angle() float
+        +decalage_voie() float
+        +demi_largeur() float
         +point(distance_au_centre: float, decalage: float) Position
     }
 
@@ -260,17 +292,20 @@ classDiagram
         -depart : Branche
         -arrivee : Branche
         -longueur : float
+        +ouverture() float
         +nom() str
     }
 
     RondPoint "1" *-- "3..*" Branche
     RondPoint "1" *-- "3..*" Segment
     Segment --> "2" Branche
+    Branche ..> ParametresBranche : construite d'après
 ```
 
-- `RondPoint` crée ses branches et ses segments à partir de la configuration, et ils n'existent pas sans lui : composition.
-- Les branches sont réparties régulièrement autour de l'anneau. La première est placée au nord, les suivantes dans le sens des aiguilles d'une montre : N, E, S et O tombent à leur place.
-- Les segments suivent le sens de circulation, inverse des aiguilles d'une montre : `segments_entre("S", "N")` renvoie S-E puis E-N. Si l'entrée et la sortie sont la même branche, l'usager fait le tour complet.
+- `RondPoint` crée ses branches et ses segments à partir de la configuration, et ils n'existent pas sans lui : composition. La géométrie de Bel Air est décrite dans [geometrie_bel_air.md](geometrie_bel_air.md).
+- Chaque branche est placée à son cap ; `angle` le convertit en angle du repère (90° moins le cap). Elle a deux chaussées d'une voie, de part et d'autre d'un terre-plein : `decalage_voie` est l'écart entre l'axe et le milieu de chaque chaussée, `demi_largeur` l'écart jusqu'à leur bord extérieur. La chaussée d'entrée est à droite d'un usager qui arrive.
+- L'anneau a deux voies de même largeur, séparées par son axe (`rayon`). `ecart_raccord()` donne l'angle entre l'axe d'une branche et le milieu de ses chaussées au bord de l'anneau : on entre un peu après l'axe, on sort un peu avant.
+- Les segments suivent le sens de circulation, quel que soit l'ordre des branches dans la configuration. Pour Bel Air, `segments_entre("nations_sud", "nations_nord")` renvoie `nations_sud-jean_de_la_bruyere` puis `jean_de_la_bruyere-nations_nord`. Si l'entrée et la sortie sont la même branche, l'usager fait le tour complet.
 - `RondPoint.branche()` lève `BrancheInconnueError` pour un nom qui n'existe pas.
 
 Setters : aucun, la géométrie ne change plus une fois le rond-point construit.
@@ -292,34 +327,44 @@ classDiagram
         +etape : Etape
         +depart : Position
         +arrivee : Position
+        +place_a_droite : float
         +longueur() float
         +segment() None
         +position_a(distance: float, decalage: float) Position
+        +cap_a(distance: float) float
     }
 
     class TronconArc {
         <<dataclass>>
         +segment : Segment
-        +rayon : float
+        +angle_debut : float
+        +angle_fin : float
+        +rayon_debut : float
+        +rayon_fin : float
+        +place_a_droite : float
         +etape() Etape
         +longueur() float
         +position_a(distance: float, decalage: float) Position
+        +cap_a(distance: float) float
     }
 
     class Trajectoire {
         -troncons : list[TronconDroit | TronconArc]
-        -recul_ligne : float
         +longueur() float
         +longueur_approche() float
-        +ligne_entree() float
         +segments() list[Segment]
-        +pour_vehicule(rond_point: RondPoint, entree: str, sortie: str) Trajectoire$
+        +pour_vehicule(rond_point: RondPoint, entree: str, sortie: str, prioritaire: bool) Trajectoire$
         +pour_pieton(rond_point: RondPoint, branche: str) Trajectoire$
         +position_a(avancement: float, decalage: float) Position
+        +cap_a(avancement: float) float
         +etape_a(avancement: float) Etape
         +segment_a(avancement: float) Segment | None
+        +place_a_droite_a(avancement: float) float
         +passe_par(segment: Segment) bool
         -troncon_a(avancement: float) tuple
+        -place_sur_la_chaussee(branche: Branche) float$
+        -arcs(rond_point: RondPoint, entree: Branche, sortie: Branche, prioritaire: bool) list[TronconArc]$
+        -decouper(chemin: list, limites: list, segments: list, rayon_exterieur: float) list[TronconArc]$
     }
 
     Trajectoire "1" *-- "1..*" TronconDroit
@@ -330,10 +375,13 @@ classDiagram
     TronconArc ..> Position : calcule
 ```
 
-- Une trajectoire est une suite de tronçons parcourus l'un après l'autre : des tronçons droits sur les branches (approche, sortie, passage piéton) et des arcs sur l'anneau, un par segment. Les deux types de tronçons offrent les mêmes membres (`etape`, `longueur`, `segment`, `position_a()`) : la trajectoire trouve le tronçon qui correspond à l'avancement et lui délègue le calcul.
-- L'avancement est la distance parcourue depuis le départ. `longueur_approche` donne la fin de l'approche, et `ligne_entree` la ligne où s'arrête un usager qui a reçu `ATTENDEZ` ou qui cède le passage. L'approche d'un véhicule rejoint l'axe de l'anneau ; sa ligne est 3,5 m plus tôt, au bord de l'anneau, pour qu'un véhicule à l'arrêt n'empiète pas sur la voie où roulent les autres. Pour un piéton, la ligne est au bord de la chaussée, au bout de l'approche. Un point situé pile à la jonction de deux tronçons appartient au premier.
-- Un véhicule parcourt 50 m d'approche, les segments de l'anneau, puis 50 m de sortie. Un piéton parcourt 4 m de trottoir jusqu'au bord de la chaussée, traverse les 7 m du passage piéton, placé à 8 m de l'anneau, puis repart sur le trottoir d'en face : il croise l'approche des véhicules de cette branche.
-- Le décalage latéral se compte vers la droite du sens de marche ; sur l'anneau, c'est l'extérieur.
+- Une trajectoire est une suite de tronçons parcourus l'un après l'autre : des tronçons droits sur les chaussées des branches (approche, sortie, passage piéton) et des morceaux d'arc sur l'anneau. Les deux types de tronçons offrent les mêmes membres (`etape`, `longueur`, `segment`, `place_a_droite`, `position_a()`, `cap_a()`) : la trajectoire trouve le tronçon qui correspond à l'avancement et lui délègue le calcul.
+- Un véhicule approche sur la chaussée d'entrée, depuis le bout de la branche jusqu'au bord de l'anneau : c'est la ligne d'entrée, où il s'arrête s'il doit attendre (`longueur_approche`). Il repart sur la chaussée de sortie de sa branche de sortie.
+- Sur l'anneau, `arcs()` décrit le chemin par des points (angle, distance au centre) : raccord depuis la chaussée d'entrée, voie suivie, changement de voie éventuel, raccord vers la chaussée de sortie. Un véhicule qui sort à la première sortie suit la voie extérieure ; les autres suivent la voie intérieure jusqu'au segment qui mène à leur sortie, où ils se rabattent sur la voie extérieure ; le VP reste sur la voie intérieure. `decouper()` coupe ce chemin aux limites des segments, et découpe finement les transitions pour que l'usager y avance à vitesse régulière.
+- `place_a_droite` est l'écart qu'un usager peut prendre pour se ranger : le bord de sa chaussée sur une branche, la largeur d'une voie sur la voie intérieure, rien sur la voie extérieure.
+- Un piéton parcourt 4 m de trottoir jusqu'au bord de la chaussée d'entrée, traverse les deux chaussées et le terre-plein sur le passage piéton, puis repart sur le trottoir d'en face : il croise l'approche et la sortie des véhicules de cette branche.
+- Le décalage latéral se compte vers la droite du sens de marche ; sur l'anneau, c'est l'extérieur. Le cap se compte depuis le nord, dans le sens des aiguilles d'une montre ; `cap_de_la_direction()` convertit une direction du repère en cap.
+- Un point situé pile à la jonction de deux tronçons appartient au premier : un usager arrêté sur la ligne d'entrée est encore en approche.
 - Les arcs ne font que référencer les segments du rond-point, sans les posséder : agrégation.
 
 Setters : aucun, une trajectoire ne change plus une fois calculée.
@@ -523,7 +571,8 @@ classDiagram
         -devant_sur_la_branche(...) list[float]
         -devant_sur_l_anneau(...) list[float]
         -anneau_libre(branche: Branche, vehicules: list[Usager]) bool
-        -meme_voie(usager: Usager, autre: Usager) bool
+        -meme_voie_de_l_anneau(usager: Usager, autre: Usager) bool
+        -range(usager: Usager, sortie: Branche) bool
     }
 
     Circulation ..> Vue : produit
@@ -531,8 +580,8 @@ classDiagram
 ```
 
 - Chaque client roule sans voir les autres. `Circulation.voir()` calcule, pour chaque véhicule dont la position est connue, la distance jusqu'à l'obstacle le plus proche devant lui sur sa voie (autre véhicule ou piéton sur le passage) et s'il doit céder le passage. `cadencer()` l'envoie à chaque véhicule dans un message DEVANT, que la régulation soit active ou non : c'est la simulation de ce que voit un conducteur, pas une consigne.
-- Deux véhicules sont sur la même voie si leurs décalages latéraux diffèrent de moins d'un mètre : un usager rangé sur le côté ne gêne pas ceux qui roulent au milieu.
-- Le cédez-le-passage demande 15 m libres en amont et 10 m en aval du point d'entrée, ce qui empêche l'anneau de se bloquer en boucle.
+- Sur une chaussée de branche, deux véhicules sont sur la même file si leurs écarts à l'axe diffèrent de moins d'un mètre : un usager rangé sur le bord ne gêne pas ceux qui roulent au milieu. Sur l'anneau, deux véhicules sont sur la même voie si leurs distances au centre diffèrent de moins d'une demi-largeur de voie.
+- Le cédez-le-passage demande 15 m libres en amont et 10 m en aval du point d'entrée, sur les deux voies, puisque l'usager qui entre traverse la voie extérieure. Ces marges empêchent l'anneau de se bloquer en boucle.
 
 ### Régulation
 
@@ -624,10 +673,14 @@ classDiagram
         -avancement : float
         -limite : float | None
         -ceder : bool
+        -decalage : float
         +termine() bool
         +noter_devant(distance: float | None, ceder: bool) None
         +avancer(duree: float) None
         -doit_s_arreter_a_la_ligne() bool
+        -vitesse_permise() float
+        -decalage_voulu() float
+        -decaler(duree: float) None
         -placer_usager(vitesse: float) None
     }
 
@@ -643,7 +696,7 @@ classDiagram
 - `rouler()` enchaîne les connexions. Après une coupure, ou un refus provisoire (`InscriptionRefuseeError.reessayer`), il attend avec un délai qui double (1, 2, 4, 8 s, plafonné à 10 s). L'attente se fait sur un `threading.Event` : `arreter()` réveille le client sans attendre la fin du délai. Un refus définitif l'arrête.
 - `circuler()` fait avancer l'usager d'un pas à chaque intervalle de position, envoie le POS en UDP, envoie un PING toutes les `intervalle_ping` secondes et traite les messages reçus. Elle s'arrête si le serveur reste muet plus de `timeout_client` secondes, et dit au revoir (BYE) à la fin du trajet ou à l'arrêt.
 - Les messages lus attendent dans une file (`recus`) : une NOTIF arrivée dans la même lecture que le HELLO_ACK n'est pas perdue.
-- `Deplacement` contient les règles de mouvement, sans réseau, ce qui permet de les tester seules. À chaque pas, l'usager parcourt la distance que permet sa consigne et s'arrête sur la ligne d'entrée pendant un ATTENDEZ ou un cédez-le-passage s'il ne l'a pas encore franchie. Le décalage et le ralentissement viennent de `reagir()`. `noter_devant()` fixe l'avancement à ne pas dépasser pour garder 6 m avec l'obstacle de devant ; l'usager ne recule jamais.
+- `Deplacement` contient les règles de mouvement, sans réseau, ce qui permet de les tester seules. À chaque pas, l'usager parcourt la distance que permet sa consigne et s'arrête sur la ligne d'entrée pendant un ATTENDEZ ou un cédez-le-passage s'il ne l'a pas encore franchie. Pour se ranger, il se décale progressivement (2 m/s) jusqu'à la place que donne sa trajectoire ; pendant un DEGAGEZ, il ne ralentit qu'une fois rangé, pour ne pas boucher la voie qu'il libère. Chaque pas met à jour sa position, son cap, sa vitesse, son segment et son étape. `noter_devant()` fixe l'avancement à ne pas dépasser pour garder 6 m avec l'obstacle de devant ; l'usager ne recule jamais.
 - Un client de VP envoie VP_ALERT à chaque connexion tant que le VP n'a pas quitté l'anneau, avec son `eta` (le temps qu'il lui faut pour atteindre l'anneau), puis VP_FIN au pas où il passe en étape de sortie.
 
 Setters prévus : aucun.
@@ -655,7 +708,8 @@ classDiagram
     class QMainWindow
     class QGraphicsScene
     class QGraphicsView
-    class QGraphicsEllipseItem
+    class QGraphicsPathItem
+    class QSplitter
     class QGroupBox
     class QObject
     class QThread
@@ -689,10 +743,11 @@ classDiagram
 
     class SceneRondPoint {
         -rond_point : RondPoint
+        -libelles : dict[str, str]
         -bandes_densite : dict[str, QGraphicsLineItem]
         -textes_densite : dict[str, QGraphicsTextItem]
         -arcs_reserves : dict[str, QGraphicsPathItem]
-        -feux_entree : dict[str, QGraphicsRectItem]
+        -entrees_temporisees : dict[str, QGraphicsItemGroup]
         -marqueurs : dict[str, MarqueurUsager]
         +vers_scene(position: Position) QPointF$
         +afficher_etat(etat: dict) None
@@ -711,7 +766,7 @@ classDiagram
     class MarqueurUsager {
         -categorie : str
         -halo : QGraphicsEllipseItem | None
-        +afficher(usager: dict) None
+        +afficher(usager: dict, libelles: dict[str, str]) None
     }
 
     class VueRondPoint {
@@ -722,9 +777,8 @@ classDiagram
         -libelles : list[str]
         -entrees() list[tuple]
         -entree(dessin: Callable, libelle: str) QWidget$
-        -disque(remplissage: QColor, contour: QColor, epaisseur: int, halo: bool) Callable$
-        -bande(couleur: QColor) Callable$
-        -carre(couleur: QColor) Callable$
+        -silhouette(categorie: str, contour: QColor, epaisseur: int) Callable$
+        -bande(couleur: QColor, proportion: float) Callable$
     }
 
     class ReseauSupervision {
@@ -759,6 +813,7 @@ classDiagram
         +notification_recue : pyqtSignal$
         -config : Configuration
         -clients : list[ClientUsager]
+        -libelles : dict[str, str]
         -lignes : dict[str, QTreeWidgetItem]
         -compteurs : dict[str, int]
         -choix_categorie : QComboBox
@@ -789,7 +844,7 @@ classDiagram
     QMainWindow <|-- FenetreSupervision
     QGraphicsScene <|-- SceneRondPoint
     QGraphicsView <|-- VueRondPoint
-    QGraphicsEllipseItem <|-- MarqueurUsager
+    QGraphicsPathItem <|-- MarqueurUsager
     QGroupBox <|-- Legende
     QGroupBox <|-- PanneauCreation
     QObject <|-- ReseauSupervision
@@ -799,6 +854,7 @@ classDiagram
     FenetreSupervision *-- Legende
     FenetreSupervision *-- PanneauCreation
     FenetreSupervision *-- QThread
+    FenetreSupervision *-- QSplitter
     FenetreSupervision *-- ReseauSupervision
     VueRondPoint --> SceneRondPoint
     SceneRondPoint "1" *-- "0..*" MarqueurUsager
@@ -815,7 +871,9 @@ classDiagram
 - Tant que `tourner()` s'exécute, le `QThread` ne revient pas à sa boucle d'événements : un slot appelé en file d'attente n'y serait jamais exécuté. Les réglages demandés par l'IHM passent donc par une `SimpleQueue`, que la boucle vide à chaque tour ; l'attente sur la socket est bornée à 0,1 s pour qu'un réglage ou l'arrêt soit pris en compte vite. Les réglages demandés hors connexion sont abandonnés à la connexion suivante.
 - `termine` est relié à `QThread.quit()` en connexion directe : à la fermeture, le thread de l'IHM attend le réseau dans `wait()` et ne traiterait pas un signal en file d'attente.
 - `RelaisClient` adapte les rappels du client, qui ne dépend pas de Qt. Créé dans le thread de l'IHM, il émet un signal à chaque rappel. Le client garde ses fonctions de rappel, donc le relais, aussi longtemps qu'il vit.
-- `SceneRondPoint` travaille en mètres, comme le modèle, avec l'ordonnée inversée (`vers_scene()`), et ne recalcule rien : elle montre l'état reçu. La chaussée est dessinée une fois ; les arcs des segments réservés et les feux des entrées sont posés cachés et rendus visibles d'après le STATE. Le niveau de densité reprend `CalculateurDensite.niveau()`, pour que les seuils restent ceux du serveur. `VueRondPoint` recadre toute la scène à chaque changement de taille.
+- `SceneRondPoint` travaille en mètres, comme le modèle, avec l'ordonnée inversée (`vers_scene()`), et ne recalcule rien : elle montre l'état reçu. La chaussée est dessinée une fois d'après le rond-point : deux chaussées par branche avec leur terre-plein, lignes de rive, ligne de cédez-le-passage, passage piéton et refuge, flèches de sens, deux voies sur l'anneau. La voie intérieure des segments réservés et les entrées temporisées (barre sur la ligne et feu) sont posées cachées et rendues visibles d'après le STATE. Le niveau de densité reprend `CalculateurDensite.niveau()`, pour que les seuils restent ceux du serveur. Le cadre de la scène suit le dessin ; `VueRondPoint` le recadre à chaque changement de taille.
+- `MarqueurUsager` dessine un usager à son gabarit (`style.py`), tourné selon le cap reçu dans le STATE. L'avant d'un véhicule est sur sa position : arrêté sur la ligne d'entrée, il la touche. Le VP a un halo et une rampe lumineuse.
+- La fenêtre place la scène et les panneaux (serveur, légende, création, consignes) de part et d'autre d'un `QSplitter` : la scène prend toute la hauteur, et l'utilisateur peut lui donner plus de largeur.
 - `style.py` réunit couleurs, tailles et libellés : la scène et la légende utilisent les mêmes constantes, si bien qu'une couleur changée l'est partout.
 - L'interrupteur envoie un REGLAGE sur `clicked`, émis seulement par un clic, jamais par `setChecked()`. Après chaque connexion, la case reprend l'état du serveur au premier STATE ; ensuite, seul l'indicateur suit le serveur. Elle est grisée tant que la supervision n'est pas connectée.
 - `closeEvent()` redéfinit la méthode protégée de Qt : il arrête et attend les clients lancés depuis le panneau, puis le réseau, avant de fermer la fenêtre.
