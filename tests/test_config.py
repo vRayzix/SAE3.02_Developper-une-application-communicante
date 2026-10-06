@@ -145,6 +145,28 @@ VALEURS_INCOHERENTES = [
     pytest.param(
         LIGNE_BRANCHES, "branches = nations_nord, , nations_sud, albert_camus", "nom vide", id="branche-sans-nom"
     ),
+    pytest.param(
+        LIGNE_BRANCHES, "branches = Nations_Nord, jean_de_la_bruyere, nations_sud, albert_camus", "invalide",
+        id="identifiant-en-majuscules",
+    ),
+    pytest.param(
+        LIGNE_BRANCHES, "branches = nations-nord, jean_de_la_bruyere, nations_sud, albert_camus", "invalide",
+        id="identifiant-avec-tiret",
+    ),
+    pytest.param(
+        LIGNE_BRANCHES, LIGNE_BRANCHES + ", nouvelle", r"section \[branche.nouvelle\] absente", id="section-absente"
+    ),
+    pytest.param(
+        "[branche.albert_camus]", "[branche.camus]", r"\[branche.camus\] sans branche", id="section-en-trop"
+    ),
+    pytest.param("cap = 340", "cap = nord", "cap doit être un nombre", id="cap-non-numerique"),
+    pytest.param("cap = 340", "cap = 360", "entre 0 et 360", id="cap-hors-limites"),
+    pytest.param("cap = 57", "cap = 340", "même cap", id="cap-en-double"),
+    pytest.param("terre_plein = 8", "terre_plein = 0", "strictement positif", id="terre-plein-nul"),
+    pytest.param("passage_pieton = 10", "passage_pieton = -1", "strictement positif", id="passage-negatif"),
+    pytest.param("libelle = Rue Albert Camus", "libelle =", "libelle est vide", id="libelle-vide"),
+    pytest.param("largeur_voie_anneau = 4.5", "largeur_voie_anneau = 20", "îlot", id="anneau-sans-ilot"),
+    pytest.param("largeur_chaussee = 5", "largeur_chaussee = 0", "strictement positif", id="chaussee-nulle"),
     pytest.param("timeout_client = 6", "timeout_client = 1", "timeout_client", id="timeout-sous-le-ping"),
     pytest.param("backoff_initial = 1", "backoff_initial = 20", "backoff_initial", id="backoff-inverse"),
 ]
