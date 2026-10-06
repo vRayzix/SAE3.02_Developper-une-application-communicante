@@ -1,4 +1,4 @@
-"""Légende de la scène, dessinée avec les couleurs mêmes de la scène."""
+"""Légende de la scène, dessinée avec les couleurs et les gabarits mêmes de la scène."""
 
 from __future__ import annotations
 
@@ -17,14 +17,19 @@ from cherrypie.ihm.style import (
     COULEURS_CATEGORIE,
     COULEURS_CONSIGNE,
     COULEURS_DENSITE,
+    GABARITS_CATEGORIE,
     NOMS_CATEGORIE,
 )
-from cherrypie.modele.usager import VehiculePrioritaire, Voiture
+from cherrypie.modele.usager import Pieton, VehiculePrioritaire, Voiture
 
-# Côté d'une icône de légende, en pixels, et proportions des motifs dessinés dedans.
-TAILLE_ICONE = 18
-PROPORTION_DISQUE = 0.6
+# Taille d'une icône de légende, en pixels, et proportions des motifs dessinés dedans.
+LARGEUR_ICONE = 26
+HAUTEUR_ICONE = 18
+PROPORTION_SILHOUETTE_LONGUEUR = 0.85
+PROPORTION_SILHOUETTE_LARGEUR = 0.6
 PROPORTION_BANDE = 0.35
+PROPORTION_BARRE = 0.2
+ARRONDI_ICONE = 2.0
 EPAISSEUR_CONTOUR_FIN = 1
 EPAISSEUR_CONTOUR_CONSIGNE = 3
 
@@ -60,27 +65,26 @@ class Legende(QGroupBox):
     def __entrees(self) -> list[tuple[Dessin, str]]:
         """Liste les entrées de la légende : de quoi peindre l'icône, et son libellé."""
         entrees: list[tuple[Dessin, str]] = []
-        for categorie, couleur in COULEURS_CATEGORIE.items():
-            halo = categorie == VehiculePrioritaire.CATEGORIE
-            dessin = self.__disque(couleur, COULEUR_CONTOUR_USAGER, EPAISSEUR_CONTOUR_FIN, halo)
+        for categorie in COULEURS_CATEGORIE:
+            dessin = self.__silhouette(categorie, COULEUR_CONTOUR_USAGER, EPAISSEUR_CONTOUR_FIN)
             entrees.append((dessin, NOMS_CATEGORIE[categorie]))
         for code, couleur in COULEURS_CONSIGNE.items():
-            dessin = self.__disque(COULEURS_CATEGORIE[Voiture.CATEGORIE], couleur, EPAISSEUR_CONTOUR_CONSIGNE, False)
+            dessin = self.__silhouette(Voiture.CATEGORIE, couleur, EPAISSEUR_CONTOUR_CONSIGNE)
             entrees.append((dessin, f"Consigne {code}"))
-        entrees.append((self.__bande(COULEUR_RESERVE), "Segment réservé au VP"))
-        entrees.append((self.__carre(COULEUR_FEU_ENTREE), "Entrée temporisée"))
+        entrees.append((self.__bande(COULEUR_RESERVE, PROPORTION_BANDE * 2), "Voie réservée au VP"))
+        entrees.append((self.__bande(COULEUR_FEU_ENTREE, PROPORTION_BARRE), "Entrée temporisée"))
         for niveau, couleur in COULEURS_DENSITE.items():
-            entrees.append((self.__bande(couleur), f"Densité {niveau.value}"))
+            entrees.append((self.__bande(couleur, PROPORTION_BANDE), f"Densité {niveau.value}"))
         return entrees
 
     @staticmethod
     def __entree(dessin: Dessin, libelle: str) -> QWidget:
         """Construit une entrée : l'icône peinte, puis le libellé."""
-        icone = QPixmap(TAILLE_ICONE, TAILLE_ICONE)
+        icone = QPixmap(LARGEUR_ICONE, HAUTEUR_ICONE)
         icone.fill(Qt.GlobalColor.transparent)
         pinceau = QPainter(icone)
         pinceau.setRenderHint(QPainter.RenderHint.Antialiasing)
-        dessin(pinceau, QRectF(0, 0, TAILLE_ICONE, TAILLE_ICONE))
+        dessin(pinceau, QRectF(0, 0, LARGEUR_ICONE, HAUTEUR_ICONE))
         pinceau.end()
         image = QLabel()
         image.setPixmap(icone)
@@ -92,47 +96,42 @@ class Legende(QGroupBox):
         return entree
 
     @staticmethod
-    def __disque(remplissage: QColor, contour: QColor, epaisseur: int, halo: bool) -> Dessin:
-        """Disque d'usager, avec son contour et, pour le VP, son halo."""
+    def __silhouette(categorie: str, contour: QColor, epaisseur: int) -> Dessin:
+        """Silhouette d'usager vue de dessus, dans les proportions de son gabarit, avec son contour."""
 
         def dessiner(pinceau: QPainter, cadre: QRectF) -> None:
-            if halo:
+            longueur, largeur = GABARITS_CATEGORIE[categorie]
+            # Chaque silhouette remplit l'icône dans ses propres proportions : la légende
+            # montre des formes reconnaissables, pas des tailles relatives.
+            echelle = min(
+                cadre.width() * PROPORTION_SILHOUETTE_LONGUEUR / longueur,
+                cadre.height() * PROPORTION_SILHOUETTE_LARGEUR / largeur,
+            )
+            silhouette = QRectF(0, 0, longueur * echelle, largeur * echelle)
+            silhouette.moveCenter(cadre.center())
+            if categorie == VehiculePrioritaire.CATEGORIE:
                 pinceau.setPen(Qt.PenStyle.NoPen)
                 pinceau.setBrush(QBrush(COULEUR_HALO_VP))
-                pinceau.drawEllipse(cadre)
-            cote = cadre.width() * PROPORTION_DISQUE
-            disque = QRectF(0, 0, cote, cote)
-            disque.moveCenter(cadre.center())
+                pinceau.drawEllipse(cadre.center(), cadre.height() / 2, cadre.height() / 2)
             pinceau.setPen(QPen(contour, epaisseur))
-            pinceau.setBrush(QBrush(remplissage))
-            pinceau.drawEllipse(disque)
+            pinceau.setBrush(QBrush(COULEURS_CATEGORIE[categorie]))
+            if categorie == Pieton.CATEGORIE:
+                pinceau.drawEllipse(silhouette)
+            else:
+                pinceau.drawRoundedRect(silhouette, ARRONDI_ICONE, ARRONDI_ICONE)
 
         return dessiner
 
     @staticmethod
-    def __bande(couleur: QColor) -> Dessin:
-        """Bande horizontale, sur fond de chaussée : segment réservé ou niveau de densité."""
+    def __bande(couleur: QColor, proportion: float) -> Dessin:
+        """Bande horizontale sur fond de chaussée : voie réservée, entrée temporisée ou niveau de densité."""
 
         def dessiner(pinceau: QPainter, cadre: QRectF) -> None:
             pinceau.setPen(Qt.PenStyle.NoPen)
             pinceau.setBrush(QBrush(COULEUR_CHAUSSEE))
             pinceau.drawRect(cadre)
-            hauteur = cadre.height() * PROPORTION_BANDE
+            hauteur = cadre.height() * proportion
             pinceau.setBrush(QBrush(couleur))
             pinceau.drawRect(QRectF(cadre.left(), cadre.center().y() - hauteur / 2, cadre.width(), hauteur))
-
-        return dessiner
-
-    @staticmethod
-    def __carre(couleur: QColor) -> Dessin:
-        """Carré plein, comme le feu d'une entrée temporisée."""
-
-        def dessiner(pinceau: QPainter, cadre: QRectF) -> None:
-            cote = cadre.width() * PROPORTION_DISQUE
-            carre = QRectF(0, 0, cote, cote)
-            carre.moveCenter(cadre.center())
-            pinceau.setPen(QPen(COULEUR_CONTOUR_USAGER, EPAISSEUR_CONTOUR_FIN))
-            pinceau.setBrush(QBrush(couleur))
-            pinceau.drawRect(carre)
 
         return dessiner
