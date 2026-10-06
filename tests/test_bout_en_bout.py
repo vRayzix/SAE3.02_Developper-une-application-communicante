@@ -8,7 +8,6 @@ import pytest
 from outils import DELAI, attendre
 
 from cherrypie.client.client_usager import ClientUsager
-from cherrypie.commun.config import Configuration
 from cherrypie.commun.protocole import Message, TypeMessage
 from cherrypie.commun.securite import Signataire
 from cherrypie.commun.trame import DecoupeurTrames
