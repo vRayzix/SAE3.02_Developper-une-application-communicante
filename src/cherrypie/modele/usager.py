@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import math
+
+from cherrypie.commun.config import TOUR_COMPLET
 from cherrypie.commun.protocole import CodeNotification
 from cherrypie.modele.position import Position
 from cherrypie.modele.rond_point import RondPoint
@@ -11,8 +14,6 @@ from cherrypie.modele.trajectoire import Etape, Trajectoire
 KMH = 1 / 3.6
 # Part de sa vitesse maximale que garde un usager qui dégage la voie.
 FACTEUR_RALENTISSEMENT = 0.5
-# Écart pris sur la droite de sa voie pour laisser passer un véhicule prioritaire, en mètres.
-DECALAGE_DEGAGEMENT = 2.0
 CHAMPS_OBLIGATOIRES = {"id", "categorie", "entree", "sortie"}
 
 
@@ -53,6 +54,7 @@ class Usager:
         self.__branche_entree = branche_entree
         self.__branche_sortie = branche_sortie
         self.__position: Position | None = None
+        self.__cap: float | None = None
         self.__vitesse = 0.0
         self.__segment: str | None = None
         # Un usager qui vient de se présenter arrive par sa branche d'entrée.
@@ -89,6 +91,8 @@ class Usager:
         usager = classe(contenu["id"], contenu["entree"], contenu["sortie"])
         if contenu.get("x") is not None and contenu.get("y") is not None:
             usager.position = Position(contenu["x"], contenu["y"])
+        if contenu.get("cap") is not None:
+            usager.cap = contenu["cap"]
         usager.vitesse = contenu.get("vitesse", 0.0)
         usager.segment = contenu.get("segment")
         if contenu.get("etape") is not None:
@@ -129,6 +133,42 @@ class Usager:
         self.__position = valeur
 
     @property
+    def cap(self) -> float | None:
+        """float | None: direction de marche, en degrés depuis le nord ; None tant que l'usager n'a pas bougé."""
+        return self.__cap
+
+    @cap.setter
+    def cap(self, valeur: float) -> None:
+        """Enregistre une nouvelle direction.
+
+        Raises:
+            TypeError: si la valeur n'est pas un nombre.
+            ValueError: si elle n'est pas comprise entre 0 et 360.
+        """
+        self.__cap = self.verifier_cap(valeur)
+
+    @staticmethod
+    def verifier_cap(valeur: object) -> float:
+        """Vérifie qu'une valeur peut servir de cap.
+
+        Args:
+            valeur (object): valeur à vérifier, reçue par exemple dans un POS.
+
+        Returns:
+            float: le cap, en degrés.
+
+        Raises:
+            TypeError: si la valeur n'est pas un nombre.
+            ValueError: si elle n'est pas un nombre fini compris entre 0 et 360.
+        """
+        # bool est une sous-classe de int : sans ce test, True passerait pour 1°.
+        if isinstance(valeur, bool) or not isinstance(valeur, (int, float)):
+            raise TypeError(f"le cap doit être un nombre (reçu : {valeur!r})")
+        if not math.isfinite(valeur) or not 0 <= valeur < TOUR_COMPLET:
+            raise ValueError(f"le cap doit être compris entre 0 et 360 degrés (reçu : {valeur!r})")
+        return float(valeur)
+
+    @property
     def vitesse(self) -> float:
         """float: vitesse actuelle, en m/s."""
         return self.__vitesse
@@ -153,7 +193,7 @@ class Usager:
 
     @property
     def segment(self) -> str | None:
-        """str | None: segment de l'anneau occupé (ex. "N-O"), None hors de l'anneau."""
+        """str | None: segment de l'anneau occupé (ex. "nations_nord-albert_camus"), None hors de l'anneau."""
         return self.__segment
 
     @segment.setter
@@ -216,15 +256,16 @@ class Usager:
             return self.VITESSE_MAX * FACTEUR_RALENTISSEMENT
         return self.VITESSE_MAX
 
-    def decalage_lateral(self) -> float:
-        """Donne l'écart à prendre sur la droite de sa voie.
+    def se_range(self) -> bool:
+        """Indique si l'usager doit se ranger sur sa droite pour laisser passer un véhicule prioritaire.
+
+        La place dont il dispose dépend de l'endroit où il se trouve : le bord de sa
+        chaussée sur une branche, la voie extérieure sur l'anneau.
 
         Returns:
-            float: écart en mètres, non nul pendant un DEGAGEZ ou un CHANGEZ_VOIE.
+            bool: True pendant un DEGAGEZ ou un CHANGEZ_VOIE.
         """
-        if self.__consigne in (CodeNotification.DEGAGEZ, CodeNotification.CHANGEZ_VOIE):
-            return DECALAGE_DEGAGEMENT
-        return 0.0
+        return self.__consigne in (CodeNotification.DEGAGEZ, CodeNotification.CHANGEZ_VOIE)
 
     def calculer_trajectoire(self, rond_point: RondPoint) -> Trajectoire:
         """Calcule le chemin de l'usager : approche, anneau, puis sortie.
@@ -244,7 +285,7 @@ class Usager:
         """Convertit l'usager en dictionnaire prêt pour json.dumps.
 
         Returns:
-            dict: identité, trajet, position (x et y à None si elle est inconnue),
+            dict: identité, trajet, position (x et y à None si elle est inconnue), cap,
                 vitesse, segment, étape et consigne.
         """
         return {
@@ -254,6 +295,7 @@ class Usager:
             "sortie": self.__branche_sortie,
             "x": None if self.__position is None else self.__position.x,
             "y": None if self.__position is None else self.__position.y,
+            "cap": self.__cap,
             "vitesse": self.__vitesse,
             "segment": self.__segment,
             "etape": self.__etape.value,
@@ -335,6 +377,20 @@ class VehiculePrioritaire(Usager):
     CATEGORIE = "vp"
     VITESSE_MAX = 40 * KMH
     CONSIGNES_SUIVIES = frozenset()
+
+    def calculer_trajectoire(self, rond_point: RondPoint) -> Trajectoire:
+        """Calcule le chemin du VP, qui reste sur la voie intérieure de l'anneau de bout en bout.
+
+        Args:
+            rond_point (RondPoint): rond-point traversé.
+
+        Returns:
+            Trajectoire: la trajectoire du VP.
+
+        Raises:
+            BrancheInconnueError: si sa branche d'entrée ou de sortie n'existe pas.
+        """
+        return Trajectoire.pour_vehicule(rond_point, self.branche_entree, self.branche_sortie, prioritaire=True)
 
 
 CLASSES_PAR_CATEGORIE = {

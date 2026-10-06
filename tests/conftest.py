@@ -12,7 +12,7 @@ from outils import DELAI
 from PyQt6.QtWidgets import QApplication
 
 from cherrypie.client.client_usager import ClientUsager
-from cherrypie.commun.config import Configuration
+from cherrypie.commun.config import PREFIXE_SECTION_BRANCHE, TOUR_COMPLET, Configuration
 from cherrypie.modele.usager import Usager, Voiture
 from cherrypie.serveur.serveur import Serveur
 
@@ -26,20 +26,38 @@ def port_libre(type_socket: socket.SocketKind) -> int:
         return prise.getsockname()[1]
 
 
+def remplacer_branches(parseur: configparser.ConfigParser, noms: list[str]) -> None:
+    """Remplace les branches de l'exemple par des branches régulièrement réparties autour de l'anneau."""
+    modele = dict(parseur[PREFIXE_SECTION_BRANCHE + parseur["rond_point"]["branches"].split(",")[0].strip()])
+    for section in [section for section in parseur.sections() if section.startswith(PREFIXE_SECTION_BRANCHE)]:
+        parseur.remove_section(section)
+    parseur["rond_point"]["branches"] = ", ".join(noms)
+    for rang, nom in enumerate(noms):
+        parseur[PREFIXE_SECTION_BRANCHE + nom] = {
+            "libelle": f"Rue {nom}",
+            "cap": str(rang * TOUR_COMPLET / len(noms)),
+            "terre_plein": modele["terre_plein"],
+            "passage_pieton": modele["passage_pieton"],
+        }
+
+
 @pytest.fixture
 def fabrique_config() -> Callable[..., Configuration]:
     """Fabrique des configurations tirées du fichier d'exemple, sur 127.0.0.1 et des ports libres.
 
     Les arguments nommés remplacent des valeurs de l'exemple, quelle que soit leur
-    section : fabrique_config(timeout_client="0.3").
+    section : fabrique_config(timeout_client="0.3"). branches=["a", "b", "c"] remplace
+    les branches de Bel Air par des branches régulièrement réparties, de mêmes dimensions.
     """
 
-    def fabriquer(**valeurs: str) -> Configuration:
+    def fabriquer(branches: list[str] | None = None, **valeurs: str) -> Configuration:
         parseur = configparser.ConfigParser(interpolation=None)
         parseur.read(CHEMIN_EXEMPLE, encoding="utf-8")
         parseur["reseau"]["hote"] = "127.0.0.1"
         parseur["reseau"]["port_tcp"] = str(port_libre(socket.SOCK_STREAM))
         parseur["reseau"]["port_udp"] = str(port_libre(socket.SOCK_DGRAM))
+        if branches is not None:
+            remplacer_branches(parseur, branches)
         for cle, valeur in valeurs.items():
             (section,) = [nom for nom in parseur.sections() if cle in parseur[nom]]
             parseur[section][cle] = valeur
@@ -80,7 +98,7 @@ def preparer_client() -> Iterator[Callable[..., ClientUsager]]:
     prepares: list[ClientUsager] = []
 
     def preparer(config: Configuration, usager: Usager | None = None, **rappels: Callable) -> ClientUsager:
-        client = ClientUsager(config, usager or Voiture("voiture_12", "S", "N"), **rappels)
+        client = ClientUsager(config, usager or Voiture("voiture_12", "nations_sud", "nations_nord"), **rappels)
         prepares.append(client)
         return client
 

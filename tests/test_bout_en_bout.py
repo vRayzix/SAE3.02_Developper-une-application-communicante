@@ -8,7 +8,6 @@ import pytest
 from outils import DELAI, attendre
 
 from cherrypie.client.client_usager import ClientUsager
-from cherrypie.commun.config import Configuration
 from cherrypie.commun.protocole import Message, TypeMessage
 from cherrypie.commun.securite import Signataire
 from cherrypie.commun.trame import DecoupeurTrames
@@ -17,6 +16,7 @@ from cherrypie.serveur.passages import PassageVp
 from cherrypie.serveur.serveur import Serveur
 
 GRAINE = 1
+BRANCHES = ["nations_nord", "jean_de_la_bruyere", "nations_sud", "albert_camus"]
 # Délais courts et petit anneau, pour que chaque traversée tienne en quelques secondes.
 REGLAGES = {
     "intervalle_position": "0.05",
@@ -51,15 +51,16 @@ def trafic(hasard: random.Random) -> list[tuple[Usager, float]]:
     """
     usagers: list[tuple[Usager, float]] = []
     for rang in range(3):
-        usagers.append((Voiture(f"voiture_S{rang}", "S", hasard.choice(["E", "N", "O"])), 40.0 - rang * 12.0))
-    for entree in ["E", "O"]:
+        sortie = hasard.choice(["jean_de_la_bruyere", "nations_nord", "albert_camus"])
+        usagers.append((Voiture(f"voiture_S{rang}", "nations_sud", sortie), 40.0 - rang * 12.0))
+    for entree in ["jean_de_la_bruyere", "albert_camus"]:
         for rang in range(2):
             categorie = hasard.choice([Voiture, Moto, Trottinette])
-            sortie = hasard.choice([branche for branche in "NESO" if branche != entree])
+            sortie = hasard.choice([branche for branche in BRANCHES if branche != entree])
             usagers.append((categorie(f"{categorie.CATEGORIE}_{entree}{rang}", entree, sortie), 45.0 - rang * 10.0))
-    for branche in ["S", "N"]:
+    for branche in ["nations_sud", "nations_nord"]:
         usagers.append((Pieton(f"pieton_{branche}", branche, branche), hasard.uniform(0.0, 3.0)))
-    usagers.append((VehiculePrioritaire("vp_1", "S", "N"), 0.0))
+    usagers.append((VehiculePrioritaire("vp_1", "nations_sud", "nations_nord"), 0.0))
     return usagers
 
 

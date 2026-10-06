@@ -3,26 +3,29 @@
 import math
 
 import pytest
+from geometrie import rond_point_bel_air
 
-from cherrypie.client.deplacement import DISTANCE_SECURITE, Deplacement
+from cherrypie.client.deplacement import DISTANCE_SECURITE, VITESSE_LATERALE, Deplacement
 from cherrypie.commun.protocole import CodeNotification
 from cherrypie.modele.rond_point import RondPoint
-from cherrypie.modele.trajectoire import LARGEUR_CHAUSSEE, LONGUEUR_BRANCHE, RECUL_LIGNE_VEHICULE, Etape
-from cherrypie.modele.usager import DECALAGE_DEGAGEMENT, FACTEUR_RALENTISSEMENT, Pieton, Voiture
+from cherrypie.modele.trajectoire import Etape
+from cherrypie.modele.usager import FACTEUR_RALENTISSEMENT, Pieton, Voiture
 
-RAYON = 20.0
 PAS = 0.2
-LIGNE = LONGUEUR_BRANCHE - RECUL_LIGNE_VEHICULE
+# La ligne d'entrée est au bout de l'approche, au bord de l'anneau.
+LIGNE = rond_point_bel_air().longueur_branche
+# Sur la voie intérieure du premier segment de nations_sud vers nations_nord, après le raccord.
+SUR_LA_VOIE_INTERIEURE = LIGNE + 13.0
 
 
 @pytest.fixture
 def rond_point() -> RondPoint:
-    return RondPoint(["N", "E", "S", "O"], RAYON, 8)
+    return rond_point_bel_air()
 
 
 @pytest.fixture
 def voiture() -> Voiture:
-    return Voiture("voiture_12", "S", "N")
+    return Voiture("voiture_12", "nations_sud", "nations_nord")
 
 
 @pytest.fixture
@@ -50,9 +53,14 @@ def test_pas_a_la_vitesse_maximale(deplacement: Deplacement, voiture: Voiture) -
     assert voiture.vitesse == pytest.approx(Voiture.VITESSE_MAX)
 
 
+def test_cap_suit_la_trajectoire(deplacement: Deplacement, voiture: Voiture) -> None:
+    amener_a(deplacement, LIGNE + 20.0)
+    assert voiture.cap == pytest.approx(deplacement.trajectoire.cap_a(deplacement.avancement))
+
+
 def test_position_et_segment_suivent_l_avancement(deplacement: Deplacement, voiture: Voiture) -> None:
-    amener_a(deplacement, LONGUEUR_BRANCHE + 1.0)
-    assert voiture.segment == "S-E"
+    amener_a(deplacement, LIGNE + 1.0)
+    assert voiture.segment == "nations_sud-jean_de_la_bruyere"
     assert voiture.position == deplacement.trajectoire.position_a(deplacement.avancement)
 
 
@@ -71,7 +79,7 @@ def test_vitesse_reelle_reduite_au_dernier_pas(deplacement: Deplacement, voiture
 
 @pytest.mark.parametrize(
     ("avancement", "etape"),
-    [(1.0, Etape.APPROCHE), (LONGUEUR_BRANCHE + 1.0, Etape.ANNEAU), (LONGUEUR_BRANCHE + 80.0, Etape.SORTIE)],
+    [(1.0, Etape.APPROCHE), (LIGNE + 1.0, Etape.ANNEAU), (LIGNE + 80.0, Etape.SORTIE)],
     ids=["approche", "anneau", "sortie"],
 )
 def test_etape_suit_l_avancement(deplacement: Deplacement, voiture: Voiture, avancement: float, etape: Etape) -> None:
@@ -97,11 +105,13 @@ def test_attendez_arrete_sur_la_ligne_d_entree(deplacement: Deplacement, voiture
     assert voiture.segment is None
 
 
-def test_attendez_arrete_au_bord_de_l_anneau(deplacement: Deplacement, voiture: Voiture) -> None:
+def test_attendez_arrete_au_bord_de_l_anneau(rond_point: RondPoint, deplacement: Deplacement, voiture: Voiture) -> None:
     voiture.reagir(CodeNotification.ATTENDEZ)
     for _ in range(100):
         deplacement.avancer(PAS)
-    assert math.hypot(voiture.position.x, voiture.position.y) == pytest.approx(RAYON + LARGEUR_CHAUSSEE / 2)
+    sud = rond_point.branche("nations_sud")
+    ligne = sud.point(rond_point.rayon_bord, sud.decalage_voie)
+    assert (voiture.position.x, voiture.position.y) == pytest.approx((ligne.x, ligne.y))
 
 
 def test_ok_passer_relance_l_usager_arrete(deplacement: Deplacement, voiture: Voiture) -> None:
@@ -115,7 +125,7 @@ def test_ok_passer_relance_l_usager_arrete(deplacement: Deplacement, voiture: Vo
 
 
 def test_attendez_sans_effet_une_fois_la_ligne_franchie(deplacement: Deplacement, voiture: Voiture) -> None:
-    amener_a(deplacement, LONGUEUR_BRANCHE + 5.0)
+    amener_a(deplacement, LIGNE + 5.0)
     voiture.reagir(CodeNotification.ATTENDEZ)
     avant = deplacement.avancement
     deplacement.avancer(PAS)
@@ -124,27 +134,75 @@ def test_attendez_sans_effet_une_fois_la_ligne_franchie(deplacement: Deplacement
 
 # ---------- DEGAGEZ et CHANGEZ_VOIE ----------
 
-def test_degagez_ralentit_et_decale_vers_l_exterieur(deplacement: Deplacement, voiture: Voiture) -> None:
-    amener_a(deplacement, LONGUEUR_BRANCHE + 5.0)
+@pytest.fixture
+def longue_traversee(rond_point: RondPoint) -> Deplacement:
+    """Voiture qui reste sur la voie intérieure pendant deux segments, de quoi changer de voie."""
+    voiture = Voiture("voiture_13", "nations_sud", "albert_camus")
+    deplacement = Deplacement(voiture, voiture.calculer_trajectoire(rond_point))
+    amener_a(deplacement, SUR_LA_VOIE_INTERIEURE)
     voiture.reagir(CodeNotification.DEGAGEZ)
-    avant = deplacement.avancement
+    return deplacement
+
+
+def se_ranger(rond_point: RondPoint, deplacement: Deplacement) -> None:
+    """Fait avancer l'usager le temps qu'il passe d'une voie de l'anneau à l'autre."""
+    duree_du_changement = rond_point.largeur_voie_anneau / VITESSE_LATERALE
+    for _ in range(math.ceil(duree_du_changement / PAS)):
+        deplacement.avancer(PAS)
+
+
+def test_degagez_garde_son_allure_le_temps_de_se_ranger(longue_traversee: Deplacement) -> None:
+    avant = longue_traversee.avancement
+    longue_traversee.avancer(PAS)
+    assert longue_traversee.avancement - avant == pytest.approx(Voiture.VITESSE_MAX * PAS)
+
+
+def test_degagez_ralentit_une_fois_range(rond_point: RondPoint, longue_traversee: Deplacement) -> None:
+    se_ranger(rond_point, longue_traversee)
+    avant = longue_traversee.avancement
+    longue_traversee.avancer(PAS)
+    assert longue_traversee.avancement - avant == pytest.approx(Voiture.VITESSE_MAX * FACTEUR_RALENTISSEMENT * PAS)
+
+
+def test_degagez_fait_passer_sur_la_voie_exterieure(rond_point: RondPoint, longue_traversee: Deplacement) -> None:
+    se_ranger(rond_point, longue_traversee)
+    usager = longue_traversee.usager
+    assert usager.segment == "jean_de_la_bruyere-nations_nord"
+    assert math.hypot(usager.position.x, usager.position.y) == pytest.approx(rond_point.rayon_voie_exterieure)
+
+
+def test_changement_de_voie_progressif(deplacement: Deplacement, voiture: Voiture) -> None:
+    amener_a(deplacement, SUR_LA_VOIE_INTERIEURE)
+    voiture.reagir(CodeNotification.DEGAGEZ)
     deplacement.avancer(PAS)
-    assert deplacement.avancement - avant == pytest.approx(Voiture.VITESSE_MAX * FACTEUR_RALENTISSEMENT * PAS)
-    assert math.hypot(voiture.position.x, voiture.position.y) == pytest.approx(RAYON + DECALAGE_DEGAGEMENT)
+    assert deplacement.decalage == pytest.approx(VITESSE_LATERALE * PAS)
 
 
-def test_changez_voie_decale_sans_ralentir(deplacement: Deplacement, voiture: Voiture) -> None:
+def test_changez_voie_range_au_bord_de_la_chaussee_sans_ralentir(deplacement: Deplacement, voiture: Voiture) -> None:
     voiture.reagir(CodeNotification.CHANGEZ_VOIE)
-    deplacement.avancer(PAS)
-    assert deplacement.avancement == pytest.approx(Voiture.VITESSE_MAX * PAS)
-    attendue = deplacement.trajectoire.position_a(deplacement.avancement, DECALAGE_DEGAGEMENT)
+    for _ in range(10):
+        deplacement.avancer(PAS)
+    assert deplacement.avancement == pytest.approx(Voiture.VITESSE_MAX * PAS * 10)
+    place = deplacement.trajectoire.place_a_droite_a(deplacement.avancement)
+    assert deplacement.decalage == pytest.approx(place)
+    attendue = deplacement.trajectoire.position_a(deplacement.avancement, place)
     assert (voiture.position.x, voiture.position.y) == pytest.approx((attendue.x, attendue.y))
+
+
+def test_ok_passer_ramene_au_milieu_de_la_voie(deplacement: Deplacement, voiture: Voiture) -> None:
+    voiture.reagir(CodeNotification.CHANGEZ_VOIE)
+    for _ in range(10):
+        deplacement.avancer(PAS)
+    voiture.reagir(CodeNotification.OK_PASSER)
+    for _ in range(10):
+        deplacement.avancer(PAS)
+    assert deplacement.decalage == 0.0
 
 
 # ---------- Piéton ----------
 
 def test_pieton_attend_au_bord_de_la_chaussee(rond_point: RondPoint) -> None:
-    pieton = Pieton("pieton_4", "N", "N")
+    pieton = Pieton("pieton_4", "nations_nord", "nations_nord")
     deplacement = Deplacement(pieton, pieton.calculer_trajectoire(rond_point))
     pieton.reagir(CodeNotification.ATTENDEZ)
     for _ in range(50):
@@ -189,12 +247,12 @@ def test_anneau_libre_l_usager_entre(deplacement: Deplacement, voiture: Voiture)
     for _ in range(100):
         deplacement.avancer(PAS)
     deplacement.noter_devant(None, ceder=False)
-    deplacement.avancer(RECUL_LIGNE_VEHICULE / Voiture.VITESSE_MAX + PAS)
+    deplacement.avancer(PAS)
     assert voiture.etape is Etape.ANNEAU
 
 
 def test_ceder_sans_effet_une_fois_sur_l_anneau(deplacement: Deplacement) -> None:
-    amener_a(deplacement, LONGUEUR_BRANCHE + 3.0)
+    amener_a(deplacement, LIGNE + 3.0)
     deplacement.noter_devant(None, ceder=True)
     avant = deplacement.avancement
     deplacement.avancer(PAS)

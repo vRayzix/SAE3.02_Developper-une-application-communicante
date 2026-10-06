@@ -10,13 +10,14 @@ from cherrypie.serveur.passages import PassageEnCours
 
 @pytest.fixture
 def passage() -> PassageEnCours:
-    return PassageEnCours("vp_1", "S", "N", ["S-E", "E-N"], annonce=10.0, regulation=True)
+    segments = ["nations_sud-jean_de_la_bruyere", "jean_de_la_bruyere-nations_nord"]
+    return PassageEnCours("vp_1", "nations_sud", "nations_nord", segments, annonce=10.0, regulation=True)
 
 
 # ---------- Annonce ----------
 
 def test_vp_annonce_reserve_sa_trajectoire(passage: PassageEnCours) -> None:
-    assert passage.segments_reserves == ("S-E", "E-N")
+    assert passage.segments_reserves == ("nations_sud-jean_de_la_bruyere", "jean_de_la_bruyere-nations_nord")
     assert not passage.sur_l_anneau
 
 
@@ -31,7 +32,7 @@ def test_duree_de_l_annonce_au_vp_fin(passage: PassageEnCours) -> None:
     mesure = passage.terminer(18.5)
     assert mesure.duree == pytest.approx(8.5)
     assert (mesure.fin - mesure.debut).total_seconds() == pytest.approx(8.5)
-    assert (mesure.identifiant, mesure.entree, mesure.sortie) == ("vp_1", "S", "N")
+    assert (mesure.identifiant, mesure.entree, mesure.sortie) == ("vp_1", "nations_sud", "nations_nord")
 
 
 def test_duree_sur_l_anneau_depuis_le_premier_pos_sur_l_anneau(passage: PassageEnCours) -> None:
@@ -46,7 +47,8 @@ def test_vp_jamais_vu_sur_l_anneau_sans_duree_sur_l_anneau(passage: PassageEnCou
 
 @pytest.mark.parametrize("regulation", [True, False])
 def test_mode_de_regulation_note_a_l_annonce(regulation: bool) -> None:
-    passage = PassageEnCours("vp_1", "S", "N", ["S-E"], annonce=0.0, regulation=regulation)
+    segments = ["nations_sud-jean_de_la_bruyere"]
+    passage = PassageEnCours("vp_1", "nations_sud", "nations_nord", segments, annonce=0.0, regulation=regulation)
     assert passage.terminer(5.0).regulation is regulation
 
 

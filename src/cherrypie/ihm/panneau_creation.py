@@ -26,6 +26,7 @@ from cherrypie.modele.usager import CLASSES_PAR_CATEGORIE, Pieton
 
 NOMBRE_MAX_PAR_CLIC = 10
 COLONNES_CLIENTS = ["Usager", "Trajet", "Connexion", "Consigne"]
+COLONNE_TRAJET = 1
 COLONNE_CONNEXION = 2
 COLONNE_CONSIGNE = 3
 SANS_CONSIGNE = "aucune"
@@ -35,6 +36,9 @@ journal = logging.getLogger(__name__)
 
 class PanneauCreation(QGroupBox):
     """Choix d'un type d'usager, d'une entrée et d'une sortie ; chaque clic lance des clients.
+
+    Les listes d'entrée et de sortie affichent les noms de rues ; la donnée de chaque
+    ligne est l'identifiant de la branche, celui que le client envoie au serveur.
 
     Chaque client tourne dans son thread et signale ce qui lui arrive par un RelaisClient,
     qui le remet au panneau sous forme de signaux Qt. Le panneau liste les clients en
@@ -58,15 +62,17 @@ class PanneauCreation(QGroupBox):
         super().__init__("Créer des usagers", parent)
         self.__config = config
         self.__clients: list[ClientUsager] = []
+        self.__libelles = {branche.nom: branche.libelle for branche in config.branches}
         self.__lignes: dict[str, QTreeWidgetItem] = {}
         self.__compteurs = {categorie: 0 for categorie in CLASSES_PAR_CATEGORIE}
         self.__choix_categorie = QComboBox()
         for categorie in CLASSES_PAR_CATEGORIE:
             self.__choix_categorie.addItem(NOMS_CATEGORIE[categorie], categorie)
         self.__choix_entree = QComboBox()
-        self.__choix_entree.addItems(config.branches)
         self.__choix_sortie = QComboBox()
-        self.__choix_sortie.addItems(config.branches)
+        for branche in config.branches:
+            self.__choix_entree.addItem(branche.libelle, branche.nom)
+            self.__choix_sortie.addItem(branche.libelle, branche.nom)
         self.__choix_nombre = QSpinBox()
         self.__choix_nombre.setRange(1, NOMBRE_MAX_PAR_CLIC)
         self.__bouton_lancer = QPushButton("Lancer")
@@ -74,6 +80,9 @@ class PanneauCreation(QGroupBox):
         self.__liste_clients.setHeaderLabels(COLONNES_CLIENTS)
         self.__liste_clients.setRootIsDecorated(False)
         self.__liste_clients.header().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        # Les noms de rues sont longs : la colonne du trajet prend la place qui reste, quitte à les abréger.
+        self.__liste_clients.header().setSectionResizeMode(COLONNE_TRAJET, QHeaderView.ResizeMode.Stretch)
+        self.__liste_clients.header().setStretchLastSection(False)
         self.__disposer()
         self.__choix_categorie.currentIndexChanged.connect(self.__adapter_sortie)
         self.__choix_entree.currentIndexChanged.connect(self.__adapter_sortie)
@@ -96,7 +105,7 @@ class PanneauCreation(QGroupBox):
 
     @property
     def choix_entree(self) -> QComboBox:
-        """QComboBox: branche d'entrée."""
+        """QComboBox: branche d'entrée ; la donnée de chaque ligne est l'identifiant de la branche."""
         return self.__choix_entree
 
     @property
@@ -128,8 +137,8 @@ class PanneauCreation(QGroupBox):
         # Les clients arrivés au bout ont fini leur thread : inutile de les garder.
         self.__clients = [client for client in self.__clients if client.is_alive()]
         categorie = self.__choix_categorie.currentData()
-        entree = self.__choix_entree.currentText()
-        sortie = self.__choix_sortie.currentText()
+        entree = self.__choix_entree.currentData()
+        sortie = self.__choix_sortie.currentData()
         lances = [self.__lancer_un(categorie, entree, sortie) for _ in range(self.__choix_nombre.value())]
         journal.info("%d %s lancé(s) de %s vers %s", len(lances), categorie, entree, sortie)
         return lances
@@ -164,8 +173,12 @@ class PanneauCreation(QGroupBox):
             sur_notification=relais.sur_notification,
             sur_connexion=relais.sur_connexion,
         )
-        trajet = f"traverse {entree}" if categorie == Pieton.CATEGORIE else f"{entree} vers {sortie}"
+        if categorie == Pieton.CATEGORIE:
+            trajet = f"traverse {self.__libelles[entree]}"
+        else:
+            trajet = f"{self.__libelles[entree]} vers {self.__libelles[sortie]}"
         ligne = QTreeWidgetItem([identifiant, trajet, "", SANS_CONSIGNE])
+        ligne.setToolTip(COLONNE_TRAJET, trajet)
         self.__liste_clients.addTopLevelItem(ligne)
         self.__lignes[identifiant] = ligne
         self.__clients.append(client)

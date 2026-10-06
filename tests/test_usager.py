@@ -1,6 +1,7 @@
 """Tests des usagers : sous-classes, consignes, état et sérialisation."""
 
 import pytest
+from geometrie import rond_point_bel_air
 
 from cherrypie.commun.erreurs import BrancheInconnueError
 from cherrypie.commun.protocole import CodeNotification
@@ -9,7 +10,6 @@ from cherrypie.modele.rond_point import RondPoint
 from cherrypie.modele.trajectoire import Etape
 from cherrypie.modele.usager import (
     CLASSES_PAR_CATEGORIE,
-    DECALAGE_DEGAGEMENT,
     FACTEUR_RALENTISSEMENT,
     Moto,
     Pieton,
@@ -22,12 +22,12 @@ from cherrypie.modele.usager import (
 
 @pytest.fixture
 def voiture() -> Voiture:
-    return Voiture("voiture_12", "N", "E")
+    return Voiture("voiture_12", "nations_nord", "jean_de_la_bruyere")
 
 
 @pytest.fixture
 def pieton() -> Pieton:
-    return Pieton("pieton_4", "N", "N")
+    return Pieton("pieton_4", "nations_nord", "nations_nord")
 
 
 # ---------- Sous-classes ----------
@@ -53,12 +53,16 @@ def test_chaque_categorie_a_sa_classe() -> None:
 
 def test_usager_non_instanciable_directement() -> None:
     with pytest.raises(TypeError, match="classe mère"):
-        Usager("inconnu_1", "N", "E")
+        Usager("inconnu_1", "nations_nord", "jean_de_la_bruyere")
 
 
 @pytest.mark.parametrize(
     ("identifiant", "entree", "sortie"),
-    [("", "N", "E"), ("moto_1", "", "E"), ("moto_1", "N", None)],
+    [
+        ("", "nations_nord", "jean_de_la_bruyere"),
+        ("moto_1", "", "jean_de_la_bruyere"),
+        ("moto_1", "nations_nord", None),
+    ],
     ids=["identifiant-vide", "entree-vide", "sortie-absente"],
 )
 def test_identifiant_ou_branche_invalide_refuse(identifiant: str, entree: str, sortie: object) -> None:
@@ -79,23 +83,23 @@ def test_nouvel_usager_en_approche(voiture: Voiture) -> None:
 
 # ---------- Consignes ----------
 
-def test_degagez_ralentit_et_decale(voiture: Voiture) -> None:
+def test_degagez_ralentit_et_range(voiture: Voiture) -> None:
     assert voiture.reagir(CodeNotification.DEGAGEZ)
     assert voiture.vitesse_autorisee() == pytest.approx(Voiture.VITESSE_MAX * FACTEUR_RALENTISSEMENT)
-    assert voiture.decalage_lateral() == pytest.approx(DECALAGE_DEGAGEMENT)
+    assert voiture.se_range()
 
 
-def test_changez_voie_decale_sans_ralentir(voiture: Voiture) -> None:
+def test_changez_voie_range_sans_ralentir(voiture: Voiture) -> None:
     assert voiture.reagir(CodeNotification.CHANGEZ_VOIE)
     assert voiture.vitesse_autorisee() == pytest.approx(Voiture.VITESSE_MAX)
-    assert voiture.decalage_lateral() == pytest.approx(DECALAGE_DEGAGEMENT)
+    assert voiture.se_range()
 
 
 def test_attendez_ne_ralentit_pas_avant_la_ligne(voiture: Voiture) -> None:
     assert voiture.reagir(CodeNotification.ATTENDEZ)
     assert voiture.consigne is CodeNotification.ATTENDEZ
     assert voiture.vitesse_autorisee() == pytest.approx(Voiture.VITESSE_MAX)
-    assert voiture.decalage_lateral() == 0.0
+    assert not voiture.se_range()
 
 
 def test_ok_passer_leve_la_consigne(voiture: Voiture) -> None:
@@ -103,7 +107,7 @@ def test_ok_passer_leve_la_consigne(voiture: Voiture) -> None:
     assert voiture.reagir(CodeNotification.OK_PASSER)
     assert voiture.consigne is None
     assert voiture.vitesse_autorisee() == pytest.approx(Voiture.VITESSE_MAX)
-    assert voiture.decalage_lateral() == 0.0
+    assert not voiture.se_range()
 
 
 def test_nouvelle_consigne_remplace_la_precedente(voiture: Voiture) -> None:
@@ -114,7 +118,7 @@ def test_nouvelle_consigne_remplace_la_precedente(voiture: Voiture) -> None:
 
 @pytest.mark.parametrize("code", list(CodeNotification))
 def test_vehicule_prioritaire_ignore_toutes_les_consignes(code: CodeNotification) -> None:
-    vp = VehiculePrioritaire("vp_1", "S", "N")
+    vp = VehiculePrioritaire("vp_1", "nations_sud", "nations_nord")
     assert not vp.reagir(code)
     assert vp.consigne is None
 
@@ -123,7 +127,7 @@ def test_vehicule_prioritaire_ignore_toutes_les_consignes(code: CodeNotification
 def test_pieton_ignore_les_consignes_de_circulation(pieton: Pieton, code: CodeNotification) -> None:
     assert not pieton.reagir(code)
     assert pieton.consigne is None
-    assert pieton.decalage_lateral() == 0.0
+    assert not pieton.se_range()
 
 
 def test_pieton_attend_pour_traverser(pieton: Pieton) -> None:
@@ -160,7 +164,7 @@ def test_position_hors_classe_position_refusee(voiture: Voiture) -> None:
 
 
 def test_segment_remis_a_none_en_quittant_l_anneau(voiture: Voiture) -> None:
-    voiture.segment = "N-O"
+    voiture.segment = "nations_nord-albert_camus"
     voiture.segment = None
     assert voiture.segment is None
 
@@ -186,10 +190,11 @@ def test_vers_dict_nouvel_usager(voiture: Voiture) -> None:
     assert voiture.vers_dict() == {
         "id": "voiture_12",
         "categorie": "voiture",
-        "entree": "N",
-        "sortie": "E",
+        "entree": "nations_nord",
+        "sortie": "jean_de_la_bruyere",
         "x": None,
         "y": None,
+        "cap": None,
         "vitesse": 0.0,
         "segment": None,
         "etape": "approche",
@@ -197,10 +202,26 @@ def test_vers_dict_nouvel_usager(voiture: Voiture) -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("cap", "erreur"),
+    [(True, TypeError), ("nord", TypeError), (360.0, ValueError), (-1.0, ValueError), (float("nan"), ValueError)],
+    ids=["booleen", "texte", "tour-complet", "negatif", "nan"],
+)
+def test_cap_invalide_refuse(voiture: Voiture, cap: object, erreur: type) -> None:
+    with pytest.raises(erreur, match="cap"):
+        voiture.cap = cap
+
+
+def test_cap_dans_le_dictionnaire(voiture: Voiture) -> None:
+    voiture.cap = 147.5
+    assert voiture.vers_dict()["cap"] == pytest.approx(147.5)
+
+
 def test_aller_retour_dict_conserve_classe_et_etat(voiture: Voiture) -> None:
+    voiture.cap = 270.0
     voiture.position = Position(3.5, -20.0)
     voiture.vitesse = 4.2
-    voiture.segment = "S-E"
+    voiture.segment = "nations_sud-jean_de_la_bruyere"
     voiture.etape = Etape.ANNEAU
     voiture.reagir(CodeNotification.DEGAGEZ)
     copie = Usager.depuis_dict(voiture.vers_dict())
@@ -209,7 +230,7 @@ def test_aller_retour_dict_conserve_classe_et_etat(voiture: Voiture) -> None:
 
 
 def test_depuis_dict_contenu_d_un_hello() -> None:
-    usager = Usager.depuis_dict({"id": "vp_1", "categorie": "vp", "entree": "S", "sortie": "N"})
+    usager = Usager.depuis_dict({"id": "vp_1", "categorie": "vp", "entree": "nations_sud", "sortie": "nations_nord"})
     assert isinstance(usager, VehiculePrioritaire)
     assert usager.position is None
     assert usager.vitesse == 0.0
@@ -218,25 +239,42 @@ def test_depuis_dict_contenu_d_un_hello() -> None:
 
 def test_depuis_dict_categorie_inconnue_refusee() -> None:
     with pytest.raises(ValueError, match="inconnue"):
-        Usager.depuis_dict({"id": "tank_1", "categorie": "tank", "entree": "S", "sortie": "N"})
+        Usager.depuis_dict({"id": "tank_1", "categorie": "tank", "entree": "nations_sud", "sortie": "nations_nord"})
 
 
 def test_depuis_dict_champ_manquant_refuse() -> None:
     with pytest.raises(ValueError, match="sortie"):
-        Usager.depuis_dict({"id": "moto_1", "categorie": "moto", "entree": "S"})
+        Usager.depuis_dict({"id": "moto_1", "categorie": "moto", "entree": "nations_sud"})
 
 
 # ---------- Trajectoire selon la catégorie ----------
 
 @pytest.fixture
 def rond_point() -> RondPoint:
-    return RondPoint(["N", "E", "S", "O"], 20.0, 8)
+    return rond_point_bel_air()
 
 
 @pytest.mark.parametrize("classe", [Voiture, Moto, Trottinette, VehiculePrioritaire])
 def test_vehicule_passe_par_l_anneau(rond_point: RondPoint, classe: type) -> None:
-    trajectoire = classe(f"{classe.CATEGORIE}_1", "S", "N").calculer_trajectoire(rond_point)
-    assert [segment.nom for segment in trajectoire.segments] == ["S-E", "E-N"]
+    trajectoire = classe(f"{classe.CATEGORIE}_1", "nations_sud", "nations_nord").calculer_trajectoire(rond_point)
+    noms = [segment.nom for segment in trajectoire.segments]
+    assert noms == ["nations_sud-jean_de_la_bruyere", "jean_de_la_bruyere-nations_nord"]
+
+
+@pytest.mark.parametrize(
+    ("classe", "voie_du_dernier_segment"),
+    [(VehiculePrioritaire, "rayon_voie_interieure"), (Voiture, "rayon_voie_exterieure")],
+    ids=["vp", "voiture"],
+)
+def test_voie_suivie_sur_le_dernier_segment(rond_point: RondPoint, classe: type, voie_du_dernier_segment: str) -> None:
+    trajectoire = classe(f"{classe.CATEGORIE}_1", "nations_sud", "nations_nord").calculer_trajectoire(rond_point)
+    dernier = trajectoire.segments[-1]
+    rayons = [
+        troncon.rayon_debut
+        for troncon in trajectoire.troncons
+        if troncon.segment is dernier and troncon.rayon_debut == troncon.rayon_fin
+    ]
+    assert rayons == [pytest.approx(getattr(rond_point, voie_du_dernier_segment))]
 
 
 def test_pieton_traverse_sa_branche_sans_prendre_l_anneau(rond_point: RondPoint, pieton: Pieton) -> None:
@@ -247,9 +285,9 @@ def test_pieton_traverse_sa_branche_sans_prendre_l_anneau(rond_point: RondPoint,
 
 def test_pieton_avec_entree_et_sortie_differentes_refuse() -> None:
     with pytest.raises(ValueError, match="une seule branche"):
-        Pieton("pieton_5", "N", "E")
+        Pieton("pieton_5", "nations_nord", "jean_de_la_bruyere")
 
 
 def test_trajectoire_vers_une_branche_inconnue_refusee(rond_point: RondPoint) -> None:
     with pytest.raises(BrancheInconnueError):
-        Voiture("voiture_1", "S", "X").calculer_trajectoire(rond_point)
+        Voiture("voiture_1", "nations_sud", "X").calculer_trajectoire(rond_point)

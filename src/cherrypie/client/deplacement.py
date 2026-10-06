@@ -11,14 +11,21 @@ from cherrypie.modele.usager import Usager
 # Écart gardé avec l'obstacle de devant, en mètres. Il couvre aussi le retard de la
 # position vue par le serveur, qui peut dater d'un pas.
 DISTANCE_SECURITE = 6.0
+# Vitesse à laquelle un usager se décale sur le côté pour se ranger ou changer de voie, en m/s :
+# le mouvement reste visible à l'écran au lieu de se faire d'un coup.
+VITESSE_LATERALE = 2.0
+# Écart latéral, en mètres, en deçà duquel un usager qui se décale est considéré comme rangé.
+TOLERANCE_RANGEMENT = 0.05
 
 
 class Deplacement:
     """Fait avancer un usager sur sa trajectoire, pas à pas.
 
     À chaque pas, l'usager parcourt la distance que sa consigne permet : il ralentit
-    pendant un DEGAGEZ, se décale sur sa droite pendant un DEGAGEZ ou un CHANGEZ_VOIE,
-    et s'arrête sur la ligne d'entrée pendant un ATTENDEZ s'il ne l'a pas encore franchie.
+    pendant un DEGAGEZ, se range sur sa droite pendant un DEGAGEZ ou un CHANGEZ_VOIE (le
+    bord de sa chaussée sur une branche, la voie extérieure sur l'anneau), et s'arrête
+    sur la ligne d'entrée pendant un ATTENDEZ s'il ne l'a pas encore franchie. Il se
+    décale progressivement, à VITESSE_LATERALE.
     Il tient aussi compte de ce que voit le conducteur (message DEVANT) : il garde une
     distance de sécurité avec l'obstacle de devant, et attend sur la ligne d'entrée quand
     il doit céder le passage. La position, la vitesse, le segment et l'étape de l'usager
@@ -37,6 +44,7 @@ class Deplacement:
         self.__avancement = 0.0
         self.__limite: float | None = None
         self.__ceder = False
+        self.__decalage = 0.0
         self.__placer_usager(0.0)
 
     @property
@@ -58,6 +66,11 @@ class Deplacement:
     def limite(self) -> float | None:
         """float | None: avancement à ne pas dépasser à cause de l'obstacle de devant, None si la voie est libre."""
         return self.__limite
+
+    @property
+    def decalage(self) -> float:
+        """float: écart latéral actuel vers la droite du sens de marche, en mètres."""
+        return self.__decalage
 
     @property
     def ceder(self) -> bool:
@@ -95,27 +108,48 @@ class Deplacement:
         """
         if not math.isfinite(duree) or duree < 0:
             raise ValueError(f"durée de pas invalide : {duree}")
-        vitesse = self.__usager.vitesse_autorisee()
+        vitesse = self.__vitesse_permise()
         arrivee = self.__avancement + vitesse * duree
         if self.__doit_s_arreter_a_la_ligne():
-            arrivee = min(arrivee, self.__trajectoire.ligne_entree)
+            arrivee = min(arrivee, self.__trajectoire.longueur_approche)
         if self.__limite is not None:
             arrivee = min(arrivee, self.__limite)
         # Un obstacle peut se rapprocher : l'usager s'arrête alors, mais ne recule jamais.
         arrivee = max(self.__avancement, min(arrivee, self.__trajectoire.longueur))
         parcouru = arrivee - self.__avancement
         self.__avancement = arrivee
+        self.__decaler(duree)
         # La vitesse réelle est plus faible si l'usager a buté sur la ligne ou sur la fin du trajet.
         self.__placer_usager(min(vitesse, parcouru / duree) if duree > 0 else 0.0)
 
     def __doit_s_arreter_a_la_ligne(self) -> bool:
         """ATTENDEZ ou un cédez-le-passage n'arrêtent un usager que s'il n'a pas encore franchi la ligne."""
         doit_attendre = self.__usager.consigne is CodeNotification.ATTENDEZ or self.__ceder
-        return doit_attendre and self.__avancement <= self.__trajectoire.ligne_entree
+        return doit_attendre and self.__avancement <= self.__trajectoire.longueur_approche
+
+    def __vitesse_permise(self) -> float:
+        """Vitesse que permet la consigne ; un usager qui dégage la voie ne ralentit qu'une fois rangé.
+
+        Tant qu'il se décale, il garde son allure : ralentir sur la voie qu'il quitte la
+        boucherait plus longtemps pour le VP qui arrive derrière.
+        """
+        if self.__usager.se_range() and abs(self.__decalage_voulu() - self.__decalage) > TOLERANCE_RANGEMENT:
+            return self.__usager.VITESSE_MAX
+        return self.__usager.vitesse_autorisee()
+
+    def __decalage_voulu(self) -> float:
+        """Écart latéral que demande la consigne à l'endroit où se trouve l'usager."""
+        return self.__trajectoire.place_a_droite_a(self.__avancement) if self.__usager.se_range() else 0.0
+
+    def __decaler(self, duree: float) -> None:
+        """Rapproche l'écart latéral de celui que demande la consigne, sans dépasser VITESSE_LATERALE."""
+        pas = VITESSE_LATERALE * duree
+        self.__decalage += max(-pas, min(pas, self.__decalage_voulu() - self.__decalage))
 
     def __placer_usager(self, vitesse: float) -> None:
-        """Reporte l'avancement sur l'usager : position (décalage compris), vitesse, segment et étape."""
-        self.__usager.position = self.__trajectoire.position_a(self.__avancement, self.__usager.decalage_lateral())
+        """Reporte l'avancement sur l'usager : position (décalage compris), cap, vitesse, segment et étape."""
+        self.__usager.position = self.__trajectoire.position_a(self.__avancement, self.__decalage)
+        self.__usager.cap = self.__trajectoire.cap_a(self.__avancement)
         self.__usager.vitesse = vitesse
         segment = self.__trajectoire.segment_a(self.__avancement)
         self.__usager.segment = None if segment is None else segment.nom

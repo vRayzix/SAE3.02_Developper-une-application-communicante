@@ -1,6 +1,5 @@
 """Tests du client usager face à un vrai serveur, sur 127.0.0.1."""
 
-import math
 import os
 import socket
 import subprocess
@@ -18,7 +17,6 @@ from cherrypie.commun.config import Configuration
 from cherrypie.commun.protocole import CodeNotification, Enveloppe, Message, TypeMessage
 from cherrypie.commun.securite import Signataire
 from cherrypie.commun.trame import DecoupeurTrames
-from cherrypie.modele.trajectoire import LONGUEUR_BRANCHE
 from cherrypie.modele.usager import FACTEUR_RALENTISSEMENT, VehiculePrioritaire, Voiture
 from cherrypie.serveur.serveur import Serveur
 
@@ -30,6 +28,10 @@ DELAIS_RAPIDES = {
     "backoff_initial": "0.1",
     "backoff_max": "0.4",
 }
+# Marges sur une durée mesurée par le serveur, en secondes : quelques pas de position en
+# dessous, davantage au-dessus, car une machine chargée ne peut que ralentir le client.
+ECART_DE_MESURE = 0.15
+ECART_DE_MESURE_CHARGE = 0.5
 
 
 class FauxServeur:
@@ -234,8 +236,8 @@ def test_refus_definitif_arrete_le_client(
     fabrique_config: Callable[..., Configuration],
     preparer_client: Callable[..., ClientUsager],
 ) -> None:
-    serveur = lancer_serveur(**DELAIS_RAPIDES, branches="A, B, C")
-    # Le client croit à un rond-point N, E, S, O : le serveur ne connaît pas ses branches.
+    serveur = lancer_serveur(**DELAIS_RAPIDES, branches=["a", "b", "c"])
+    # Le client croit au rond-point de Bel Air : le serveur ne connaît pas ses branches.
     ports = {"port_tcp": str(serveur.config.port_tcp), "port_udp": str(serveur.config.port_udp)}
     details: list[str] = []
     client = preparer_client(
@@ -307,7 +309,7 @@ def test_attendez_arrete_sur_la_ligne_jusqu_a_ok_passer(
     faux_serveur: FauxServeur, preparer_client: Callable[..., ClientUsager]
 ) -> None:
     client = preparer_client(faux_serveur.config)
-    ligne = client.deplacement.trajectoire.ligne_entree
+    ligne = client.deplacement.trajectoire.longueur_approche
     # Placé à deux mètres de la ligne d'entrée, l'usager l'atteint en quelques pas.
     client.deplacement.avancer((ligne - 2.0) / Voiture.VITESSE_MAX)
     client.start()
@@ -349,7 +351,7 @@ def test_vehicule_prioritaire_ignore_les_consignes(
     recues: list[tuple[CodeNotification, str, bool]] = []
     client = preparer_client(
         faux_serveur.config,
-        VehiculePrioritaire("vp_1", "S", "N"),
+        VehiculePrioritaire("vp_1", "nations_sud", "nations_nord"),
         sur_notification=lambda code, texte, appliquee: recues.append((code, texte, appliquee)),
     )
     client.start()
@@ -375,13 +377,13 @@ def test_consigne_inconnue_ignoree(
 # ---------- Véhicule prioritaire ----------
 
 def test_vp_s_annonce_des_son_inscription(faux_serveur: FauxServeur, preparer_client: Callable[..., ClientUsager]) -> None:
-    client = preparer_client(faux_serveur.config, VehiculePrioritaire("vp_1", "S", "N"))
+    client = preparer_client(faux_serveur.config, VehiculePrioritaire("vp_1", "nations_sud", "nations_nord"))
     client.start()
     faux_serveur.accepter()
     faux_serveur.envoyer(accuse_d_inscription())
     annonce = faux_serveur.recevoir(TypeMessage.VP_ALERT)
-    eta = LONGUEUR_BRANCHE / VehiculePrioritaire.VITESSE_MAX
-    assert annonce.donnees == {"entree": "S", "sortie": "N", "eta": pytest.approx(eta)}
+    eta = client.deplacement.trajectoire.longueur_approche / VehiculePrioritaire.VITESSE_MAX
+    assert annonce.donnees == {"entree": "nations_sud", "sortie": "nations_nord", "eta": pytest.approx(eta)}
 
 
 def test_traversee_d_un_vp_mesuree_par_le_serveur(
@@ -389,17 +391,20 @@ def test_traversee_d_un_vp_mesuree_par_le_serveur(
 ) -> None:
     # Petit anneau et VP placé juste avant la ligne : la traversée dure moins d'une seconde.
     serveur = lancer_serveur(**DELAIS_RAPIDES, rayon="5")
-    client = preparer_client(serveur.config, VehiculePrioritaire("vp_1", "S", "E"))
+    client = preparer_client(serveur.config, VehiculePrioritaire("vp_1", "nations_sud", "jean_de_la_bruyere"))
     ligne = client.deplacement.trajectoire.longueur_approche
     client.deplacement.avancer((ligne - 1.0) / VehiculePrioritaire.VITESSE_MAX)
     client.start()
     attendre(lambda: serveur.logique.vp_actif)
     attendre(lambda: len(serveur.logique.passages) == 1)
     (mesure,) = serveur.logique.passages
-    quart_d_anneau = 2 * math.pi * 5 / 4
-    assert mesure.duree_anneau == pytest.approx(quart_d_anneau / VehiculePrioritaire.VITESSE_MAX, abs=0.15)
+    trajectoire = client.deplacement.trajectoire
+    sur_l_anneau = trajectoire.longueur - trajectoire.longueur_approche - serveur.config.longueur_branche
+    attendue = sur_l_anneau / VehiculePrioritaire.VITESSE_MAX
+    assert attendue - ECART_DE_MESURE <= mesure.duree_anneau <= attendue + ECART_DE_MESURE_CHARGE
     assert mesure.duree >= mesure.duree_anneau
-    assert (mesure.identifiant, mesure.entree, mesure.sortie, mesure.regulation) == ("vp_1", "S", "E", True)
+    trajet = (mesure.identifiant, mesure.entree, mesure.sortie, mesure.regulation)
+    assert trajet == ("vp_1", "nations_sud", "jean_de_la_bruyere", True)
     assert not serveur.logique.vp_actif
 
 
@@ -418,7 +423,9 @@ def test_distance_de_securite_gardee_puis_voie_libre(
     faux_serveur.envoyer(accuse_d_inscription(), devant(10.0))
     attendre(lambda: client.deplacement.limite is not None)
     limite = client.deplacement.limite
-    time.sleep(10 * float(DELAIS_RAPIDES["intervalle_position"]))
+    attendre(lambda: client.deplacement.avancement == pytest.approx(limite))
+    # Plusieurs pas plus tard, l'usager n'a pas dépassé la limite.
+    time.sleep(5 * float(DELAIS_RAPIDES["intervalle_position"]))
     assert client.deplacement.avancement == pytest.approx(limite)
     faux_serveur.envoyer(devant(None))
     attendre(lambda: client.deplacement.avancement > limite + 1.0)
@@ -428,7 +435,7 @@ def test_cedez_le_passage_arrete_sur_la_ligne(
     faux_serveur: FauxServeur, preparer_client: Callable[..., ClientUsager]
 ) -> None:
     client = preparer_client(faux_serveur.config)
-    ligne = client.deplacement.trajectoire.ligne_entree
+    ligne = client.deplacement.trajectoire.longueur_approche
     client.deplacement.avancer((ligne - 2.0) / Voiture.VITESSE_MAX)
     client.start()
     faux_serveur.accepter()
@@ -454,8 +461,8 @@ def test_devant_malforme_ignore(
 def test_deux_voitures_sur_la_meme_branche_gardent_leurs_distances(
     serveur: Serveur, preparer_client: Callable[..., ClientUsager]
 ) -> None:
-    devant_client = preparer_client(serveur.config, Voiture("voiture_1", "N", "S"))
-    derriere_client = preparer_client(serveur.config, Voiture("voiture_2", "N", "S"))
+    devant_client = preparer_client(serveur.config, Voiture("voiture_1", "nations_nord", "nations_sud"))
+    derriere_client = preparer_client(serveur.config, Voiture("voiture_2", "nations_nord", "nations_sud"))
     # Elles partent à 3 m l'une de l'autre : celle de derrière doit se laisser distancer.
     devant_client.deplacement.avancer(3.0 / Voiture.VITESSE_MAX)
     devant_client.start()

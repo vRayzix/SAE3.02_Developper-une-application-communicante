@@ -32,17 +32,17 @@ from cherrypie.serveur.serveur import Serveur
 
 # Trafic joué avant l'arrivée du VP : (catégorie, entrée, sortie, nombre).
 TRAFIC = [
-    ("voiture", "S", "O", 3),
-    ("voiture", "E", "S", 2),
-    ("moto", "O", "N", 1),
-    ("trottinette", "N", "E", 1),
-    ("pieton", "N", "N", 1),
+    ("voiture", "nations_sud", "albert_camus", 3),
+    ("voiture", "jean_de_la_bruyere", "nations_sud", 2),
+    ("moto", "albert_camus", "nations_nord", 1),
+    ("trottinette", "nations_nord", "jean_de_la_bruyere", 1),
+    ("pieton", "nations_nord", "nations_nord", 1),
 ]
-VP = ("vp", "S", "N", 1)
+VP = ("vp", "nations_sud", "nations_nord", 1)
 # Délais en secondes : le temps que le trafic arrive au rond-point, puis celui laissé au VP.
-# Au bout de 6 s, le VP régulé roule sur l'anneau, l'autre attend encore derrière la file.
+# Au bout de 8 s, le VP régulé roule sur l'anneau, l'autre attend encore derrière la file.
 DELAI_AVANT_VP = 3.5
-DELAI_CAPTURE_VP = 6.0
+DELAI_CAPTURE_VP = 8.0
 DELAI_CONNEXION = 5.0
 PAUSE_BOUCLE = 0.01
 
@@ -81,8 +81,8 @@ def lancer(fenetre: FenetreSupervision, categorie: str, entree: str, sortie: str
     """Lance des usagers depuis le panneau de création, comme le ferait l'utilisateur."""
     panneau = fenetre.panneau_creation
     panneau.choix_categorie.setCurrentIndex(panneau.choix_categorie.findData(categorie))
-    panneau.choix_entree.setCurrentText(entree)
-    panneau.choix_sortie.setCurrentText(sortie)
+    panneau.choix_entree.setCurrentIndex(panneau.choix_entree.findData(entree))
+    panneau.choix_sortie.setCurrentIndex(panneau.choix_sortie.findData(sortie))
     panneau.choix_nombre.setValue(nombre)
     panneau.lancer()
 

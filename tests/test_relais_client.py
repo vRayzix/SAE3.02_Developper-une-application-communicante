@@ -82,7 +82,7 @@ def test_client_relie_au_relais(
     recepteur = Recepteur(relais)
     client = preparer_client(
         serveur.config,
-        Voiture("voiture_12", "S", "N"),
+        Voiture("voiture_12", "nations_sud", "nations_nord"),
         sur_position=relais.sur_position,
         sur_notification=relais.sur_notification,
         sur_connexion=relais.sur_connexion,

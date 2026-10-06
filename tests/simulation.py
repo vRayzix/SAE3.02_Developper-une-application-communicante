@@ -31,6 +31,10 @@ class Simulation:
         self.__logique.traiter_tcp(self.__supervision, Message(TypeMessage.ABONNEMENT, "supervision"), 0.0)
 
     @property
+    def rond_point(self) -> RondPoint:
+        return self.__rond_point
+
+    @property
     def logique(self) -> LogiqueServeur:
         return self.__logique
 
@@ -103,6 +107,7 @@ class Simulation:
         donnees = {
             "x": usager.position.x,
             "y": usager.position.y,
+            "cap": usager.cap,
             "vitesse": usager.vitesse,
             "segment": usager.segment,
             "etape": usager.etape.value,

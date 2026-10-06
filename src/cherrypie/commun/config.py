@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import configparser
 import math
+import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from cherrypie.commun.erreurs import ConfigurationInvalideError
@@ -11,6 +13,31 @@ from cherrypie.commun.erreurs import ConfigurationInvalideError
 PORT_MIN = 1
 PORT_MAX = 65535
 NOMBRE_MIN_BRANCHES = 3
+TOUR_COMPLET = 360.0
+# Identifiant de branche : minuscules sans accents, chiffres et « _ ». Le tiret est exclu,
+# car il sépare les deux branches dans le nom d'un segment (ex. "nations_nord-albert_camus").
+MOTIF_IDENTIFIANT_BRANCHE = re.compile(r"[a-z0-9_]+")
+PREFIXE_SECTION_BRANCHE = "branche."
+
+
+@dataclass(frozen=True)
+class ParametresBranche:
+    """Description d'une branche, lue dans sa section [branche.<identifiant>].
+
+    Attributes:
+        nom (str): identifiant de la branche, utilisé dans le protocole (ex. "nations_nord").
+        libelle (str): nom de rue affiché par l'IHM.
+        cap (float): direction de la branche vue du centre, en degrés depuis le nord,
+            dans le sens des aiguilles d'une montre, entre 0 et 360.
+        terre_plein (float): largeur du terre-plein entre les deux chaussées, en mètres.
+        passage_pieton (float): distance entre le bord de l'anneau et le passage piéton, en mètres.
+    """
+
+    nom: str
+    libelle: str
+    cap: float
+    terre_plein: float
+    passage_pieton: float
 
 
 class Configuration:
@@ -42,6 +69,9 @@ class Configuration:
         self.__backoff_max = self.__lire_reel_positif(parseur, "delais", "backoff_max")
         self.__branches = self.__lire_branches(parseur)
         self.__rayon = self.__lire_reel_positif(parseur, "rond_point", "rayon")
+        self.__largeur_voie_anneau = self.__lire_reel_positif(parseur, "rond_point", "largeur_voie_anneau")
+        self.__largeur_chaussee = self.__lire_reel_positif(parseur, "rond_point", "largeur_chaussee")
+        self.__longueur_branche = self.__lire_reel_positif(parseur, "rond_point", "longueur_branche")
         self.__capacite_par_branche = self.__lire_entier(parseur, "rond_point", "capacite_par_branche", 1)
         self.__parametres_bdd = {
             "hote": self.__lire_texte(parseur, "bdd", "hote"),
@@ -149,14 +179,29 @@ class Configuration:
         return self.__backoff_max
 
     @property
-    def branches(self) -> list[str]:
-        """list[str]: noms des branches du rond-point (copie)."""
+    def branches(self) -> list[ParametresBranche]:
+        """list[ParametresBranche]: branches du rond-point, dans l'ordre de [rond_point] branches (copie)."""
         return list(self.__branches)
 
     @property
     def rayon(self) -> float:
-        """float: rayon de l'anneau, en mètres."""
+        """float: rayon de l'axe de l'anneau, entre ses deux voies, en mètres."""
         return self.__rayon
+
+    @property
+    def largeur_voie_anneau(self) -> float:
+        """float: largeur de chacune des deux voies de l'anneau, en mètres."""
+        return self.__largeur_voie_anneau
+
+    @property
+    def largeur_chaussee(self) -> float:
+        """float: largeur de la chaussée de chaque sens d'une branche, en mètres."""
+        return self.__largeur_chaussee
+
+    @property
+    def longueur_branche(self) -> float:
+        """float: longueur modélisée de chaque branche, depuis le bord de l'anneau, en mètres."""
+        return self.__longueur_branche
 
     @property
     def capacite_par_branche(self) -> int:
@@ -177,6 +222,10 @@ class Configuration:
             )
         if self.__backoff_initial > self.__backoff_max:
             raise ConfigurationInvalideError("[delais] backoff_initial ne peut pas dépasser backoff_max")
+        if self.__largeur_voie_anneau >= self.__rayon:
+            raise ConfigurationInvalideError(
+                "[rond_point] largeur_voie_anneau doit être inférieure à rayon, sinon il n'y a plus d'îlot"
+            )
 
     @staticmethod
     def __lire_texte(parseur: configparser.ConfigParser, section: str, cle: str) -> str:
@@ -223,16 +272,51 @@ class Configuration:
         return valeur
 
     @staticmethod
-    def __lire_branches(parseur: configparser.ConfigParser) -> list[str]:
-        """Lit la liste des branches, séparées par des virgules."""
+    def __lire_branches(parseur: configparser.ConfigParser) -> list[ParametresBranche]:
+        """Lit la liste des branches, puis la section qui décrit chacune d'elles."""
         texte = Configuration.__lire_texte(parseur, "rond_point", "branches")
-        branches = [nom.strip() for nom in texte.split(",")]
-        if "" in branches:
+        noms = [nom.strip() for nom in texte.split(",")]
+        if "" in noms:
             raise ConfigurationInvalideError("[rond_point] branches contient un nom vide")
-        if len(branches) < NOMBRE_MIN_BRANCHES:
+        for nom in noms:
+            if not MOTIF_IDENTIFIANT_BRANCHE.fullmatch(nom):
+                raise ConfigurationInvalideError(
+                    f"[rond_point] identifiant de branche invalide : {nom!r} (minuscules sans accents, chiffres et _)"
+                )
+        if len(noms) < NOMBRE_MIN_BRANCHES:
             raise ConfigurationInvalideError(
-                f"[rond_point] il faut au moins {NOMBRE_MIN_BRANCHES} branches (lu : {len(branches)})"
+                f"[rond_point] il faut au moins {NOMBRE_MIN_BRANCHES} branches (lu : {len(noms)})"
             )
-        if len(set(branches)) != len(branches):
+        if len(set(noms)) != len(noms):
             raise ConfigurationInvalideError("[rond_point] branches contient des noms en double")
+        sections_en_trop = {
+            section for section in parseur.sections() if section.startswith(PREFIXE_SECTION_BRANCHE)
+        } - {PREFIXE_SECTION_BRANCHE + nom for nom in noms}
+        if sections_en_trop:
+            raise ConfigurationInvalideError(
+                f"section [{min(sections_en_trop)}] sans branche correspondante dans [rond_point] branches"
+            )
+        branches = [Configuration.__lire_branche(parseur, nom) for nom in noms]
+        caps = [branche.cap for branche in branches]
+        if len(set(caps)) != len(caps):
+            raise ConfigurationInvalideError("[rond_point] deux branches ont le même cap")
         return branches
+
+    @staticmethod
+    def __lire_branche(parseur: configparser.ConfigParser, nom: str) -> ParametresBranche:
+        """Lit la section [branche.<nom>] : libellé, cap, terre-plein et passage piéton."""
+        section = PREFIXE_SECTION_BRANCHE + nom
+        texte_cap = Configuration.__lire_texte(parseur, section, "cap")
+        try:
+            cap = float(texte_cap)
+        except ValueError as erreur:
+            raise ConfigurationInvalideError(f"[{section}] cap doit être un nombre (lu : {texte_cap!r})") from erreur
+        if not 0 <= cap < TOUR_COMPLET:
+            raise ConfigurationInvalideError(f"[{section}] cap doit être compris entre 0 et 360 (lu : {texte_cap!r})")
+        return ParametresBranche(
+            nom,
+            Configuration.__lire_texte(parseur, section, "libelle"),
+            cap,
+            Configuration.__lire_reel_positif(parseur, section, "terre_plein"),
+            Configuration.__lire_reel_positif(parseur, section, "passage_pieton"),
+        )

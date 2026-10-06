@@ -14,14 +14,16 @@ from dataclasses import dataclass
 
 from cherrypie.modele.position import Position
 from cherrypie.modele.rond_point import Branche, RondPoint
-from cherrypie.modele.trajectoire import DISTANCE_PASSAGE_PIETON, Etape
+from cherrypie.modele.trajectoire import Etape
 from cherrypie.modele.usager import Pieton, Usager
 from cherrypie.serveur.registre import Registre
 
 # Au-delà de cette distance, un obstacle ne gêne pas encore : la voie est dite libre.
 PORTEE_VUE = 50.0
-# Deux usagers dont le décalage latéral diffère d'au moins cette valeur ne sont pas sur la
-# même voie : un usager rangé sur le côté ne gêne pas ceux qui roulent au milieu.
+# Sur une chaussée de branche, deux usagers dont l'écart à l'axe diffère d'au moins cette
+# valeur ne sont pas sur la même file : un usager rangé sur le côté ne gêne pas ceux qui
+# roulent au milieu. Sur l'anneau, deux usagers sont sur la même voie si leurs distances
+# au centre diffèrent de moins d'une demi-largeur de voie.
 ECART_MEME_VOIE = 1.0
 # Pour entrer, il faut que l'anneau soit libre sur ces distances, avant et après le point
 # d'entrée. Ces marges empêchent l'anneau de se remplir au point de se bloquer en boucle.
@@ -100,57 +102,63 @@ class Circulation:
     def __devant_sur_la_branche(
         self, rang: int, vehicules: list[Usager], branche: Branche, etape: Etape, passages_occupes: set[str]
     ) -> list[float]:
-        """Distances aux obstacles devant un véhicule en approche ou en sortie sur une branche."""
+        """Distances aux obstacles devant un véhicule sur la chaussée d'entrée ou de sortie d'une branche."""
         usager = vehicules[rang]
         # En approche on roule vers le centre, en sortie on s'en éloigne.
         sens = -1.0 if etape is Etape.APPROCHE else 1.0
         abscisse = sens * self.__le_long(usager.position, branche)
+        ecart = self.__ecart_a_l_axe(usager.position, branche)
         distances = []
         for autre_rang, autre in enumerate(vehicules):
             if autre_rang == rang or autre.etape is not etape or self.__branche_de(autre) != branche.nom:
                 continue
-            if not self.__meme_voie(usager, autre):
+            if abs(self.__ecart_a_l_axe(autre.position, branche) - ecart) >= ECART_MEME_VOIE:
                 continue
             autre_abscisse = sens * self.__le_long(autre.position, branche)
             # À égalité, le premier arrivé au registre est devant.
             if autre_abscisse > abscisse or (autre_abscisse == abscisse and autre_rang < rang):
                 distances.append(autre_abscisse - abscisse)
-        passage = sens * (self.__rond_point.rayon + DISTANCE_PASSAGE_PIETON)
+        passage = sens * (self.__rond_point.rayon_bord + branche.passage_pieton)
         if branche.nom in passages_occupes and passage > abscisse:
             distances.append(passage - abscisse)
         return distances
 
     def __devant_sur_l_anneau(self, rang: int, vehicules: list[Usager], passages_occupes: set[str]) -> list[float]:
-        """Distances aux obstacles devant un véhicule sur l'anneau, jusqu'au bout de sa branche de sortie."""
+        """Distances aux obstacles devant un véhicule sur l'anneau, jusqu'au bout de sa branche de sortie.
+
+        Les distances sur l'anneau sont mesurées à la distance au centre du véhicule, celle de sa voie.
+        """
         usager = vehicules[rang]
-        rayon = self.__rond_point.rayon
+        rayon = math.hypot(usager.position.x, usager.position.y)
         angle = self.__angle(usager.position)
         sortie = self.__rond_point.branche(usager.branche_sortie)
+        point_de_sortie = math.radians(sortie.angle - self.__rond_point.ecart_raccord(sortie))
         # Ce qui se trouve sur l'anneau au-delà de sa sortie n'est plus sur son chemin.
-        reste_anneau = rayon * ((math.radians(sortie.angle) - angle) % math.tau)
+        reste_anneau = rayon * ((point_de_sortie - angle) % math.tau)
         distances = []
         for autre_rang, autre in enumerate(vehicules):
-            if autre_rang == rang or not self.__meme_voie(usager, autre):
+            if autre_rang == rang:
                 continue
-            if autre.etape is Etape.ANNEAU:
+            if autre.etape is Etape.ANNEAU and self.__meme_voie_de_l_anneau(usager, autre):
                 devant = rayon * ((self.__angle(autre.position) - angle) % math.tau)
                 if devant <= reste_anneau and (devant > 0 or autre_rang < rang):
                     distances.append(devant)
-            elif autre.etape is Etape.SORTIE and autre.branche_sortie == sortie.nom:
-                distances.append(reste_anneau + self.__le_long(autre.position, sortie) - rayon)
+            elif autre.etape is Etape.SORTIE and autre.branche_sortie == sortie.nom and not self.__range(autre, sortie):
+                distances.append(reste_anneau + self.__le_long(autre.position, sortie) - self.__rond_point.rayon_bord)
         if sortie.nom in passages_occupes:
-            distances.append(reste_anneau + DISTANCE_PASSAGE_PIETON)
+            distances.append(reste_anneau + sortie.passage_pieton)
         return distances
 
     def __anneau_libre(self, branche: Branche, vehicules: list[Usager]) -> bool:
         """Indique si l'anneau est libre autour du point d'entrée d'une branche.
 
-        Un véhicule rangé sur le côté de l'anneau ne compte pas : il laisse la voie libre.
+        Pour rejoindre sa voie, un véhicule qui entre traverse la voie extérieure : il
+        cède le passage aux véhicules des deux voies.
         """
-        point = math.radians(branche.angle)
+        point = math.radians(branche.angle + self.__rond_point.ecart_raccord(branche))
         rayon = self.__rond_point.rayon
         for vehicule in vehicules:
-            if vehicule.etape is not Etape.ANNEAU or self.__decalage(vehicule) >= ECART_MEME_VOIE:
+            if vehicule.etape is not Etape.ANNEAU:
                 continue
             angle = self.__angle(vehicule.position)
             amont = rayon * ((point - angle) % math.tau)
@@ -159,16 +167,15 @@ class Circulation:
                 return False
         return True
 
-    def __meme_voie(self, usager: Usager, autre: Usager) -> bool:
-        """Indique si deux véhicules roulent sur la même voie, d'après leurs décalages latéraux."""
-        return abs(self.__decalage(usager) - self.__decalage(autre)) < ECART_MEME_VOIE
+    def __meme_voie_de_l_anneau(self, usager: Usager, autre: Usager) -> bool:
+        """Indique si deux véhicules de l'anneau roulent sur la même voie, d'après leur distance au centre."""
+        ecart = math.hypot(usager.position.x, usager.position.y) - math.hypot(autre.position.x, autre.position.y)
+        return abs(ecart) < self.__rond_point.largeur_voie_anneau / 2
 
-    def __decalage(self, usager: Usager) -> float:
-        """Écart latéral d'un véhicule par rapport au milieu de sa voie, en mètres."""
-        if usager.etape is Etape.ANNEAU:
-            return abs(math.hypot(usager.position.x, usager.position.y) - self.__rond_point.rayon)
-        branche = self.__rond_point.branche(self.__branche_de(usager))
-        return abs(self.__ecart_a_l_axe(usager.position, branche))
+    def __range(self, usager: Usager, sortie: Branche) -> bool:
+        """Indique si un véhicule s'est rangé sur le bord de la chaussée de sortie, loin de son milieu."""
+        milieu = -sortie.decalage_voie
+        return abs(self.__ecart_a_l_axe(usager.position, sortie) - milieu) >= ECART_MEME_VOIE
 
     @staticmethod
     def __branche_de(usager: Usager) -> str:
@@ -183,7 +190,7 @@ class Circulation:
 
     @staticmethod
     def __ecart_a_l_axe(position: Position, branche: Branche) -> float:
-        """Écart à l'axe d'une branche, positif vers la droite d'un usager qui arrive."""
+        """Écart à l'axe d'une branche, positif vers la droite d'un usager qui arrive (côté entrée)."""
         angle = math.radians(branche.angle)
         return -position.x * math.sin(angle) + position.y * math.cos(angle)
 
