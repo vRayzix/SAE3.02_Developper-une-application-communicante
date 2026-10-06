@@ -43,6 +43,11 @@ def test_branches_placees_a_leur_cap(rond_point: RondPoint) -> None:
     assert caps == pytest.approx(attendus)
 
 
+@pytest.mark.parametrize(("cap", "angle"), [(0.0, 90.0), (90.0, 0.0), (180.0, 270.0), (340.0, 110.0), (57.0, 33.0)])
+def test_angle_deduit_du_cap(cap: float, angle: float) -> None:
+    assert Branche(ParametresBranche("b", "Rue B", cap, 2.0, 8.0), 8, 5.0).angle == pytest.approx(angle)
+
+
 def test_segments_dans_le_sens_de_circulation(rond_point: RondPoint) -> None:
     assert noms(rond_point.segments) == [
         f"{JEAN_DE_LA_BRUYERE}-{NATIONS_NORD}",
@@ -64,6 +69,18 @@ def test_segments_dans_le_sens_de_circulation(rond_point: RondPoint) -> None:
 def test_longueur_des_segments_sur_l_axe(rond_point: RondPoint, segment: str, ouverture: float) -> None:
     longueurs = {troncon.nom: troncon.longueur for troncon in rond_point.segments}
     assert longueurs[segment] == pytest.approx(20.0 * math.radians(ouverture))
+
+
+def test_tour_complet(rond_point: RondPoint) -> None:
+    assert sum(segment.longueur for segment in rond_point.segments) == pytest.approx(2 * math.pi * 20.0)
+
+
+def test_ordre_de_la_configuration_sans_effet_sur_les_segments() -> None:
+    branches = rond_point_bel_air().branches
+    parametres = config_exemple().branches
+    a_l_envers = construire(list(reversed(parametres)))
+    assert noms(a_l_envers.segments) == noms(rond_point_bel_air().segments)
+    assert [branche.nom for branche in a_l_envers.branches] == [branche.nom for branche in reversed(branches)]
 
 
 def test_trois_branches_reparties_regulierement() -> None:
@@ -104,6 +121,18 @@ def test_rond_point_incoherent_refuse(
 ) -> None:
     with pytest.raises(ValueError, match=motif):
         construire(branches, rayon, largeur_voie)
+
+
+# ---------- Anneau à deux voies ----------
+
+def test_rayons_des_deux_voies(rond_point: RondPoint) -> None:
+    assert rond_point.rayon_voie_interieure == pytest.approx(17.75)
+    assert rond_point.rayon_voie_exterieure == pytest.approx(22.25)
+
+
+def test_ilot_et_bord_de_l_anneau(rond_point: RondPoint) -> None:
+    assert rond_point.rayon_ilot == pytest.approx(15.5)
+    assert rond_point.rayon_bord == pytest.approx(24.5)
 
 
 # ---------- Recherche d'une branche ----------
@@ -160,6 +189,17 @@ def test_point_decale_a_droite_d_un_usager_qui_arrive() -> None:
     assert (point.x, point.y) == pytest.approx((-1.0, 20.0))
 
 
+def test_chaussees_de_part_et_d_autre_du_terre_plein(rond_point: RondPoint) -> None:
+    nord = rond_point.branche(NATIONS_NORD)
+    assert nord.decalage_voie == pytest.approx(8.0 / 2 + 5.0 / 2)
+    assert nord.demi_largeur == pytest.approx(8.0 / 2 + 5.0)
+
+
+def test_raccord_au_bord_de_l_anneau(rond_point: RondPoint) -> None:
+    nord = rond_point.branche(NATIONS_NORD)
+    assert rond_point.ecart_raccord(nord) == pytest.approx(math.degrees(math.atan2(6.5, 24.5)))
+
+
 def test_branche_sans_nom_refusee() -> None:
     with pytest.raises(ValueError, match="nom"):
         Branche(ParametresBranche("", "Rue", 0.0, 2.0, 8.0), 8, 5.0)
@@ -168,6 +208,20 @@ def test_branche_sans_nom_refusee() -> None:
 def test_branche_sans_capacite_refusee() -> None:
     with pytest.raises(ValueError, match="capacité"):
         Branche(NORD, 0, 5.0)
+
+
+@pytest.mark.parametrize(
+    ("parametres", "largeur_chaussee"),
+    [
+        (ParametresBranche("nord", "Rue", 0.0, 0.0, 8.0), 5.0),
+        (ParametresBranche("nord", "Rue", 0.0, 2.0, -1.0), 5.0),
+        (NORD, 0.0),
+    ],
+    ids=["terre-plein-nul", "passage-negatif", "chaussee-nulle"],
+)
+def test_branche_aux_dimensions_incoherentes_refusee(parametres: ParametresBranche, largeur_chaussee: float) -> None:
+    with pytest.raises(ValueError, match="dimension positive"):
+        Branche(parametres, 8, largeur_chaussee)
 
 
 def test_segment_d_une_branche_vers_elle_meme_refuse() -> None:
