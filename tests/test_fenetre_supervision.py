@@ -38,13 +38,13 @@ def fenetre(fabrique_config: Callable[..., Configuration], fabrique_fenetre: Cal
 
 def etat(regulation: bool = True, vp_actif: bool = False) -> dict:
     """Données d'un STATE avec une voiture en approche sur la branche sud."""
-    voiture = Voiture("voiture_1", "S", "N")
+    voiture = Voiture("voiture_1", "nations_sud", "nations_nord")
     voiture.position = Position(2.0, -40.0)
     return {
         "usagers": [voiture.vers_dict()],
-        "densite": {"N": 0.0, "E": 0.25, "S": 0.5, "O": 0.875},
+        "densite": {"nations_nord": 0.0, "jean_de_la_bruyere": 0.25, "nations_sud": 0.5, "albert_camus": 0.875},
         "vp_actif": vp_actif,
-        "segments_reserves": ["S-E"] if vp_actif else [],
+        "segments_reserves": ["nations_sud-jean_de_la_bruyere"] if vp_actif else [],
         "entrees_bloquees": [],
         "regulation": regulation,
     }
@@ -79,8 +79,8 @@ def test_vue_montre_tout_le_rond_point(fenetre: FenetreSupervision) -> None:
 def test_state_dessine_sur_la_scene(fenetre: FenetreSupervision) -> None:
     fenetre.reseau.etat_recu.emit(etat(vp_actif=True))
     assert list(fenetre.scene.marqueurs) == ["voiture_1"]
-    assert fenetre.scene.arcs_reserves["S-E"].isVisible()
-    assert fenetre.scene.textes_densite["O"].toPlainText() == "O\n88 % forte"
+    assert fenetre.scene.arcs_reserves["nations_sud-jean_de_la_bruyere"].isVisible()
+    assert fenetre.scene.textes_densite["albert_camus"].toPlainText() == "albert_camus\n88 % forte"
 
 
 def test_indicateurs_d_apres_le_state(fenetre: FenetreSupervision) -> None:

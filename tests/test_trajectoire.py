@@ -25,12 +25,12 @@ SORTIE_ANNEAU = LONGUEUR_BRANCHE + 2 * QUART_DE_TOUR
 
 @pytest.fixture
 def rond_point() -> RondPoint:
-    return RondPoint(["N", "E", "S", "O"], RAYON, 8)
+    return RondPoint(["nations_nord", "jean_de_la_bruyere", "nations_sud", "albert_camus"], RAYON, 8)
 
 
 @pytest.fixture
 def sud_vers_nord(rond_point: RondPoint) -> Trajectoire:
-    return Trajectoire.pour_vehicule(rond_point, "S", "N")
+    return Trajectoire.pour_vehicule(rond_point, "nations_sud", "nations_nord")
 
 
 def coordonnees(position: Position) -> tuple[float, float]:
@@ -66,16 +66,16 @@ def test_ligne_hors_de_l_approche_refusee(recul: float) -> None:
 
 
 def test_segments_parcourus_dans_l_ordre(sud_vers_nord: Trajectoire) -> None:
-    assert [segment.nom for segment in sud_vers_nord.segments] == ["S-E", "E-N"]
+    assert [segment.nom for segment in sud_vers_nord.segments] == ["nations_sud-jean_de_la_bruyere", "jean_de_la_bruyere-nations_nord"]
 
 
 def test_demi_tour_fait_le_tour_de_l_anneau(rond_point: RondPoint) -> None:
-    assert len(Trajectoire.pour_vehicule(rond_point, "E", "E").segments) == 4
+    assert len(Trajectoire.pour_vehicule(rond_point, "jean_de_la_bruyere", "jean_de_la_bruyere").segments) == 4
 
 
 def test_branche_inconnue_refusee(rond_point: RondPoint) -> None:
     with pytest.raises(BrancheInconnueError):
-        Trajectoire.pour_vehicule(rond_point, "S", "X")
+        Trajectoire.pour_vehicule(rond_point, "nations_sud", "X")
 
 
 def test_trajectoire_sans_approche_refusee() -> None:
@@ -147,8 +147,8 @@ def test_decalage_en_sortie_vers_la_droite(sud_vers_nord: Trajectoire) -> None:
     [
         (0.0, Etape.APPROCHE, None),
         (ENTREE_ANNEAU, Etape.APPROCHE, None),
-        (ENTREE_ANNEAU + 1.0, Etape.ANNEAU, "S-E"),
-        (ENTREE_ANNEAU + QUART_DE_TOUR + 1.0, Etape.ANNEAU, "E-N"),
+        (ENTREE_ANNEAU + 1.0, Etape.ANNEAU, "nations_sud-jean_de_la_bruyere"),
+        (ENTREE_ANNEAU + QUART_DE_TOUR + 1.0, Etape.ANNEAU, "jean_de_la_bruyere-nations_nord"),
         (SORTIE_ANNEAU + 1.0, Etape.SORTIE, None),
     ],
     ids=["depart", "arret-sur-la-ligne-d-entree", "premier-segment", "second-segment", "sortie"],
@@ -163,15 +163,15 @@ def test_etape_et_segment_selon_l_avancement(
 
 def test_passe_par_les_seuls_segments_du_trajet(rond_point: RondPoint, sud_vers_nord: Trajectoire) -> None:
     segments = {segment.nom: segment for segment in rond_point.segments}
-    assert sud_vers_nord.passe_par(segments["E-N"])
-    assert not sud_vers_nord.passe_par(segments["N-O"])
+    assert sud_vers_nord.passe_par(segments["jean_de_la_bruyere-nations_nord"])
+    assert not sud_vers_nord.passe_par(segments["nations_nord-albert_camus"])
 
 
 # ---------- Traversée d'un piéton ----------
 
 @pytest.fixture
 def traversee_nord(rond_point: RondPoint) -> Trajectoire:
-    return Trajectoire.pour_pieton(rond_point, "N")
+    return Trajectoire.pour_pieton(rond_point, "nations_nord")
 
 
 def test_pieton_rejoint_le_bord_traverse_puis_repart(traversee_nord: Trajectoire) -> None:
@@ -206,7 +206,7 @@ def test_pieton_sur_la_chaussee_en_traversee(traversee_nord: Trajectoire) -> Non
 
 
 def test_passage_pieton_croise_l_approche_des_vehicules(rond_point: RondPoint, traversee_nord: Trajectoire) -> None:
-    vehicule = Trajectoire.pour_vehicule(rond_point, "N", "S")
+    vehicule = Trajectoire.pour_vehicule(rond_point, "nations_nord", "nations_sud")
     passage = traversee_nord.position_a(traversee_nord.longueur_approche + LARGEUR_CHAUSSEE / 2)
     avancement_au_passage = LONGUEUR_BRANCHE - DISTANCE_PASSAGE_PIETON
     assert vehicule.etape_a(avancement_au_passage) is Etape.APPROCHE

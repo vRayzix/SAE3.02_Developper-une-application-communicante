@@ -13,7 +13,7 @@ CAPACITE = 4
 
 @pytest.fixture
 def calculateur() -> CalculateurDensite:
-    return CalculateurDensite(RondPoint(["N", "E", "S", "O"], 20.0, CAPACITE))
+    return CalculateurDensite(RondPoint(["nations_nord", "jean_de_la_bruyere", "nations_sud", "albert_camus"], 20.0, CAPACITE))
 
 
 def registre_avec(*usagers: Voiture | Pieton) -> Registre:
@@ -23,8 +23,8 @@ def registre_avec(*usagers: Voiture | Pieton) -> Registre:
     return registre
 
 
-def voiture(numero: int, entree: str = "N", etape: Etape = Etape.APPROCHE) -> Voiture:
-    usager = Voiture(f"voiture_{numero}", entree, "S")
+def voiture(numero: int, entree: str = "nations_nord", etape: Etape = Etape.APPROCHE) -> Voiture:
+    usager = Voiture(f"voiture_{numero}", entree, "nations_sud")
     usager.etape = etape
     return usager
 
@@ -32,28 +32,28 @@ def voiture(numero: int, entree: str = "N", etape: Etape = Etape.APPROCHE) -> Vo
 # ---------- Calcul ----------
 
 def test_rond_point_vide_densite_nulle_partout(calculateur: CalculateurDensite) -> None:
-    assert calculateur.calculer(Registre()) == {"N": 0.0, "E": 0.0, "S": 0.0, "O": 0.0}
+    assert calculateur.calculer(Registre()) == {"nations_nord": 0.0, "jean_de_la_bruyere": 0.0, "nations_sud": 0.0, "albert_camus": 0.0}
 
 
 def test_usagers_en_approche_comptes_sur_leur_branche(calculateur: CalculateurDensite) -> None:
-    densites = calculateur.calculer(registre_avec(voiture(1, "N"), voiture(2, "N"), voiture(3, "E")))
-    assert densites["N"] == pytest.approx(2 / CAPACITE)
-    assert densites["E"] == pytest.approx(1 / CAPACITE)
-    assert densites["S"] == 0.0
+    densites = calculateur.calculer(registre_avec(voiture(1, "nations_nord"), voiture(2, "nations_nord"), voiture(3, "jean_de_la_bruyere")))
+    assert densites["nations_nord"] == pytest.approx(2 / CAPACITE)
+    assert densites["jean_de_la_bruyere"] == pytest.approx(1 / CAPACITE)
+    assert densites["nations_sud"] == 0.0
 
 
 @pytest.mark.parametrize("etape", [Etape.ANNEAU, Etape.SORTIE], ids=["anneau", "sortie"])
 def test_usager_entre_sur_l_anneau_ne_compte_plus(calculateur: CalculateurDensite, etape: Etape) -> None:
-    assert calculateur.calculer(registre_avec(voiture(1, "N", etape)))["N"] == 0.0
+    assert calculateur.calculer(registre_avec(voiture(1, "nations_nord", etape)))["nations_nord"] == 0.0
 
 
 def test_pieton_qui_attend_compte_sur_sa_branche(calculateur: CalculateurDensite) -> None:
-    assert calculateur.calculer(registre_avec(Pieton("pieton_1", "E", "E")))["E"] == pytest.approx(1 / CAPACITE)
+    assert calculateur.calculer(registre_avec(Pieton("pieton_1", "jean_de_la_bruyere", "jean_de_la_bruyere")))["jean_de_la_bruyere"] == pytest.approx(1 / CAPACITE)
 
 
 def test_densite_bornee_a_un(calculateur: CalculateurDensite) -> None:
     registre = registre_avec(*(voiture(numero) for numero in range(2 * CAPACITE)))
-    assert calculateur.calculer(registre)["N"] == pytest.approx(1.0)
+    assert calculateur.calculer(registre)["nations_nord"] == pytest.approx(1.0)
 
 
 # ---------- Niveaux ----------

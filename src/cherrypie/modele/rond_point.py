@@ -167,7 +167,7 @@ class RondPoint:
         Returns:
             RondPoint: le rond-point correspondant.
         """
-        return cls(config.branches, config.rayon, config.capacite_par_branche)
+        return cls([branche.nom for branche in config.branches], config.rayon, config.capacite_par_branche)
 
     @property
     def rayon(self) -> float:

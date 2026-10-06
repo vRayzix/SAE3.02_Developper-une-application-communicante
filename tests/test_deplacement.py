@@ -17,12 +17,12 @@ LIGNE = LONGUEUR_BRANCHE - RECUL_LIGNE_VEHICULE
 
 @pytest.fixture
 def rond_point() -> RondPoint:
-    return RondPoint(["N", "E", "S", "O"], RAYON, 8)
+    return RondPoint(["nations_nord", "jean_de_la_bruyere", "nations_sud", "albert_camus"], RAYON, 8)
 
 
 @pytest.fixture
 def voiture() -> Voiture:
-    return Voiture("voiture_12", "S", "N")
+    return Voiture("voiture_12", "nations_sud", "nations_nord")
 
 
 @pytest.fixture
@@ -52,7 +52,7 @@ def test_pas_a_la_vitesse_maximale(deplacement: Deplacement, voiture: Voiture) -
 
 def test_position_et_segment_suivent_l_avancement(deplacement: Deplacement, voiture: Voiture) -> None:
     amener_a(deplacement, LONGUEUR_BRANCHE + 1.0)
-    assert voiture.segment == "S-E"
+    assert voiture.segment == "nations_sud-jean_de_la_bruyere"
     assert voiture.position == deplacement.trajectoire.position_a(deplacement.avancement)
 
 
@@ -144,7 +144,7 @@ def test_changez_voie_decale_sans_ralentir(deplacement: Deplacement, voiture: Vo
 # ---------- Piéton ----------
 
 def test_pieton_attend_au_bord_de_la_chaussee(rond_point: RondPoint) -> None:
-    pieton = Pieton("pieton_4", "N", "N")
+    pieton = Pieton("pieton_4", "nations_nord", "nations_nord")
     deplacement = Deplacement(pieton, pieton.calculer_trajectoire(rond_point))
     pieton.reagir(CodeNotification.ATTENDEZ)
     for _ in range(50):

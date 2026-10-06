@@ -32,13 +32,13 @@ from cherrypie.serveur.serveur import Serveur
 
 # Trafic joué avant l'arrivée du VP : (catégorie, entrée, sortie, nombre).
 TRAFIC = [
-    ("voiture", "S", "O", 3),
-    ("voiture", "E", "S", 2),
-    ("moto", "O", "N", 1),
-    ("trottinette", "N", "E", 1),
-    ("pieton", "N", "N", 1),
+    ("voiture", "nations_sud", "albert_camus", 3),
+    ("voiture", "jean_de_la_bruyere", "nations_sud", 2),
+    ("moto", "albert_camus", "nations_nord", 1),
+    ("trottinette", "nations_nord", "jean_de_la_bruyere", 1),
+    ("pieton", "nations_nord", "nations_nord", 1),
 ]
-VP = ("vp", "S", "N", 1)
+VP = ("vp", "nations_sud", "nations_nord", 1)
 # Délais en secondes : le temps que le trafic arrive au rond-point, puis celui laissé au VP.
 # Au bout de 6 s, le VP régulé roule sur l'anneau, l'autre attend encore derrière la file.
 DELAI_AVANT_VP = 3.5

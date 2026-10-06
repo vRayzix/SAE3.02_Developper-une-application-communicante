@@ -17,7 +17,7 @@ from cherrypie.commun.securite import Signataire
 from cherrypie.commun.trame import TAILLE_MAX_TRAME, DecoupeurTrames
 from cherrypie.serveur.serveur import Serveur
 
-HELLO_VOITURE = {"categorie": "voiture", "entree": "N", "sortie": "E"}
+HELLO_VOITURE = {"categorie": "voiture", "entree": "nations_nord", "sortie": "jean_de_la_bruyere"}
 
 
 class ClientTest:
@@ -286,9 +286,9 @@ def test_position_d_un_usager_inscrit_prise_en_compte(
     serveur: Serveur, clients: Callable[[str], ClientTest]
 ) -> None:
     client = voiture_inscrite(clients)
-    client.envoyer_position(3.5, -20.0, segment="S-E")
+    client.envoyer_position(3.5, -20.0, segment="nations_sud-jean_de_la_bruyere")
     attendre(lambda: serveur.logique.registre.obtenir("voiture_12").position is not None)
-    assert serveur.logique.registre.obtenir("voiture_12").segment == "S-E"
+    assert serveur.logique.registre.obtenir("voiture_12").segment == "nations_sud-jean_de_la_bruyere"
 
 
 def test_position_sans_session_tcp_ignoree(
@@ -338,9 +338,9 @@ def test_supervision_recoit_les_usagers_connectes(clients: Callable[[str], Clien
 def test_state_suit_les_positions_recues(clients: Callable[[str], ClientTest]) -> None:
     voiture = voiture_inscrite(clients)
     supervision = supervision_abonnee(clients)
-    voiture.envoyer_position(3.5, -20.0, segment="S-E")
+    voiture.envoyer_position(3.5, -20.0, segment="nations_sud-jean_de_la_bruyere")
     etat = supervision.attendre_etat(lambda etat: etat["usagers"][0]["x"] == 3.5)
-    assert etat["usagers"][0]["segment"] == "S-E"
+    assert etat["usagers"][0]["segment"] == "nations_sud-jean_de_la_bruyere"
 
 
 def test_usager_parti_disparait_du_state(clients: Callable[[str], ClientTest]) -> None:

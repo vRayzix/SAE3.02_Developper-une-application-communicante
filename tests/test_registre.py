@@ -20,26 +20,26 @@ def test_registre_vide_au_depart(registre: Registre) -> None:
 
 
 def test_usager_ajoute_retrouve(registre: Registre) -> None:
-    voiture = Voiture("voiture_12", "N", "E")
+    voiture = Voiture("voiture_12", "nations_nord", "jean_de_la_bruyere")
     registre.ajouter(voiture)
     assert registre.contient("voiture_12")
     assert registre.obtenir("voiture_12") is voiture
 
 
 def test_usagers_dans_l_ordre_d_arrivee(registre: Registre) -> None:
-    registre.ajouter(Voiture("voiture_12", "N", "E"))
-    registre.ajouter(Moto("moto_3", "S", "O"))
+    registre.ajouter(Voiture("voiture_12", "nations_nord", "jean_de_la_bruyere"))
+    registre.ajouter(Moto("moto_3", "nations_sud", "albert_camus"))
     assert [usager.identifiant for usager in registre.usagers] == ["voiture_12", "moto_3"]
 
 
 def test_identifiant_deja_inscrit_refuse(registre: Registre) -> None:
-    registre.ajouter(Voiture("voiture_12", "N", "E"))
+    registre.ajouter(Voiture("voiture_12", "nations_nord", "jean_de_la_bruyere"))
     with pytest.raises(ValueError, match="déjà inscrit"):
-        registre.ajouter(Moto("voiture_12", "S", "O"))
+        registre.ajouter(Moto("voiture_12", "nations_sud", "albert_camus"))
 
 
 def test_liste_des_usagers_modifiee_de_l_exterieur_sans_effet(registre: Registre) -> None:
-    registre.ajouter(Voiture("voiture_12", "N", "E"))
+    registre.ajouter(Voiture("voiture_12", "nations_nord", "jean_de_la_bruyere"))
     registre.usagers.clear()
     assert registre.contient("voiture_12")
 
@@ -47,7 +47,7 @@ def test_liste_des_usagers_modifiee_de_l_exterieur_sans_effet(registre: Registre
 # ---------- Retrait ----------
 
 def test_usager_retire_n_est_plus_connecte(registre: Registre) -> None:
-    voiture = Voiture("voiture_12", "N", "E")
+    voiture = Voiture("voiture_12", "nations_nord", "jean_de_la_bruyere")
     registre.ajouter(voiture)
     assert registre.retirer("voiture_12") is voiture
     assert not registre.contient("voiture_12")

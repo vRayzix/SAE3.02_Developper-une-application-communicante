@@ -47,27 +47,27 @@ def threads_clients() -> list[threading.Thread]:
 
 
 def test_choix_d_apres_la_configuration(fabrique_config: Callable[..., Configuration], fabrique_panneau: Callable) -> None:
-    panneau = fabrique_panneau(fabrique_config(branches="A, B, C"))
+    panneau = fabrique_panneau(fabrique_config(branches=["a", "b", "c"]))
     entrees = [panneau.choix_entree.itemText(rang) for rang in range(panneau.choix_entree.count())]
-    assert entrees == ["A", "B", "C"]
+    assert entrees == ["a", "b", "c"]
     assert panneau.choix_categorie.count() == 5
 
 
 def test_pieton_sortie_egale_a_l_entree(fabrique_config: Callable[..., Configuration], fabrique_panneau: Callable) -> None:
     panneau = fabrique_panneau(fabrique_config())
-    choisir(panneau, Pieton.CATEGORIE, "E")
-    assert panneau.choix_sortie.currentText() == "E"
+    choisir(panneau, Pieton.CATEGORIE, "jean_de_la_bruyere")
+    assert panneau.choix_sortie.currentText() == "jean_de_la_bruyere"
     assert not panneau.choix_sortie.isEnabled()
-    panneau.choix_entree.setCurrentText("O")
-    assert panneau.choix_sortie.currentText() == "O"
+    panneau.choix_entree.setCurrentText("albert_camus")
+    assert panneau.choix_sortie.currentText() == "albert_camus"
 
 
 def test_vehicule_sortie_libre(fabrique_config: Callable[..., Configuration], fabrique_panneau: Callable) -> None:
     panneau = fabrique_panneau(fabrique_config())
-    choisir(panneau, Pieton.CATEGORIE, "E")
-    choisir(panneau, VehiculePrioritaire.CATEGORIE, "S", "N")
+    choisir(panneau, Pieton.CATEGORIE, "jean_de_la_bruyere")
+    choisir(panneau, VehiculePrioritaire.CATEGORIE, "nations_sud", "nations_nord")
     assert panneau.choix_sortie.isEnabled()
-    assert panneau.choix_sortie.currentText() == "N"
+    assert panneau.choix_sortie.currentText() == "nations_nord"
 
 
 # ---------- Lancement ----------
@@ -76,10 +76,10 @@ def test_vehicule_sortie_libre(fabrique_config: Callable[..., Configuration], fa
 def test_clic_lance_un_client_inscrit_au_serveur(lancer_serveur: Callable[..., Serveur], fabrique_panneau: Callable) -> None:
     serveur = lancer_serveur()
     panneau = fabrique_panneau(serveur.config)
-    choisir(panneau, VehiculePrioritaire.CATEGORIE, "S", "N")
+    choisir(panneau, VehiculePrioritaire.CATEGORIE, "nations_sud", "nations_nord")
     QTest.mouseClick(panneau.bouton_lancer, Qt.MouseButton.LeftButton)
     (client,) = panneau.clients
-    assert (client.usager.identifiant, client.usager.branche_entree, client.usager.branche_sortie) == ("vp_1", "S", "N")
+    assert (client.usager.identifiant, client.usager.branche_entree, client.usager.branche_sortie) == ("vp_1", "nations_sud", "nations_nord")
     attendre(lambda: serveur.logique.registre.contient("vp_1"))
     ligne = panneau.liste_clients.topLevelItem(0)
     attendre_qt(lambda: ligne.text(COLONNE_CONNEXION) == LIBELLES_CONNEXION[EtatConnexion.CONNECTE])
@@ -99,7 +99,7 @@ def test_identifiants_uniques_par_categorie(lancer_serveur: Callable[..., Serveu
 def test_pieton_lance(lancer_serveur: Callable[..., Serveur], fabrique_panneau: Callable) -> None:
     serveur = lancer_serveur()
     panneau = fabrique_panneau(serveur.config)
-    choisir(panneau, Pieton.CATEGORIE, "N")
+    choisir(panneau, Pieton.CATEGORIE, "nations_nord")
     (client,) = panneau.lancer()
     assert isinstance(client.usager, Pieton)
     attendre(lambda: serveur.logique.registre.contient("pieton_1"))
@@ -110,10 +110,10 @@ def test_consigne_affichee_et_relayee(lancer_serveur: Callable[..., Serveur], fa
     panneau = fabrique_panneau(serveur.config)
     consignes: list[tuple] = []
     panneau.notification_recue.connect(lambda *recue: consignes.append(recue))
-    choisir(panneau, "voiture", "E", "O")
+    choisir(panneau, "voiture", "jean_de_la_bruyere", "albert_camus")
     panneau.lancer()
     # Un VP qui va de S à N passe devant l'entrée E : la voiture doit attendre.
-    choisir(panneau, VehiculePrioritaire.CATEGORIE, "S", "N")
+    choisir(panneau, VehiculePrioritaire.CATEGORIE, "nations_sud", "nations_nord")
     panneau.lancer()
     attendre_qt(lambda: ("voiture_1", "ATTENDEZ") in [recue[:2] for recue in consignes])
     ligne = panneau.liste_clients.topLevelItem(0)

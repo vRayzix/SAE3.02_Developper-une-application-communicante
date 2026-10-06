@@ -10,7 +10,7 @@ from cherrypie.commun.protocole import CodeNotification, Enveloppe, Message, Typ
 
 @pytest.fixture
 def message_pos() -> Message:
-    return Message(TypeMessage.POS, "voiture_12", {"x": 3.5, "y": -1.0, "vitesse": 8.3, "segment": "N-O"})
+    return Message(TypeMessage.POS, "voiture_12", {"x": 3.5, "y": -1.0, "vitesse": 8.3, "segment": "nations_nord-albert_camus"})
 
 
 @pytest.fixture
@@ -71,7 +71,7 @@ def test_vers_dict_champs_du_protocole(message_pos: Message) -> None:
     assert message_pos.vers_dict() == {
         "type": "POS",
         "id": "voiture_12",
-        "donnees": {"x": 3.5, "y": -1.0, "vitesse": 8.3, "segment": "N-O"},
+        "donnees": {"x": 3.5, "y": -1.0, "vitesse": 8.3, "segment": "nations_nord-albert_camus"},
     }
 
 
@@ -119,7 +119,7 @@ def test_enveloppe_vers_dict_a_plat(enveloppe_pos: Enveloppe) -> None:
         "id": "voiture_12",
         "ts": 1727093000.512,
         "nonce": "9f2c1a0b7d3e4f56",
-        "donnees": {"x": 3.5, "y": -1.0, "vitesse": 8.3, "segment": "N-O"},
+        "donnees": {"x": 3.5, "y": -1.0, "vitesse": 8.3, "segment": "nations_nord-albert_camus"},
         "hmac": "ab" * 32,
     }
 

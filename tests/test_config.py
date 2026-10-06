@@ -5,10 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from cherrypie.commun.config import Configuration
+from cherrypie.commun.config import Configuration, ParametresBranche
 from cherrypie.commun.erreurs import ConfigurationInvalideError
 
 CHEMIN_EXEMPLE = Path(__file__).resolve().parent.parent / "config.exemple.ini"
+BRANCHES_EXEMPLE = ["nations_nord", "jean_de_la_bruyere", "nations_sud", "albert_camus"]
+LIGNE_BRANCHES = "branches = nations_nord, jean_de_la_bruyere, nations_sud, albert_camus"
 
 
 @pytest.fixture
@@ -51,9 +53,17 @@ def test_exemple_valeurs_securite_et_delais() -> None:
 
 def test_exemple_valeurs_rond_point() -> None:
     config = Configuration.depuis_fichier(CHEMIN_EXEMPLE)
-    assert config.branches == ["N", "E", "S", "O"]
+    assert [branche.nom for branche in config.branches] == BRANCHES_EXEMPLE
     assert config.rayon == pytest.approx(20.0)
+    assert config.largeur_voie_anneau == pytest.approx(4.5)
+    assert config.largeur_chaussee == pytest.approx(5.0)
+    assert config.longueur_branche == pytest.approx(50.0)
     assert config.capacite_par_branche == 8
+
+
+def test_exemple_branche_decrite_par_sa_section() -> None:
+    config = Configuration.depuis_fichier(CHEMIN_EXEMPLE)
+    assert config.branches[0] == ParametresBranche("nations_nord", "Bd des Nations (nord)", 340.0, 8.0, 10.0)
 
 
 def test_exemple_valeurs_bdd() -> None:
@@ -69,8 +79,8 @@ def test_exemple_valeurs_bdd() -> None:
 
 def test_branches_modifiees_de_l_exterieur_sans_effet() -> None:
     config = Configuration.depuis_fichier(CHEMIN_EXEMPLE)
-    config.branches.append("X")
-    assert config.branches == ["N", "E", "S", "O"]
+    config.branches.clear()
+    assert [branche.nom for branche in config.branches] == BRANCHES_EXEMPLE
 
 
 # ---------- Fichier absent ou illisible ----------
@@ -125,9 +135,16 @@ VALEURS_INCOHERENTES = [
     pytest.param("backoff_max = 10", "backoff_max = inf", "fini", id="delai-infini"),
     pytest.param("rayon = 20", "rayon = -20", "strictement positif", id="rayon-negatif"),
     pytest.param("capacite_par_branche = 8", "capacite_par_branche = 0", "au moins 1", id="capacite-nulle"),
-    pytest.param("branches = N, E, S, O", "branches = N, S", "au moins 3 branches", id="trop-peu-de-branches"),
-    pytest.param("branches = N, E, S, O", "branches = N, E, N, O", "double", id="branche-en-double"),
-    pytest.param("branches = N, E, S, O", "branches = N, , S, O", "nom vide", id="branche-sans-nom"),
+    pytest.param(
+        LIGNE_BRANCHES, "branches = nations_nord, nations_sud", "au moins 3 branches", id="trop-peu-de-branches"
+    ),
+    pytest.param(
+        LIGNE_BRANCHES, "branches = nations_nord, nations_sud, nations_nord, albert_camus", "double",
+        id="branche-en-double",
+    ),
+    pytest.param(
+        LIGNE_BRANCHES, "branches = nations_nord, , nations_sud, albert_camus", "nom vide", id="branche-sans-nom"
+    ),
     pytest.param("timeout_client = 6", "timeout_client = 1", "timeout_client", id="timeout-sous-le-ping"),
     pytest.param("backoff_initial = 1", "backoff_initial = 20", "backoff_initial", id="backoff-inverse"),
 ]

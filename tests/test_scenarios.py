@@ -13,7 +13,7 @@ from cherrypie.modele.trajectoire import LONGUEUR_BRANCHE, Etape
 from cherrypie.modele.usager import Moto, Pieton, Trottinette, VehiculePrioritaire, Voiture
 from cherrypie.serveur.passages import PassageVp
 
-BRANCHES = ["N", "E", "S", "O"]
+BRANCHES = ["nations_nord", "jean_de_la_bruyere", "nations_sud", "albert_camus"]
 RAYON = 20.0
 # Écart minimal entre deux véhicules sur l'anneau : en dessous, ils se chevaucheraient.
 ECART_SANS_CHEVAUCHEMENT = 3.0
@@ -27,7 +27,7 @@ def simulation() -> Simulation:
 # ---------- File d'attente ----------
 
 def test_usagers_arretes_font_la_file_sans_s_empiler(simulation: Simulation) -> None:
-    voitures = [Voiture(f"voiture_{numero}", "N", "S") for numero in range(4)]
+    voitures = [Voiture(f"voiture_{numero}", "nations_nord", "nations_sud") for numero in range(4)]
     deplacements = [simulation.ajouter(voiture) for voiture in voitures]
     for voiture in voitures:
         voiture.reagir(CodeNotification.ATTENDEZ)
@@ -40,7 +40,7 @@ def test_usagers_arretes_font_la_file_sans_s_empiler(simulation: Simulation) -> 
 
 
 def test_la_file_repart_quand_l_attente_est_levee(simulation: Simulation) -> None:
-    voitures = [Voiture(f"voiture_{numero}", "N", "S") for numero in range(3)]
+    voitures = [Voiture(f"voiture_{numero}", "nations_nord", "nations_sud") for numero in range(3)]
     for voiture in voitures:
         simulation.ajouter(voiture)
         voiture.reagir(CodeNotification.ATTENDEZ)
@@ -93,16 +93,16 @@ def traversee_du_vp(graine: int, regulation: bool) -> PassageVp:
     simulation.regler(regulation)
     hasard = random.Random(graine)
     for rang in range(3):
-        sortie = hasard.choice(["E", "N", "O"])
-        simulation.ajouter(Voiture(f"voiture_S{rang}", "S", sortie), avancement=40.0 - rang * 12.0)
-    for entree in ["E", "O", "N"]:
+        sortie = hasard.choice(["jean_de_la_bruyere", "nations_nord", "albert_camus"])
+        simulation.ajouter(Voiture(f"voiture_S{rang}", "nations_sud", sortie), avancement=40.0 - rang * 12.0)
+    for entree in ["jean_de_la_bruyere", "albert_camus", "nations_nord"]:
         for rang in range(3):
             categorie = hasard.choice([Voiture, Moto, Trottinette])
             sortie = hasard.choice([branche for branche in BRANCHES if branche != entree])
             simulation.ajouter(categorie(f"{categorie.CATEGORIE}_{entree}{rang}", entree, sortie), avancement=45.0 - rang * 10.0)
-    for branche in ["S", "N"]:
+    for branche in ["nations_sud", "nations_nord"]:
         simulation.ajouter(Pieton(f"pieton_{branche}", branche, branche), avancement=hasard.uniform(0.0, 3.0))
-    simulation.ajouter(VehiculePrioritaire("vp_1", "S", "N"))
+    simulation.ajouter(VehiculePrioritaire("vp_1", "nations_sud", "nations_nord"))
     assert simulation.avancer_jusqu_a(lambda: bool(simulation.logique.passages), duree_max=120.0)
     return simulation.logique.passages[0]
 

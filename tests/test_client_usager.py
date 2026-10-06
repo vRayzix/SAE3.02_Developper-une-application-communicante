@@ -234,8 +234,8 @@ def test_refus_definitif_arrete_le_client(
     fabrique_config: Callable[..., Configuration],
     preparer_client: Callable[..., ClientUsager],
 ) -> None:
-    serveur = lancer_serveur(**DELAIS_RAPIDES, branches="A, B, C")
-    # Le client croit à un rond-point N, E, S, O : le serveur ne connaît pas ses branches.
+    serveur = lancer_serveur(**DELAIS_RAPIDES, branches=["a", "b", "c"])
+    # Le client croit au rond-point de Bel Air : le serveur ne connaît pas ses branches.
     ports = {"port_tcp": str(serveur.config.port_tcp), "port_udp": str(serveur.config.port_udp)}
     details: list[str] = []
     client = preparer_client(
@@ -349,7 +349,7 @@ def test_vehicule_prioritaire_ignore_les_consignes(
     recues: list[tuple[CodeNotification, str, bool]] = []
     client = preparer_client(
         faux_serveur.config,
-        VehiculePrioritaire("vp_1", "S", "N"),
+        VehiculePrioritaire("vp_1", "nations_sud", "nations_nord"),
         sur_notification=lambda code, texte, appliquee: recues.append((code, texte, appliquee)),
     )
     client.start()
@@ -375,13 +375,13 @@ def test_consigne_inconnue_ignoree(
 # ---------- Véhicule prioritaire ----------
 
 def test_vp_s_annonce_des_son_inscription(faux_serveur: FauxServeur, preparer_client: Callable[..., ClientUsager]) -> None:
-    client = preparer_client(faux_serveur.config, VehiculePrioritaire("vp_1", "S", "N"))
+    client = preparer_client(faux_serveur.config, VehiculePrioritaire("vp_1", "nations_sud", "nations_nord"))
     client.start()
     faux_serveur.accepter()
     faux_serveur.envoyer(accuse_d_inscription())
     annonce = faux_serveur.recevoir(TypeMessage.VP_ALERT)
     eta = LONGUEUR_BRANCHE / VehiculePrioritaire.VITESSE_MAX
-    assert annonce.donnees == {"entree": "S", "sortie": "N", "eta": pytest.approx(eta)}
+    assert annonce.donnees == {"entree": "nations_sud", "sortie": "nations_nord", "eta": pytest.approx(eta)}
 
 
 def test_traversee_d_un_vp_mesuree_par_le_serveur(
@@ -389,7 +389,7 @@ def test_traversee_d_un_vp_mesuree_par_le_serveur(
 ) -> None:
     # Petit anneau et VP placé juste avant la ligne : la traversée dure moins d'une seconde.
     serveur = lancer_serveur(**DELAIS_RAPIDES, rayon="5")
-    client = preparer_client(serveur.config, VehiculePrioritaire("vp_1", "S", "E"))
+    client = preparer_client(serveur.config, VehiculePrioritaire("vp_1", "nations_sud", "jean_de_la_bruyere"))
     ligne = client.deplacement.trajectoire.longueur_approche
     client.deplacement.avancer((ligne - 1.0) / VehiculePrioritaire.VITESSE_MAX)
     client.start()
@@ -399,7 +399,7 @@ def test_traversee_d_un_vp_mesuree_par_le_serveur(
     quart_d_anneau = 2 * math.pi * 5 / 4
     assert mesure.duree_anneau == pytest.approx(quart_d_anneau / VehiculePrioritaire.VITESSE_MAX, abs=0.15)
     assert mesure.duree >= mesure.duree_anneau
-    assert (mesure.identifiant, mesure.entree, mesure.sortie, mesure.regulation) == ("vp_1", "S", "E", True)
+    assert (mesure.identifiant, mesure.entree, mesure.sortie, mesure.regulation) == ("vp_1", "nations_sud", "jean_de_la_bruyere", True)
     assert not serveur.logique.vp_actif
 
 
@@ -454,8 +454,8 @@ def test_devant_malforme_ignore(
 def test_deux_voitures_sur_la_meme_branche_gardent_leurs_distances(
     serveur: Serveur, preparer_client: Callable[..., ClientUsager]
 ) -> None:
-    devant_client = preparer_client(serveur.config, Voiture("voiture_1", "N", "S"))
-    derriere_client = preparer_client(serveur.config, Voiture("voiture_2", "N", "S"))
+    devant_client = preparer_client(serveur.config, Voiture("voiture_1", "nations_nord", "nations_sud"))
+    derriere_client = preparer_client(serveur.config, Voiture("voiture_2", "nations_nord", "nations_sud"))
     # Elles partent à 3 m l'une de l'autre : celle de derrière doit se laisser distancer.
     devant_client.deplacement.avancer(3.0 / Voiture.VITESSE_MAX)
     devant_client.start()

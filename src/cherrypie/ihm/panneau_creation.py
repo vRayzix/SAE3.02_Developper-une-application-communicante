@@ -64,9 +64,9 @@ class PanneauCreation(QGroupBox):
         for categorie in CLASSES_PAR_CATEGORIE:
             self.__choix_categorie.addItem(NOMS_CATEGORIE[categorie], categorie)
         self.__choix_entree = QComboBox()
-        self.__choix_entree.addItems(config.branches)
+        self.__choix_entree.addItems([branche.nom for branche in config.branches])
         self.__choix_sortie = QComboBox()
-        self.__choix_sortie.addItems(config.branches)
+        self.__choix_sortie.addItems([branche.nom for branche in config.branches])
         self.__choix_nombre = QSpinBox()
         self.__choix_nombre.setRange(1, NOMBRE_MAX_PAR_CLIC)
         self.__bouton_lancer = QPushButton("Lancer")
