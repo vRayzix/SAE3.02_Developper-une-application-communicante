@@ -189,6 +189,7 @@ def test_pos_met_a_jour_l_usager(logique: LogiqueServeur) -> None:
     logique.traiter_udp(pos(), 1.0)
     usager = logique.registre.obtenir("voiture_12")
     assert usager.position == Position(3.5, -20.0)
+    assert usager.cap == pytest.approx(90.0)
     assert usager.vitesse == pytest.approx(4.2)
     assert usager.segment == "nations_sud-jean_de_la_bruyere"
     assert usager.etape is Etape.ANNEAU
@@ -217,12 +218,17 @@ def test_pos_apres_fermeture_de_la_session_refuse(logique: LogiqueServeur) -> No
         ({"x": float("nan")}, "fini"),
         ({"y": "loin"}, "nombre"),
         ({"vitesse": 50.0}, "hors limites"),
+        ({"cap": 360.0}, "entre 0 et 360"),
+        ({"cap": "nord"}, "cap doit être un nombre"),
         ({"segment": "nations_nord-nations_sud"}, "segment inconnu"),
         ({"etape": "envol"}, "étape inconnue"),
         ({"etape": "approche"}, "incohérent"),
         ({"segment": None}, "incohérent"),
     ],
-    ids=["x-nan", "y-texte", "trop-rapide", "segment-inconnu", "etape-inconnue", "segment-hors-anneau", "anneau-sans-segment"],
+    ids=[
+        "x-nan", "y-texte", "trop-rapide", "cap-hors-limites", "cap-texte",
+        "segment-inconnu", "etape-inconnue", "segment-hors-anneau", "anneau-sans-segment",
+    ],
 )
 def test_pos_invalide_refuse_sans_toucher_l_usager(
     logique: LogiqueServeur, modifications: dict, motif: str

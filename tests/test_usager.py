@@ -202,7 +202,23 @@ def test_vers_dict_nouvel_usager(voiture: Voiture) -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("cap", "erreur"),
+    [(True, TypeError), ("nord", TypeError), (360.0, ValueError), (-1.0, ValueError), (float("nan"), ValueError)],
+    ids=["booleen", "texte", "tour-complet", "negatif", "nan"],
+)
+def test_cap_invalide_refuse(voiture: Voiture, cap: object, erreur: type) -> None:
+    with pytest.raises(erreur, match="cap"):
+        voiture.cap = cap
+
+
+def test_cap_dans_le_dictionnaire(voiture: Voiture) -> None:
+    voiture.cap = 147.5
+    assert voiture.vers_dict()["cap"] == pytest.approx(147.5)
+
+
 def test_aller_retour_dict_conserve_classe_et_etat(voiture: Voiture) -> None:
+    voiture.cap = 270.0
     voiture.position = Position(3.5, -20.0)
     voiture.vitesse = 4.2
     voiture.segment = "nations_sud-jean_de_la_bruyere"

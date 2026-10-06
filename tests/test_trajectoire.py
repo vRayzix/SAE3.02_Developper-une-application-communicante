@@ -15,6 +15,7 @@ from cherrypie.modele.trajectoire import (
     Trajectoire,
     TronconArc,
     TronconDroit,
+    cap_de_la_direction,
 )
 
 # Pas utilisé pour parcourir une trajectoire et vérifier qu'elle ne fait pas de saut, en mètres.
@@ -203,6 +204,34 @@ def test_decalage_en_sortie_vers_la_droite(rond_point: RondPoint, sud_vers_nord:
     attendue = nord.point(rond_point.rayon_bord + 50.0, -nord.decalage_voie - 2.0)
     fin = sud_vers_nord.position_a(sud_vers_nord.longueur, decalage=2.0)
     assert coordonnees(fin) == pytest.approx(coordonnees(attendue))
+
+
+# ---------- Cap ----------
+
+@pytest.mark.parametrize(
+    ("dx", "dy", "cap"), [(0.0, 1.0, 0.0), (1.0, 0.0, 90.0), (0.0, -1.0, 180.0), (-1.0, 0.0, 270.0)],
+    ids=["nord", "est", "sud", "ouest"],
+)
+def test_cap_d_une_direction(dx: float, dy: float, cap: float) -> None:
+    assert cap_de_la_direction(dx, dy) == pytest.approx(cap)
+
+
+def test_cap_en_approche_vers_le_centre(rond_point: RondPoint, sud_vers_nord: Trajectoire) -> None:
+    attendu = (rond_point.branche(NATIONS_SUD).cap + 180.0) % 360.0
+    assert sud_vers_nord.cap_a(10.0) == pytest.approx(attendu)
+
+
+def test_cap_en_sortie_dans_l_axe_de_la_branche(rond_point: RondPoint, sud_vers_nord: Trajectoire) -> None:
+    assert sud_vers_nord.cap_a(sud_vers_nord.longueur - 1.0) == pytest.approx(rond_point.branche(NATIONS_NORD).cap)
+
+
+def test_cap_tangent_a_la_voie_dans_le_sens_de_circulation(sud_vers_nord: Trajectoire) -> None:
+    sur_la_voie = next(arc for arc in arcs(sud_vers_nord) if arc.rayon_debut == arc.rayon_fin)
+    avancement = avancement_au_milieu(sud_vers_nord, sur_la_voie)
+    position = sud_vers_nord.position_a(avancement)
+    # En tournant dans le sens inverse des aiguilles d'une montre, on roule un quart de tour en avance sur l'angle.
+    angle = math.degrees(math.atan2(position.y, position.x))
+    assert sud_vers_nord.cap_a(avancement) == pytest.approx((90.0 - (angle + 90.0)) % 360.0)
 
 
 # ---------- Place pour se ranger ----------

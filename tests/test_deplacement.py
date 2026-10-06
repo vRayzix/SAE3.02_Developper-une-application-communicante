@@ -53,6 +53,11 @@ def test_pas_a_la_vitesse_maximale(deplacement: Deplacement, voiture: Voiture) -
     assert voiture.vitesse == pytest.approx(Voiture.VITESSE_MAX)
 
 
+def test_cap_suit_la_trajectoire(deplacement: Deplacement, voiture: Voiture) -> None:
+    amener_a(deplacement, LIGNE + 20.0)
+    assert voiture.cap == pytest.approx(deplacement.trajectoire.cap_a(deplacement.avancement))
+
+
 def test_position_et_segment_suivent_l_avancement(deplacement: Deplacement, voiture: Voiture) -> None:
     amener_a(deplacement, LIGNE + 1.0)
     assert voiture.segment == "nations_sud-jean_de_la_bruyere"
