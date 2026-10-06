@@ -398,7 +398,8 @@ def test_traversee_d_un_vp_mesuree_par_le_serveur(
     sur_l_anneau = trajectoire.longueur - trajectoire.longueur_approche - serveur.config.longueur_branche
     assert mesure.duree_anneau == pytest.approx(sur_l_anneau / VehiculePrioritaire.VITESSE_MAX, abs=0.15)
     assert mesure.duree >= mesure.duree_anneau
-    assert (mesure.identifiant, mesure.entree, mesure.sortie, mesure.regulation) == ("vp_1", "nations_sud", "jean_de_la_bruyere", True)
+    trajet = (mesure.identifiant, mesure.entree, mesure.sortie, mesure.regulation)
+    assert trajet == ("vp_1", "nations_sud", "jean_de_la_bruyere", True)
     assert not serveur.logique.vp_actif
 
 

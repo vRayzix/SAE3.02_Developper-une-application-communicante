@@ -52,7 +52,8 @@ def trafic(hasard: random.Random) -> list[tuple[Usager, float]]:
     """
     usagers: list[tuple[Usager, float]] = []
     for rang in range(3):
-        usagers.append((Voiture(f"voiture_S{rang}", "nations_sud", hasard.choice(["jean_de_la_bruyere", "nations_nord", "albert_camus"])), 40.0 - rang * 12.0))
+        sortie = hasard.choice(["jean_de_la_bruyere", "nations_nord", "albert_camus"])
+        usagers.append((Voiture(f"voiture_S{rang}", "nations_sud", sortie), 40.0 - rang * 12.0))
     for entree in ["jean_de_la_bruyere", "albert_camus"]:
         for rang in range(2):
             categorie = hasard.choice([Voiture, Moto, Trottinette])

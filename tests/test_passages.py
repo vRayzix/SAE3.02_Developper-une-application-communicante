@@ -10,7 +10,8 @@ from cherrypie.serveur.passages import PassageEnCours
 
 @pytest.fixture
 def passage() -> PassageEnCours:
-    return PassageEnCours("vp_1", "nations_sud", "nations_nord", ["nations_sud-jean_de_la_bruyere", "jean_de_la_bruyere-nations_nord"], annonce=10.0, regulation=True)
+    segments = ["nations_sud-jean_de_la_bruyere", "jean_de_la_bruyere-nations_nord"]
+    return PassageEnCours("vp_1", "nations_sud", "nations_nord", segments, annonce=10.0, regulation=True)
 
 
 # ---------- Annonce ----------
@@ -46,7 +47,8 @@ def test_vp_jamais_vu_sur_l_anneau_sans_duree_sur_l_anneau(passage: PassageEnCou
 
 @pytest.mark.parametrize("regulation", [True, False])
 def test_mode_de_regulation_note_a_l_annonce(regulation: bool) -> None:
-    passage = PassageEnCours("vp_1", "nations_sud", "nations_nord", ["nations_sud-jean_de_la_bruyere"], annonce=0.0, regulation=regulation)
+    segments = ["nations_sud-jean_de_la_bruyere"]
+    passage = PassageEnCours("vp_1", "nations_sud", "nations_nord", segments, annonce=0.0, regulation=regulation)
     assert passage.terminer(5.0).regulation is regulation
 
 

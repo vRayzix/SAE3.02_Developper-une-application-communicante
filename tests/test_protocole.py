@@ -10,7 +10,8 @@ from cherrypie.commun.protocole import CodeNotification, Enveloppe, Message, Typ
 
 @pytest.fixture
 def message_pos() -> Message:
-    return Message(TypeMessage.POS, "voiture_12", {"x": 3.5, "y": -1.0, "vitesse": 8.3, "segment": "nations_nord-albert_camus"})
+    donnees = {"x": 3.5, "y": -1.0, "vitesse": 8.3, "segment": "nations_nord-albert_camus"}
+    return Message(TypeMessage.POS, "voiture_12", donnees)
 
 
 @pytest.fixture

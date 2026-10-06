@@ -86,7 +86,8 @@ def test_verifier_donnees_recues_dans_un_autre_ordre_acceptee(
 # ---------- Vérification d'une enveloppe altérée ----------
 
 def test_verifier_donnees_modifiees_refusee(signataire: Signataire, enveloppe_signee: Enveloppe) -> None:
-    falsifie = Message(TypeMessage.VP_ALERT, "vp_1", {"entree": "nations_sud", "sortie": "jean_de_la_bruyere", "eta": 8.0})
+    trajet_modifie = {"entree": "nations_sud", "sortie": "jean_de_la_bruyere", "eta": 8.0}
+    falsifie = Message(TypeMessage.VP_ALERT, "vp_1", trajet_modifie)
     with pytest.raises(SignatureInvalideError):
         signataire.verifier(dataclasses.replace(enveloppe_signee, message=falsifie))
 

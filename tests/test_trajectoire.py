@@ -201,7 +201,8 @@ def test_decalage_sur_l_anneau_vers_l_exterieur(rond_point: RondPoint, sud_vers_
 def test_decalage_en_sortie_vers_la_droite(rond_point: RondPoint, sud_vers_nord: Trajectoire) -> None:
     nord = rond_point.branche(NATIONS_NORD)
     attendue = nord.point(rond_point.rayon_bord + 50.0, -nord.decalage_voie - 2.0)
-    assert coordonnees(sud_vers_nord.position_a(sud_vers_nord.longueur, decalage=2.0)) == pytest.approx(coordonnees(attendue))
+    fin = sud_vers_nord.position_a(sud_vers_nord.longueur, decalage=2.0)
+    assert coordonnees(fin) == pytest.approx(coordonnees(attendue))
 
 
 # ---------- Place pour se ranger ----------

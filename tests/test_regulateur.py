@@ -28,6 +28,11 @@ DEGAGEZ = CodeNotification.DEGAGEZ
 OK_PASSER = CodeNotification.OK_PASSER
 
 
+def densites(nord: float = 0.0, bruyere: float = 0.0, sud: float = 0.0, camus: float = 0.0) -> dict[str, float]:
+    """Densité de chaque branche, nulle sauf indication contraire."""
+    return {"nations_nord": nord, "jean_de_la_bruyere": bruyere, "nations_sud": sud, "albert_camus": camus}
+
+
 @pytest.fixture
 def rond_point() -> RondPoint:
     return rond_point_bel_air()
@@ -75,7 +80,8 @@ def vp_sud_nord(rond_point: RondPoint, placer) -> PassageEnCours:
 
 
 def consignes(regulateur: Regulateur, registre: Registre, passages: list[PassageEnCours]) -> dict:
-    return {notification.destinataire: notification.code for notification in regulateur.decider(registre, passages, SANS_CHARGE)}
+    notifications = regulateur.decider(registre, passages, SANS_CHARGE)
+    return {notification.destinataire: notification.code for notification in notifications}
 
 
 # ---------- Sans VP ----------
@@ -121,13 +127,20 @@ def test_consigne_selon_la_position_par_rapport_au_vp(
     assert consignes(regulateur, registre, [vp_sud_nord]).get(usager.identifiant) is attendue
 
 
-def test_le_vp_ne_recoit_aucune_consigne(regulateur: Regulateur, registre: Registre, vp_sud_nord: PassageEnCours) -> None:
+def test_le_vp_ne_recoit_aucune_consigne(
+    regulateur: Regulateur, registre: Registre, vp_sud_nord: PassageEnCours
+) -> None:
     assert "vp_1" not in consignes(regulateur, registre, [vp_sud_nord])
 
 
 @pytest.mark.parametrize(
     ("branche", "avancement", "attendue"),
-    [("nations_sud", 1.0, ATTENDEZ), ("nations_nord", 1.0, ATTENDEZ), ("jean_de_la_bruyere", 1.0, None), ("nations_sud", LONGUEUR_TROTTOIR + 2.0, None)],
+    [
+        ("nations_sud", 1.0, ATTENDEZ),
+        ("nations_nord", 1.0, ATTENDEZ),
+        ("jean_de_la_bruyere", 1.0, None),
+        ("nations_sud", LONGUEUR_TROTTOIR + 2.0, None),
+    ],
     ids=["attend-sur-l-entree-du-vp", "attend-sur-la-sortie-du-vp", "loin-du-vp", "deja-en-train-de-traverser"],
 )
 def test_pieton_attend_pour_traverser(
@@ -153,7 +166,8 @@ def test_segment_deja_quitte_par_le_vp_libere(
 ) -> None:
     vp = VehiculePrioritaire("vp_1", "nations_sud", "nations_nord")
     placer(vp, debut_du_segment(vp.calculer_trajectoire(rond_point), "jean_de_la_bruyere-nations_nord") + 5.0)
-    passage = PassageEnCours("vp_1", "nations_sud", "nations_nord", ["nations_sud-jean_de_la_bruyere", "jean_de_la_bruyere-nations_nord"], annonce=0.0, regulation=True)
+    segments = ["nations_sud-jean_de_la_bruyere", "jean_de_la_bruyere-nations_nord"]
+    passage = PassageEnCours("vp_1", "nations_sud", "nations_nord", segments, annonce=0.0, regulation=True)
     placer(Voiture("voiture_1", "nations_sud", "jean_de_la_bruyere"), ANNEAU + 2.0)
     placer(Voiture("voiture_2", "nations_sud", "albert_camus"), 20.0)
     placer(Voiture("voiture_3", "nations_sud", "jean_de_la_bruyere"), 20.0)
@@ -171,7 +185,9 @@ def test_consigne_deja_envoyee_pas_renvoyee(
     assert regulateur.decider(registre, [vp_sud_nord], SANS_CHARGE) == []
 
 
-def test_fin_du_vp_libere_tout_le_monde(regulateur: Regulateur, registre: Registre, placer, vp_sud_nord: PassageEnCours) -> None:
+def test_fin_du_vp_libere_tout_le_monde(
+    regulateur: Regulateur, registre: Registre, placer, vp_sud_nord: PassageEnCours
+) -> None:
     placer(Voiture("voiture_1", "jean_de_la_bruyere", "albert_camus"), 20.0)
     placer(Voiture("voiture_2", "nations_sud", "jean_de_la_bruyere"), 20.0)
     regulateur.decider(registre, [vp_sud_nord], SANS_CHARGE)
@@ -208,27 +224,29 @@ def test_entree_la_moins_chargee_temporisee_quand_une_branche_sature(
 ) -> None:
     placer(Voiture("voiture_1", "jean_de_la_bruyere", "albert_camus"), 20.0)
     placer(Voiture("voiture_2", "nations_sud", "nations_nord"), 20.0)
-    densites = {"nations_nord": 0.8, "jean_de_la_bruyere": 0.125, "nations_sud": 0.25, "albert_camus": 0.0}
-    notifications = regulateur.decider(registre, [], densites)
-    assert [(notification.destinataire, notification.code) for notification in notifications] == [("voiture_1", ATTENDEZ)]
+    charges = densites(nord=0.8, bruyere=0.125, sud=0.25)
+    notifications = regulateur.decider(registre, [], charges)
+    assert [(notification.destinataire, notification.code) for notification in notifications] == [
+        ("voiture_1", ATTENDEZ)
+    ]
     assert notifications[0].texte == TEXTE_ATTENDEZ_DOSAGE
     assert regulateur.entrees_bloquees == ["jean_de_la_bruyere"]
 
 
 def test_pas_de_dosage_sans_branche_saturee(regulateur: Regulateur, registre: Registre, placer) -> None:
     placer(Voiture("voiture_1", "jean_de_la_bruyere", "albert_camus"), 20.0)
-    assert regulateur.decider(registre, [], {"nations_nord": 0.6, "jean_de_la_bruyere": 0.125, "nations_sud": 0.0, "albert_camus": 0.0}) == []
+    assert regulateur.decider(registre, [], densites(nord=0.6, bruyere=0.125)) == []
 
 
 def test_entree_elle_meme_saturee_pas_temporisee(regulateur: Regulateur, registre: Registre, placer) -> None:
     placer(Voiture("voiture_1", "jean_de_la_bruyere", "albert_camus"), 20.0)
-    assert regulateur.decider(registre, [], {"nations_nord": 0.8, "jean_de_la_bruyere": 0.9, "nations_sud": 0.0, "albert_camus": 0.0}) == []
+    assert regulateur.decider(registre, [], densites(nord=0.8, bruyere=0.9)) == []
 
 
 def test_dosage_leve_quand_la_branche_se_vide(regulateur: Regulateur, registre: Registre, placer) -> None:
     placer(Voiture("voiture_1", "jean_de_la_bruyere", "albert_camus"), 20.0)
-    regulateur.decider(registre, [], {"nations_nord": 0.8, "jean_de_la_bruyere": 0.125, "nations_sud": 0.0, "albert_camus": 0.0})
-    (notification,) = regulateur.decider(registre, [], {"nations_nord": 0.5, "jean_de_la_bruyere": 0.125, "nations_sud": 0.0, "albert_camus": 0.0})
+    regulateur.decider(registre, [], densites(nord=0.8, bruyere=0.125))
+    (notification,) = regulateur.decider(registre, [], densites(nord=0.5, bruyere=0.125))
     assert notification.code is OK_PASSER
 
 
@@ -236,12 +254,12 @@ def test_pas_de_dosage_pendant_le_passage_d_un_vp(
     regulateur: Regulateur, registre: Registre, placer, vp_sud_nord: PassageEnCours
 ) -> None:
     placer(Voiture("voiture_1", "albert_camus", "nations_sud"), 20.0)
-    assert regulateur.decider(registre, [vp_sud_nord], {"nations_nord": 0.8, "jean_de_la_bruyere": 0.0, "nations_sud": 0.125, "albert_camus": 0.125}) == []
+    assert regulateur.decider(registre, [vp_sud_nord], densites(nord=0.8, sud=0.125, camus=0.125)) == []
 
 
 def test_pieton_jamais_temporise_par_le_dosage(regulateur: Regulateur, registre: Registre, placer) -> None:
     placer(Pieton("pieton_1", "jean_de_la_bruyere", "jean_de_la_bruyere"), 1.0)
-    assert regulateur.decider(registre, [], {"nations_nord": 0.8, "jean_de_la_bruyere": 0.125, "nations_sud": 0.0, "albert_camus": 0.0}) == []
+    assert regulateur.decider(registre, [], densites(nord=0.8, bruyere=0.125)) == []
 
 
 # ---------- Régulation coupée ----------
@@ -263,7 +281,7 @@ def test_regulation_coupee_aucune_consigne_meme_avec_un_vp(
 ) -> None:
     regulateur.active = False
     placer(Voiture("voiture_1", "jean_de_la_bruyere", "albert_camus"), 20.0)
-    assert regulateur.decider(registre, [vp_sud_nord], {"nations_nord": 0.8, "jean_de_la_bruyere": 0.125, "nations_sud": 0.0, "albert_camus": 0.0}) == []
+    assert regulateur.decider(registre, [vp_sud_nord], densites(nord=0.8, bruyere=0.125)) == []
 
 
 def test_regulation_reactivee_renvoie_les_consignes(

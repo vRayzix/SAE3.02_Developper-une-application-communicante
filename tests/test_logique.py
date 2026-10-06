@@ -17,7 +17,9 @@ def logique() -> LogiqueServeur:
     return LogiqueServeur(rond_point_bel_air(), TIMEOUT)
 
 
-def hello(identifiant: str, categorie: str = "voiture", entree: str = "nations_nord", sortie: str = "jean_de_la_bruyere") -> Message:
+def hello(
+    identifiant: str, categorie: str = "voiture", entree: str = "nations_nord", sortie: str = "jean_de_la_bruyere"
+) -> Message:
     return Message(TypeMessage.HELLO, identifiant, {"categorie": categorie, "entree": entree, "sortie": sortie})
 
 
@@ -71,7 +73,10 @@ def test_fermer_session_retire_son_usager(logique: LogiqueServeur) -> None:
     [
         (hello("tank_1", categorie="tank"), "catégorie d'usager inconnue"),
         (hello("voiture_12", sortie="X"), "branche inconnue"),
-        (Message(TypeMessage.HELLO, "voiture_12", {"categorie": "voiture", "entree": "nations_nord"}), "il manque : sortie"),
+        (
+            Message(TypeMessage.HELLO, "voiture_12", {"categorie": "voiture", "entree": "nations_nord"}),
+            "il manque : sortie",
+        ),
         (hello("pieton_4", categorie="pieton", entree="nations_nord", sortie="jean_de_la_bruyere"), "une seule branche"),
     ],
     ids=["categorie-inconnue", "branche-inconnue", "hello-incomplet", "pieton-sur-deux-branches"],
@@ -172,7 +177,8 @@ def test_position_envoyee_en_tcp_refusee(logique: LogiqueServeur) -> None:
 # ---------- Positions reçues en UDP ----------
 
 def pos(identifiant: str = "voiture_12", **modifications: object) -> Message:
-    donnees = {"x": 3.5, "y": -20.0, "vitesse": 4.2, "segment": "nations_sud-jean_de_la_bruyere", "etape": "anneau"} | modifications
+    donnees = {"x": 3.5, "y": -20.0, "vitesse": 4.2, "segment": "nations_sud-jean_de_la_bruyere", "etape": "anneau"}
+    donnees |= modifications
     return Message(TypeMessage.POS, identifiant, donnees)
 
 
@@ -426,7 +432,8 @@ def test_cadence_envoie_devant_a_chaque_vehicule_positionne(logique: LogiqueServ
 
 def test_pas_de_devant_pour_un_pieton_ni_une_supervision(logique: LogiqueServeur) -> None:
     pieton = logique.ouvrir_session(0.0)
-    logique.traiter_tcp(pieton, hello("pieton_1", categorie="pieton", entree="nations_nord", sortie="nations_nord"), 0.5)
+    inscription = hello("pieton_1", categorie="pieton", entree="nations_nord", sortie="nations_nord")
+    logique.traiter_tcp(pieton, inscription, 0.5)
     logique.traiter_udp(pos("pieton_1", x=-7.5, y=28.0, vitesse=1.0, segment=None, etape="approche"), 1.0)
     supervision = logique.ouvrir_session(0.0)
     logique.traiter_tcp(supervision, Message(TypeMessage.ABONNEMENT, "supervision"), 0.5)

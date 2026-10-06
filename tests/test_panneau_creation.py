@@ -79,7 +79,8 @@ def test_clic_lance_un_client_inscrit_au_serveur(lancer_serveur: Callable[..., S
     choisir(panneau, VehiculePrioritaire.CATEGORIE, "nations_sud", "nations_nord")
     QTest.mouseClick(panneau.bouton_lancer, Qt.MouseButton.LeftButton)
     (client,) = panneau.clients
-    assert (client.usager.identifiant, client.usager.branche_entree, client.usager.branche_sortie) == ("vp_1", "nations_sud", "nations_nord")
+    usager = client.usager
+    assert (usager.identifiant, usager.branche_entree, usager.branche_sortie) == ("vp_1", "nations_sud", "nations_nord")
     attendre(lambda: serveur.logique.registre.contient("vp_1"))
     ligne = panneau.liste_clients.topLevelItem(0)
     attendre_qt(lambda: ligne.text(COLONNE_CONNEXION) == LIBELLES_CONNEXION[EtatConnexion.CONNECTE])

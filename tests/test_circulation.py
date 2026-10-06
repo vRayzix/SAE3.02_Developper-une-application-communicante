@@ -130,7 +130,8 @@ def test_vehicule_sur_l_anneau_voit_celui_de_devant(rond_point: RondPoint, regis
 
 
 def test_vehicule_sur_l_autre_voie_ne_gene_pas(rond_point: RondPoint, registre: Registre, placer) -> None:
-    # Sur ce segment, la voiture 1 sort à la sortie suivante (voie extérieure), la voiture 2 va plus loin (intérieure).
+    # Sur ce segment, la voiture 1 sort à la sortie suivante (voie extérieure) ; la voiture 2
+    # va plus loin (voie intérieure).
     segment = f"{NATIONS_NORD}-{ALBERT_CAMUS}"
     exterieure = Voiture("voiture_1", NATIONS_NORD, ALBERT_CAMUS)
     interieure = Voiture("voiture_2", JEAN_DE_LA_BRUYERE, NATIONS_SUD)

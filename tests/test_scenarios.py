@@ -110,7 +110,8 @@ def traversee_du_vp(graine: int, regulation: bool) -> PassageVp:
         for rang in range(3):
             categorie = hasard.choice([Voiture, Moto, Trottinette])
             sortie = hasard.choice([branche for branche in BRANCHES if branche != entree])
-            simulation.ajouter(categorie(f"{categorie.CATEGORIE}_{entree}{rang}", entree, sortie), avancement=45.0 - rang * 10.0)
+            usager = categorie(f"{categorie.CATEGORIE}_{entree}{rang}", entree, sortie)
+            simulation.ajouter(usager, avancement=45.0 - rang * 10.0)
     for branche in ["nations_sud", "nations_nord"]:
         simulation.ajouter(Pieton(f"pieton_{branche}", branche, branche), avancement=hasard.uniform(0.0, 3.0))
     simulation.ajouter(VehiculePrioritaire("vp_1", "nations_sud", "nations_nord"))

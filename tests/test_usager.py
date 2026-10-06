@@ -58,7 +58,11 @@ def test_usager_non_instanciable_directement() -> None:
 
 @pytest.mark.parametrize(
     ("identifiant", "entree", "sortie"),
-    [("", "nations_nord", "jean_de_la_bruyere"), ("moto_1", "", "jean_de_la_bruyere"), ("moto_1", "nations_nord", None)],
+    [
+        ("", "nations_nord", "jean_de_la_bruyere"),
+        ("moto_1", "", "jean_de_la_bruyere"),
+        ("moto_1", "nations_nord", None),
+    ],
     ids=["identifiant-vide", "entree-vide", "sortie-absente"],
 )
 def test_identifiant_ou_branche_invalide_refuse(identifiant: str, entree: str, sortie: object) -> None:

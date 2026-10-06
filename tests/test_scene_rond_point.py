@@ -45,7 +45,8 @@ def test_scene_englobe_les_branches_et_la_marge(scene: SceneRondPoint) -> None:
 
 def test_scene_une_bande_et_un_texte_par_branche(scene: SceneRondPoint) -> None:
     assert list(scene.bandes_densite) == ["nations_nord", "jean_de_la_bruyere", "nations_sud", "albert_camus"]
-    assert [texte.toPlainText() for texte in scene.textes_densite.values()] == ["nations_nord", "jean_de_la_bruyere", "nations_sud", "albert_camus"]
+    textes = [texte.toPlainText() for texte in scene.textes_densite.values()]
+    assert textes == ["nations_nord", "jean_de_la_bruyere", "nations_sud", "albert_camus"]
 
 
 def test_scene_bandes_de_densite_faible_au_depart(scene: SceneRondPoint) -> None:
@@ -123,7 +124,8 @@ def test_usager_parti_retire_de_la_scene(scene: SceneRondPoint) -> None:
 
 
 def test_vp_plus_gros_avec_halo_au_dessus(scene: SceneRondPoint) -> None:
-    scene.afficher_etat(etat([decrire(Voiture("voiture_1", "nations_sud", "nations_nord")), decrire(VehiculePrioritaire("vp_1", "nations_sud", "nations_nord"))]))
+    voiture = decrire(Voiture("voiture_1", "nations_sud", "nations_nord"))
+    scene.afficher_etat(etat([voiture, decrire(VehiculePrioritaire("vp_1", "nations_sud", "nations_nord"))]))
     voiture, vp = scene.marqueurs["voiture_1"], scene.marqueurs["vp_1"]
     assert vp.rect().width() > voiture.rect().width()
     assert vp.zValue() > voiture.zValue()
@@ -131,7 +133,8 @@ def test_vp_plus_gros_avec_halo_au_dessus(scene: SceneRondPoint) -> None:
 
 
 def test_consigne_affichee_par_le_contour(scene: SceneRondPoint) -> None:
-    scene.afficher_etat(etat([decrire(Voiture("voiture_1", "nations_sud", "nations_nord"), consigne=CodeNotification.ATTENDEZ)]))
+    voiture = Voiture("voiture_1", "nations_sud", "nations_nord")
+    scene.afficher_etat(etat([decrire(voiture, consigne=CodeNotification.ATTENDEZ)]))
     marqueur = scene.marqueurs["voiture_1"]
     assert marqueur.pen().color() == COULEURS_CONSIGNE["ATTENDEZ"]
     assert "ATTENDEZ" in marqueur.toolTip()
