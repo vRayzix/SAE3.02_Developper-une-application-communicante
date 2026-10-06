@@ -81,8 +81,8 @@ def lancer(fenetre: FenetreSupervision, categorie: str, entree: str, sortie: str
     """Lance des usagers depuis le panneau de création, comme le ferait l'utilisateur."""
     panneau = fenetre.panneau_creation
     panneau.choix_categorie.setCurrentIndex(panneau.choix_categorie.findData(categorie))
-    panneau.choix_entree.setCurrentText(entree)
-    panneau.choix_sortie.setCurrentText(sortie)
+    panneau.choix_entree.setCurrentIndex(panneau.choix_entree.findData(entree))
+    panneau.choix_sortie.setCurrentIndex(panneau.choix_sortie.findData(sortie))
     panneau.choix_nombre.setValue(nombre)
     panneau.lancer()
 

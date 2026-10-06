@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import QApplication
 
 from cherrypie.client.client_usager import EtatConnexion
 from cherrypie.commun.config import Configuration
-from cherrypie.ihm.panneau_creation import COLONNE_CONNEXION, COLONNE_CONSIGNE, PanneauCreation
+from cherrypie.ihm.panneau_creation import COLONNE_CONNEXION, COLONNE_CONSIGNE, COLONNE_TRAJET, PanneauCreation
 from cherrypie.ihm.style import LIBELLES_CONNEXION
 from cherrypie.modele.usager import Pieton, VehiculePrioritaire
 from cherrypie.serveur.serveur import Serveur
@@ -34,9 +34,9 @@ def fabrique_panneau(qapp: QApplication) -> Iterator[Callable[[Configuration], P
 
 def choisir(panneau: PanneauCreation, categorie: str, entree: str, sortie: str | None = None) -> None:
     panneau.choix_categorie.setCurrentIndex(panneau.choix_categorie.findData(categorie))
-    panneau.choix_entree.setCurrentText(entree)
+    panneau.choix_entree.setCurrentIndex(panneau.choix_entree.findData(entree))
     if sortie is not None:
-        panneau.choix_sortie.setCurrentText(sortie)
+        panneau.choix_sortie.setCurrentIndex(panneau.choix_sortie.findData(sortie))
 
 
 def threads_clients() -> list[threading.Thread]:
@@ -46,20 +46,25 @@ def threads_clients() -> list[threading.Thread]:
 # ---------- Choix ----------
 
 
-def test_choix_d_apres_la_configuration(fabrique_config: Callable[..., Configuration], fabrique_panneau: Callable) -> None:
+def test_choix_d_apres_la_configuration(
+    fabrique_config: Callable[..., Configuration], fabrique_panneau: Callable
+) -> None:
     panneau = fabrique_panneau(fabrique_config(branches=["a", "b", "c"]))
-    entrees = [panneau.choix_entree.itemText(rang) for rang in range(panneau.choix_entree.count())]
-    assert entrees == ["a", "b", "c"]
+    rangs = range(panneau.choix_entree.count())
+    assert [panneau.choix_entree.itemText(rang) for rang in rangs] == ["Rue a", "Rue b", "Rue c"]
+    assert [panneau.choix_entree.itemData(rang) for rang in rangs] == ["a", "b", "c"]
     assert panneau.choix_categorie.count() == 5
 
 
-def test_pieton_sortie_egale_a_l_entree(fabrique_config: Callable[..., Configuration], fabrique_panneau: Callable) -> None:
+def test_pieton_sortie_egale_a_l_entree(
+    fabrique_config: Callable[..., Configuration], fabrique_panneau: Callable
+) -> None:
     panneau = fabrique_panneau(fabrique_config())
     choisir(panneau, Pieton.CATEGORIE, "jean_de_la_bruyere")
-    assert panneau.choix_sortie.currentText() == "jean_de_la_bruyere"
+    assert panneau.choix_sortie.currentData() == "jean_de_la_bruyere"
     assert not panneau.choix_sortie.isEnabled()
-    panneau.choix_entree.setCurrentText("albert_camus")
-    assert panneau.choix_sortie.currentText() == "albert_camus"
+    panneau.choix_entree.setCurrentIndex(panneau.choix_entree.findData("albert_camus"))
+    assert panneau.choix_sortie.currentData() == "albert_camus"
 
 
 def test_vehicule_sortie_libre(fabrique_config: Callable[..., Configuration], fabrique_panneau: Callable) -> None:
@@ -67,13 +72,15 @@ def test_vehicule_sortie_libre(fabrique_config: Callable[..., Configuration], fa
     choisir(panneau, Pieton.CATEGORIE, "jean_de_la_bruyere")
     choisir(panneau, VehiculePrioritaire.CATEGORIE, "nations_sud", "nations_nord")
     assert panneau.choix_sortie.isEnabled()
-    assert panneau.choix_sortie.currentText() == "nations_nord"
+    assert panneau.choix_sortie.currentData() == "nations_nord"
 
 
 # ---------- Lancement ----------
 
 
-def test_clic_lance_un_client_inscrit_au_serveur(lancer_serveur: Callable[..., Serveur], fabrique_panneau: Callable) -> None:
+def test_clic_lance_un_client_inscrit_au_serveur(
+    lancer_serveur: Callable[..., Serveur], fabrique_panneau: Callable
+) -> None:
     serveur = lancer_serveur()
     panneau = fabrique_panneau(serveur.config)
     choisir(panneau, VehiculePrioritaire.CATEGORIE, "nations_sud", "nations_nord")
@@ -84,6 +91,19 @@ def test_clic_lance_un_client_inscrit_au_serveur(lancer_serveur: Callable[..., S
     attendre(lambda: serveur.logique.registre.contient("vp_1"))
     ligne = panneau.liste_clients.topLevelItem(0)
     attendre_qt(lambda: ligne.text(COLONNE_CONNEXION) == LIBELLES_CONNEXION[EtatConnexion.CONNECTE])
+
+
+def test_trajet_affiche_avec_les_noms_de_rues(
+    lancer_serveur: Callable[..., Serveur], fabrique_panneau: Callable
+) -> None:
+    serveur = lancer_serveur()
+    panneau = fabrique_panneau(serveur.config)
+    choisir(panneau, "voiture", "nations_sud", "albert_camus")
+    panneau.lancer()
+    choisir(panneau, Pieton.CATEGORIE, "nations_nord")
+    panneau.lancer()
+    trajets = [panneau.liste_clients.topLevelItem(rang).text(COLONNE_TRAJET) for rang in range(2)]
+    assert trajets == ["Bd des Nations (sud) vers Rue Albert Camus", "traverse Bd des Nations (nord)"]
 
 
 def test_identifiants_uniques_par_categorie(lancer_serveur: Callable[..., Serveur], fabrique_panneau: Callable) -> None:
@@ -134,7 +154,9 @@ def test_client_termine_retire_de_la_liste(
 # ---------- Arrêt ----------
 
 
-def test_arret_ne_laisse_aucun_thread_client(lancer_serveur: Callable[..., Serveur], fabrique_panneau: Callable) -> None:
+def test_arret_ne_laisse_aucun_thread_client(
+    lancer_serveur: Callable[..., Serveur], fabrique_panneau: Callable
+) -> None:
     serveur = lancer_serveur()
     panneau = fabrique_panneau(serveur.config)
     panneau.choix_nombre.setValue(4)
