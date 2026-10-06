@@ -11,11 +11,11 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QFormLayout,
     QGroupBox,
-    QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QSplitter,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -37,10 +37,10 @@ from cherrypie.modele.rond_point import RondPoint
 from cherrypie.modele.usager import VehiculePrioritaire
 
 TITRE = "CherryPie : supervision du rond-point"
-LARGEUR_INITIALE = 1280
-HAUTEUR_INITIALE = 820
-LARGEUR_PANNEAU = 380
-COLONNES_LEGENDE = 7
+LARGEUR_INITIALE = 1360
+HAUTEUR_INITIALE = 860
+LARGEUR_PANNEAU = 400
+COLONNES_LEGENDE = 2
 NOMBRE_MAX_CONSIGNES = 50
 # Attente maximale de l'arrêt de chaque thread (clients, réseau) à la fermeture, en secondes.
 DELAI_ARRET = 2.0
@@ -237,7 +237,10 @@ class FenetreSupervision(QMainWindow):
         self.__case_regulation.clicked.connect(self.__regler)
 
     def __disposer(self) -> None:
-        """Place la scène et sa légende à gauche, les panneaux à droite, dans l'onglet « Rond-point »."""
+        """Place la scène à gauche et les panneaux à droite, dans l'onglet « Rond-point ».
+
+        La scène prend toute la hauteur ; un séparateur, que l'on peut déplacer, la sépare des panneaux.
+        """
         serveur = QGroupBox("Serveur")
         formulaire = QFormLayout(serveur)
         formulaire.addRow("Connexion", self.__etat_connexion)
@@ -247,19 +250,19 @@ class FenetreSupervision(QMainWindow):
         groupe_consignes = QGroupBox("Dernières consignes")
         QVBoxLayout(groupe_consignes).addWidget(self.__consignes)
         panneaux = QWidget()
-        panneaux.setFixedWidth(LARGEUR_PANNEAU)
         colonne_droite = QVBoxLayout(panneaux)
         colonne_droite.setContentsMargins(0, 0, 0, 0)
         colonne_droite.addWidget(serveur)
+        colonne_droite.addWidget(self.__legende)
         colonne_droite.addWidget(self.__panneau_creation, 1)
         colonne_droite.addWidget(groupe_consignes, 1)
-        colonne_gauche = QVBoxLayout()
-        colonne_gauche.addWidget(self.__vue, 1)
-        colonne_gauche.addWidget(self.__legende)
-        page = QWidget()
-        disposition = QHBoxLayout(page)
-        disposition.addLayout(colonne_gauche, 1)
-        disposition.addWidget(panneaux)
+        page = QSplitter()
+        page.addWidget(self.__vue)
+        page.addWidget(panneaux)
+        # Quand la fenêtre change de taille, c'est la scène qui grandit ou rétrécit.
+        page.setStretchFactor(0, 1)
+        page.setStretchFactor(1, 0)
+        page.setSizes([LARGEUR_INITIALE - LARGEUR_PANNEAU, LARGEUR_PANNEAU])
         self.__onglets.addTab(page, "Rond-point")
         self.setCentralWidget(self.__onglets)
         self.setWindowTitle(TITRE)

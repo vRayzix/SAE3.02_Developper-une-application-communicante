@@ -45,7 +45,8 @@ def main() -> int:
         return 1
     application = QApplication(sys.argv)
     fenetre = FenetreSupervision(config)
-    fenetre.show()
+    # Plein écran : la scène, qui suit la taille de la fenêtre, y est la plus lisible.
+    fenetre.showMaximized()
     fenetre.demarrer()
     # Ctrl+C ferme la fenêtre, qui arrête alors ses threads comme avec le bouton de fermeture.
     signal.signal(signal.SIGINT, lambda *_: fenetre.close())
