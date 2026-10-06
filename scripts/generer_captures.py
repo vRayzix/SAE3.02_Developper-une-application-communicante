@@ -40,9 +40,9 @@ TRAFIC = [
 ]
 VP = ("vp", "nations_sud", "nations_nord", 1)
 # Délais en secondes : le temps que le trafic arrive au rond-point, puis celui laissé au VP.
-# Au bout de 6 s, le VP régulé roule sur l'anneau, l'autre attend encore derrière la file.
+# Au bout de 8 s, le VP régulé roule sur l'anneau, l'autre attend encore derrière la file.
 DELAI_AVANT_VP = 3.5
-DELAI_CAPTURE_VP = 6.0
+DELAI_CAPTURE_VP = 8.0
 DELAI_CONNEXION = 5.0
 PAUSE_BOUCLE = 0.01
 
