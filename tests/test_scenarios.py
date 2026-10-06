@@ -4,11 +4,11 @@ import math
 import random
 
 import pytest
+from geometrie import rond_point_bel_air
 from simulation import Simulation
 
 from cherrypie.client.deplacement import DISTANCE_SECURITE
 from cherrypie.commun.protocole import CodeNotification
-from cherrypie.modele.rond_point import RondPoint
 from cherrypie.modele.trajectoire import LONGUEUR_BRANCHE, Etape
 from cherrypie.modele.usager import Moto, Pieton, Trottinette, VehiculePrioritaire, Voiture
 from cherrypie.serveur.passages import PassageVp
@@ -21,7 +21,7 @@ ECART_SANS_CHEVAUCHEMENT = 3.0
 
 @pytest.fixture
 def simulation() -> Simulation:
-    return Simulation(RondPoint(BRANCHES, RAYON, 8))
+    return Simulation(rond_point_bel_air())
 
 
 # ---------- File d'attente ----------
@@ -89,7 +89,7 @@ def test_anneau_charge_ne_se_bloque_pas(simulation: Simulation) -> None:
 
 def traversee_du_vp(graine: int, regulation: bool) -> PassageVp:
     """Fait traverser un VP du sud au nord dans un trafic tiré au hasard, toujours le même pour une graine."""
-    simulation = Simulation(RondPoint(BRANCHES, RAYON, 8))
+    simulation = Simulation(rond_point_bel_air())
     simulation.regler(regulation)
     hasard = random.Random(graine)
     for rang in range(3):

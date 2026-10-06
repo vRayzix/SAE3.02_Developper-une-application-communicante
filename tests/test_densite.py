@@ -1,8 +1,8 @@
 """Tests de la densité des branches."""
 
 import pytest
+from geometrie import rond_point_bel_air
 
-from cherrypie.modele.rond_point import RondPoint
 from cherrypie.modele.trajectoire import Etape
 from cherrypie.modele.usager import Pieton, Voiture
 from cherrypie.serveur.densite import CalculateurDensite, NiveauDensite
@@ -13,7 +13,7 @@ CAPACITE = 4
 
 @pytest.fixture
 def calculateur() -> CalculateurDensite:
-    return CalculateurDensite(RondPoint(["nations_nord", "jean_de_la_bruyere", "nations_sud", "albert_camus"], 20.0, CAPACITE))
+    return CalculateurDensite(rond_point_bel_air(capacite=CAPACITE))
 
 
 def registre_avec(*usagers: Voiture | Pieton) -> Registre:

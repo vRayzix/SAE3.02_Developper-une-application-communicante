@@ -3,6 +3,7 @@
 import math
 
 import pytest
+from geometrie import rond_point_bel_air
 
 from cherrypie.client.deplacement import Deplacement
 from cherrypie.commun.protocole import CodeNotification
@@ -18,7 +19,7 @@ QUART = 2 * math.pi * RAYON / 4
 
 @pytest.fixture
 def rond_point() -> RondPoint:
-    return RondPoint(["nations_nord", "jean_de_la_bruyere", "nations_sud", "albert_camus"], RAYON, 8)
+    return rond_point_bel_air()
 
 
 @pytest.fixture

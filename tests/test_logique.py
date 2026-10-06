@@ -1,11 +1,11 @@
 """Tests de la logique du serveur, sans réseau."""
 
 import pytest
+from geometrie import rond_point_bel_air
 
 from cherrypie.commun.erreurs import TrameInvalideError, UsagerInconnuError
 from cherrypie.commun.protocole import Message, TypeMessage
 from cherrypie.modele.position import Position
-from cherrypie.modele.rond_point import RondPoint
 from cherrypie.modele.trajectoire import Etape
 from cherrypie.serveur.logique import IDENTIFIANT_SERVEUR, LogiqueServeur, Reponse
 
@@ -14,7 +14,7 @@ TIMEOUT = 6.0
 
 @pytest.fixture
 def logique() -> LogiqueServeur:
-    return LogiqueServeur(RondPoint(["nations_nord", "jean_de_la_bruyere", "nations_sud", "albert_camus"], 20.0, 8), TIMEOUT)
+    return LogiqueServeur(rond_point_bel_air(), TIMEOUT)
 
 
 def hello(identifiant: str, categorie: str = "voiture", entree: str = "nations_nord", sortie: str = "jean_de_la_bruyere") -> Message:
@@ -413,8 +413,10 @@ def test_densite_relevee_pendant_la_traversee_du_vp(logique: LogiqueServeur) -> 
 def test_cadence_envoie_devant_a_chaque_vehicule_positionne(logique: LogiqueServeur) -> None:
     devant = session_inscrite(logique, "voiture_1")
     derriere = session_inscrite(logique, "voiture_2")
-    logique.traiter_udp(pos("voiture_1", x=0.0, y=40.0, segment=None, etape="approche"), 1.0)
-    logique.traiter_udp(pos("voiture_2", x=0.0, y=55.0, segment=None, etape="approche"), 1.0)
+    nord = logique.rond_point.branche("nations_nord")
+    for identifiant, distance in (("voiture_1", 40.0), ("voiture_2", 55.0)):
+        point = nord.point(distance)
+        logique.traiter_udp(pos(identifiant, x=point.x, y=point.y, segment=None, etape="approche"), 1.0)
     vues = {numero: message.donnees for numero, message in logique.cadencer() if message.type is TypeMessage.DEVANT}
     assert vues == {
         devant: {"distance": None, "ceder": False},

@@ -1,6 +1,7 @@
 """Tests de la scène 2D : dessin du rond-point d'après la configuration."""
 
 import pytest
+from geometrie import rond_point_a_trois_branches, rond_point_bel_air
 from PyQt6.QtWidgets import QApplication
 
 from cherrypie.commun.protocole import CodeNotification
@@ -23,7 +24,7 @@ RAYON = 20.0
 
 @pytest.fixture
 def scene(qapp: QApplication) -> SceneRondPoint:
-    return SceneRondPoint(RondPoint(["nations_nord", "jean_de_la_bruyere", "nations_sud", "albert_camus"], RAYON, 8))
+    return SceneRondPoint(rond_point_bel_air())
 
 
 # ---------- Repère ----------
@@ -60,7 +61,7 @@ def test_scene_nord_en_haut(scene: SceneRondPoint) -> None:
 
 
 def test_scene_suit_le_nombre_de_branches(qapp: QApplication) -> None:
-    scene = SceneRondPoint(RondPoint(["A", "B", "C"], RAYON, 8))
+    scene = SceneRondPoint(rond_point_a_trois_branches())
     assert len(scene.bandes_densite) == 3
 
 

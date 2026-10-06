@@ -3,6 +3,7 @@
 import math
 
 import pytest
+from geometrie import rond_point_bel_air
 
 from cherrypie.client.deplacement import DISTANCE_SECURITE, Deplacement
 from cherrypie.commun.protocole import CodeNotification
@@ -17,7 +18,7 @@ LIGNE = LONGUEUR_BRANCHE - RECUL_LIGNE_VEHICULE
 
 @pytest.fixture
 def rond_point() -> RondPoint:
-    return RondPoint(["nations_nord", "jean_de_la_bruyere", "nations_sud", "albert_camus"], RAYON, 8)
+    return rond_point_bel_air()
 
 
 @pytest.fixture

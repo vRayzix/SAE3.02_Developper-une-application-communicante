@@ -1,6 +1,7 @@
 """Tests des usagers : sous-classes, consignes, état et sérialisation."""
 
 import pytest
+from geometrie import rond_point_bel_air
 
 from cherrypie.commun.erreurs import BrancheInconnueError
 from cherrypie.commun.protocole import CodeNotification
@@ -230,7 +231,7 @@ def test_depuis_dict_champ_manquant_refuse() -> None:
 
 @pytest.fixture
 def rond_point() -> RondPoint:
-    return RondPoint(["nations_nord", "jean_de_la_bruyere", "nations_sud", "albert_camus"], 20.0, 8)
+    return rond_point_bel_air()
 
 
 @pytest.mark.parametrize("classe", [Voiture, Moto, Trottinette, VehiculePrioritaire])

@@ -3,6 +3,7 @@
 import math
 
 import pytest
+from geometrie import JEAN_DE_LA_BRUYERE, NATIONS_NORD, NATIONS_SUD, rond_point_bel_air
 
 from cherrypie.commun.erreurs import BrancheInconnueError
 from cherrypie.modele.position import Position
@@ -18,14 +19,12 @@ from cherrypie.modele.trajectoire import (
 )
 
 RAYON = 20.0
-QUART_DE_TOUR = 2 * math.pi * RAYON / 4
 ENTREE_ANNEAU = LONGUEUR_BRANCHE
-SORTIE_ANNEAU = LONGUEUR_BRANCHE + 2 * QUART_DE_TOUR
 
 
 @pytest.fixture
 def rond_point() -> RondPoint:
-    return RondPoint(["nations_nord", "jean_de_la_bruyere", "nations_sud", "albert_camus"], RAYON, 8)
+    return rond_point_bel_air()
 
 
 @pytest.fixture
@@ -37,6 +36,10 @@ def coordonnees(position: Position) -> tuple[float, float]:
     return (position.x, position.y)
 
 
+def longueurs_des_segments(rond_point: RondPoint) -> list[float]:
+    return [segment.longueur for segment in rond_point.segments_entre(NATIONS_SUD, NATIONS_NORD)]
+
+
 # ---------- Découpage en tronçons ----------
 
 def test_vehicule_approche_anneau_puis_sortie(sud_vers_nord: Trajectoire) -> None:
@@ -44,17 +47,18 @@ def test_vehicule_approche_anneau_puis_sortie(sud_vers_nord: Trajectoire) -> Non
     assert etapes == [Etape.APPROCHE, Etape.ANNEAU, Etape.ANNEAU, Etape.SORTIE]
 
 
-def test_longueur_totale(sud_vers_nord: Trajectoire) -> None:
-    assert sud_vers_nord.longueur == pytest.approx(2 * LONGUEUR_BRANCHE + 2 * QUART_DE_TOUR)
+def test_longueur_totale(rond_point: RondPoint, sud_vers_nord: Trajectoire) -> None:
+    assert sud_vers_nord.longueur == pytest.approx(2 * LONGUEUR_BRANCHE + sum(longueurs_des_segments(rond_point)))
 
 
 def test_approche_jusqu_a_l_axe_de_l_anneau(sud_vers_nord: Trajectoire) -> None:
     assert sud_vers_nord.longueur_approche == pytest.approx(LONGUEUR_BRANCHE)
 
 
-def test_ligne_d_entree_au_bord_de_l_anneau(sud_vers_nord: Trajectoire) -> None:
+def test_ligne_d_entree_au_bord_de_l_anneau(rond_point: RondPoint, sud_vers_nord: Trajectoire) -> None:
     ligne = sud_vers_nord.position_a(sud_vers_nord.ligne_entree)
-    assert coordonnees(ligne) == pytest.approx((0.0, -(RAYON + LARGEUR_CHAUSSEE / 2)), abs=1e-9)
+    attendue = rond_point.branche(NATIONS_SUD).point(RAYON + LARGEUR_CHAUSSEE / 2)
+    assert coordonnees(ligne) == pytest.approx(coordonnees(attendue), abs=1e-9)
     assert sud_vers_nord.etape_a(sud_vers_nord.ligne_entree) is Etape.APPROCHE
 
 
@@ -66,7 +70,8 @@ def test_ligne_hors_de_l_approche_refusee(recul: float) -> None:
 
 
 def test_segments_parcourus_dans_l_ordre(sud_vers_nord: Trajectoire) -> None:
-    assert [segment.nom for segment in sud_vers_nord.segments] == ["nations_sud-jean_de_la_bruyere", "jean_de_la_bruyere-nations_nord"]
+    noms = [segment.nom for segment in sud_vers_nord.segments]
+    assert noms == [f"{NATIONS_SUD}-{JEAN_DE_LA_BRUYERE}", f"{JEAN_DE_LA_BRUYERE}-{NATIONS_NORD}"]
 
 
 def test_demi_tour_fait_le_tour_de_l_anneau(rond_point: RondPoint) -> None:
@@ -95,20 +100,25 @@ def test_troncon_de_longueur_nulle_refuse() -> None:
 
 # ---------- Positions ----------
 
-@pytest.mark.parametrize(
-    ("avancement", "attendu"),
-    [
-        (0.0, (0.0, -70.0)),
-        (ENTREE_ANNEAU, (0.0, -20.0)),
-        (ENTREE_ANNEAU + QUART_DE_TOUR / 2, (RAYON * math.cos(-math.pi / 4), RAYON * math.sin(-math.pi / 4))),
-        (ENTREE_ANNEAU + QUART_DE_TOUR, (20.0, 0.0)),
-        (SORTIE_ANNEAU, (0.0, 20.0)),
-        (SORTIE_ANNEAU + LONGUEUR_BRANCHE, (0.0, 70.0)),
-    ],
-    ids=["bout-branche-sud", "ligne-d-entree", "milieu-premier-segment", "devant-branche-est", "sortie-anneau", "bout-branche-nord"],
-)
-def test_position_le_long_du_trajet(sud_vers_nord: Trajectoire, avancement: float, attendu: tuple) -> None:
-    assert coordonnees(sud_vers_nord.position_a(avancement)) == pytest.approx(attendu, abs=1e-9)
+def test_positions_aux_points_cles_du_trajet(rond_point: RondPoint, sud_vers_nord: Trajectoire) -> None:
+    sud, est, nord = (rond_point.branche(nom) for nom in (NATIONS_SUD, JEAN_DE_LA_BRUYERE, NATIONS_NORD))
+    premier, second = longueurs_des_segments(rond_point)
+    attendues = {
+        0.0: sud.point(RAYON + LONGUEUR_BRANCHE),
+        ENTREE_ANNEAU: sud.point(RAYON),
+        ENTREE_ANNEAU + premier: est.point(RAYON),
+        ENTREE_ANNEAU + premier + second: nord.point(RAYON),
+        sud_vers_nord.longueur: nord.point(RAYON + LONGUEUR_BRANCHE),
+    }
+    for avancement, attendue in attendues.items():
+        assert coordonnees(sud_vers_nord.position_a(avancement)) == pytest.approx(coordonnees(attendue), abs=1e-9)
+
+
+def test_position_au_milieu_du_premier_segment(rond_point: RondPoint, sud_vers_nord: Trajectoire) -> None:
+    premier = rond_point.segments_entre(NATIONS_SUD, NATIONS_NORD)[0]
+    angle = math.radians(premier.depart.angle) + premier.longueur / 2 / RAYON
+    position = sud_vers_nord.position_a(ENTREE_ANNEAU + premier.longueur / 2)
+    assert coordonnees(position) == pytest.approx((RAYON * math.cos(angle), RAYON * math.sin(angle)))
 
 
 def test_position_au_dela_de_la_fin_reste_au_bout(sud_vers_nord: Trajectoire) -> None:
@@ -124,41 +134,38 @@ def test_avancement_invalide_refuse(sud_vers_nord: Trajectoire, avancement: floa
 
 # ---------- Décalage latéral ----------
 
-def test_decalage_en_approche_vers_la_droite(sud_vers_nord: Trajectoire) -> None:
-    # En remontant la branche sud vers le centre, la droite est à l'est.
-    assert coordonnees(sud_vers_nord.position_a(0.0, decalage=2.0)) == pytest.approx((2.0, -70.0), abs=1e-9)
+def test_decalage_en_approche_vers_la_droite(rond_point: RondPoint, sud_vers_nord: Trajectoire) -> None:
+    attendue = rond_point.branche(NATIONS_SUD).point(RAYON + LONGUEUR_BRANCHE, decalage=2.0)
+    assert coordonnees(sud_vers_nord.position_a(0.0, decalage=2.0)) == pytest.approx(coordonnees(attendue), abs=1e-9)
 
 
 def test_decalage_sur_l_anneau_vers_l_exterieur(sud_vers_nord: Trajectoire) -> None:
-    position = sud_vers_nord.position_a(ENTREE_ANNEAU + QUART_DE_TOUR / 2, decalage=2.0)
+    position = sud_vers_nord.position_a(ENTREE_ANNEAU + 5.0, decalage=2.0)
     assert math.hypot(position.x, position.y) == pytest.approx(RAYON + 2.0)
 
 
-def test_decalage_en_sortie_vers_la_droite(sud_vers_nord: Trajectoire) -> None:
-    # En quittant l'anneau vers le nord, la droite est à l'est.
+def test_decalage_en_sortie_vers_la_droite(rond_point: RondPoint, sud_vers_nord: Trajectoire) -> None:
+    # En quittant l'anneau, la droite est à gauche d'un usager qui arrive par la même branche.
     fin = sud_vers_nord.position_a(sud_vers_nord.longueur, decalage=2.0)
-    assert coordonnees(fin) == pytest.approx((2.0, 70.0), abs=1e-9)
+    attendue = rond_point.branche(NATIONS_NORD).point(RAYON + LONGUEUR_BRANCHE, decalage=-2.0)
+    assert coordonnees(fin) == pytest.approx(coordonnees(attendue), abs=1e-9)
 
 
 # ---------- Étapes et segments ----------
 
-@pytest.mark.parametrize(
-    ("avancement", "etape", "segment"),
-    [
+def test_etape_et_segment_selon_l_avancement(rond_point: RondPoint, sud_vers_nord: Trajectoire) -> None:
+    premier, second = longueurs_des_segments(rond_point)
+    attendus = [
         (0.0, Etape.APPROCHE, None),
         (ENTREE_ANNEAU, Etape.APPROCHE, None),
-        (ENTREE_ANNEAU + 1.0, Etape.ANNEAU, "nations_sud-jean_de_la_bruyere"),
-        (ENTREE_ANNEAU + QUART_DE_TOUR + 1.0, Etape.ANNEAU, "jean_de_la_bruyere-nations_nord"),
-        (SORTIE_ANNEAU + 1.0, Etape.SORTIE, None),
-    ],
-    ids=["depart", "arret-sur-la-ligne-d-entree", "premier-segment", "second-segment", "sortie"],
-)
-def test_etape_et_segment_selon_l_avancement(
-    sud_vers_nord: Trajectoire, avancement: float, etape: Etape, segment: str | None
-) -> None:
-    assert sud_vers_nord.etape_a(avancement) is etape
-    segment_trouve = sud_vers_nord.segment_a(avancement)
-    assert (segment_trouve.nom if segment_trouve else None) == segment
+        (ENTREE_ANNEAU + 1.0, Etape.ANNEAU, f"{NATIONS_SUD}-{JEAN_DE_LA_BRUYERE}"),
+        (ENTREE_ANNEAU + premier + 1.0, Etape.ANNEAU, f"{JEAN_DE_LA_BRUYERE}-{NATIONS_NORD}"),
+        (ENTREE_ANNEAU + premier + second + 1.0, Etape.SORTIE, None),
+    ]
+    for avancement, etape, segment in attendus:
+        assert sud_vers_nord.etape_a(avancement) is etape
+        segment_trouve = sud_vers_nord.segment_a(avancement)
+        assert (segment_trouve.nom if segment_trouve else None) == segment
 
 
 def test_passe_par_les_seuls_segments_du_trajet(rond_point: RondPoint, sud_vers_nord: Trajectoire) -> None:
@@ -190,19 +197,19 @@ def test_longueur_de_la_traversee(traversee_nord: Trajectoire) -> None:
     assert traversee_nord.ligne_entree == pytest.approx(LONGUEUR_TROTTOIR)
 
 
-def test_pieton_attend_au_bord_de_la_chaussee(traversee_nord: Trajectoire) -> None:
-    # Vu d'un véhicule qui arrive du nord, le trottoir de droite est à l'ouest.
+def test_pieton_attend_au_bord_de_la_chaussee(rond_point: RondPoint, traversee_nord: Trajectoire) -> None:
+    # Le piéton part du trottoir situé à droite d'un véhicule qui arrive par sa branche.
     bord = traversee_nord.position_a(traversee_nord.longueur_approche)
-    assert coordonnees(bord) == pytest.approx((-LARGEUR_CHAUSSEE / 2, RAYON + DISTANCE_PASSAGE_PIETON))
+    attendu = rond_point.branche(NATIONS_NORD).point(RAYON + DISTANCE_PASSAGE_PIETON, LARGEUR_CHAUSSEE / 2)
+    assert coordonnees(bord) == pytest.approx(coordonnees(attendu))
     assert traversee_nord.etape_a(traversee_nord.longueur_approche) is Etape.APPROCHE
 
 
-def test_pieton_sur_la_chaussee_en_traversee(traversee_nord: Trajectoire) -> None:
+def test_pieton_sur_la_chaussee_en_traversee(rond_point: RondPoint, traversee_nord: Trajectoire) -> None:
     milieu = traversee_nord.longueur_approche + LARGEUR_CHAUSSEE / 2
     assert traversee_nord.etape_a(milieu) is Etape.TRAVERSEE
-    assert coordonnees(traversee_nord.position_a(milieu)) == pytest.approx(
-        (0.0, RAYON + DISTANCE_PASSAGE_PIETON), abs=1e-9
-    )
+    attendu = rond_point.branche(NATIONS_NORD).point(RAYON + DISTANCE_PASSAGE_PIETON)
+    assert coordonnees(traversee_nord.position_a(milieu)) == pytest.approx(coordonnees(attendu), abs=1e-9)
 
 
 def test_passage_pieton_croise_l_approche_des_vehicules(rond_point: RondPoint, traversee_nord: Trajectoire) -> None:
