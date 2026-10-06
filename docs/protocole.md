@@ -29,7 +29,7 @@ En UDP, un datagramme contient exactement une enveloppe JSON, sans en-tête de l
 Tous les messages, en TCP comme en UDP, ont la même forme : un objet JSON à plat.
 
 ```json
-{"type": "POS", "id": "voiture_12", "ts": 1727093000.512, "nonce": "9f2c1a0b7d3e4f56", "donnees": {"x": 3.5, "y": -1.0, "vitesse": 8.3, "segment": "N-O", "etape": "anneau"}, "hmac": "5d41402abc4b2a76…"}
+{"type": "POS", "id": "voiture_12", "ts": 1727093000.512, "nonce": "9f2c1a0b7d3e4f56", "donnees": {"x": 8.4, "y": 15.6, "cap": 298.2, "vitesse": 8.3, "segment": "jean_de_la_bruyere-nations_nord", "etape": "anneau"}, "hmac": "5d41402abc4b2a76…"}
 ```
 
 | Champ | Type | Rôle |
@@ -47,13 +47,13 @@ Dans le code, `Message` porte `type`, `id` et `donnees` ; `Enveloppe` y ajoute `
 
 | type | Sens | Transport | donnees |
 | --- | --- | --- | --- |
-| HELLO | client → serveur | TCP | `{"categorie": "voiture", "entree": "N", "sortie": "E"}`, catégorie parmi `voiture`, `moto`, `trottinette`, `pieton`, `vp` |
+| HELLO | client → serveur | TCP | `{"categorie": "voiture", "entree": "nations_sud", "sortie": "albert_camus"}`, catégorie parmi `voiture`, `moto`, `trottinette`, `pieton`, `vp` |
 | HELLO_ACK | serveur → client | TCP | `{"accepte": true}`, ou `{"accepte": false, "raison": "...", "reessayer": true}` en cas de refus |
-| POS | client → serveur | UDP | `{"x": 3.5, "y": -1.0, "vitesse": 8.3, "segment": "N-O", "etape": "anneau"}` |
-| VP_ALERT | client VP → serveur | TCP | `{"entree": "N", "sortie": "E", "eta": 8.0}`, `eta` en secondes avant l'anneau |
+| POS | client → serveur | UDP | `{"x": 8.4, "y": 15.6, "cap": 298.2, "vitesse": 8.3, "segment": "jean_de_la_bruyere-nations_nord", "etape": "anneau"}` |
+| VP_ALERT | client VP → serveur | TCP | `{"entree": "nations_sud", "sortie": "nations_nord", "eta": 4.5}`, `eta` en secondes avant l'anneau |
 | VP_FIN | client VP → serveur | TCP | `{}` |
 | NOTIF | serveur → client | TCP | `{"code": "DEGAGEZ", "message": "..."}`, code parmi `DEGAGEZ`, `CHANGEZ_VOIE`, `ATTENDEZ`, `OK_PASSER` |
-| STATE | serveur → supervision | TCP | `{"usagers": [...], "densite": {"N": 0.25, ...}, "vp_actif": true, "segments_reserves": ["E-N", "S-E"], "entrees_bloquees": [], "regulation": true}`, voir plus bas |
+| STATE | serveur → supervision | TCP | `{"usagers": [...], "densite": {"nations_nord": 0.25, ...}, "vp_actif": true, "segments_reserves": ["jean_de_la_bruyere-nations_nord", "nations_sud-jean_de_la_bruyere"], "entrees_bloquees": [], "regulation": true}`, voir plus bas |
 | ABONNEMENT | supervision → serveur | TCP | `{}` : la connexion reçoit ensuite les STATE |
 | REGLAGE | supervision → serveur | TCP | `{"regulation": false}`, voir « Régulation » |
 | PING | client → serveur | TCP | `{}` |
@@ -61,17 +61,19 @@ Dans le code, `Message` porte `type`, `id` et `donnees` ; `Enveloppe` y ajoute `
 | BYE | client → serveur | TCP | `{}` |
 | DEVANT | serveur → client | TCP | `{"distance": 12.4, "ceder": false}`, voir « Ce que voit un conducteur » |
 
+Les branches sont désignées par leur identifiant, tiré du nom de la rue : `nations_nord`, `jean_de_la_bruyere`, `nations_sud` et `albert_camus` pour le rond-point de Bel Air (voir [geometrie_bel_air.md](geometrie_bel_air.md)). Un segment porte le nom de ses deux branches, dans le sens de circulation, séparés par un tiret.
+
 Chaque élément de la liste `usagers` d'un STATE décrit un usager connecté :
 
 ```json
-{"id": "voiture_12", "categorie": "voiture", "entree": "S", "sortie": "N", "x": 0.0, "y": -20.0, "vitesse": 8.0, "segment": null, "etape": "approche", "consigne": null}
+{"id": "voiture_12", "categorie": "voiture", "entree": "nations_sud", "sortie": "nations_nord", "x": 29.5, "y": -33.9, "cap": 327.0, "vitesse": 8.0, "segment": null, "etape": "approche", "consigne": null}
 ```
 
-`x` et `y` valent `null` tant que le serveur n'a reçu aucune position de l'usager. Les autres champs du STATE :
+`x`, `y` et `cap` valent `null` tant que le serveur n'a reçu aucune position de l'usager. Le cap est la direction dans laquelle l'usager avance, en degrés depuis le nord dans le sens des aiguilles d'une montre : la supervision s'en sert pour tourner chaque véhicule dans son sens de marche. Les autres champs du STATE :
 
 - `densite` : pour chaque branche, le nombre d'usagers en approche sur cette branche divisé par sa capacité, borné entre 0 et 1. Faible en dessous de 0,4, moyenne en dessous de 0,7, forte au-delà.
 - `vp_actif` : `true` si au moins un VP annoncé n'a pas fini sa traversée.
-- `segments_reserves` : segments de l'anneau réservés aux VP en cours de traversée, triés par nom, pour que la supervision puisse les afficher.
+- `segments_reserves` : segments de l'anneau réservés aux VP en cours de traversée, triés par nom, pour que la supervision puisse les afficher. Ils sont envoyés que la régulation soit active ou non.
 - `entrees_bloquees` : branches où au moins un usager attend sur ordre du régulateur (ATTENDEZ), triées par nom.
 - `regulation` : `true` si la régulation est active.
 
@@ -79,8 +81,8 @@ Chaque élément de la liste `usagers` d'un STATE décrit un usager connecté :
 
 Chaque client roule sans voir les autres : sans aide, deux voitures pourraient se traverser, et un VP ne serait jamais gêné par le trafic. Le serveur, qui connaît toutes les positions, simule donc ce qu'un conducteur verrait par son pare-brise. **DEVANT n'est pas une consigne de régulation** : il part à chaque cadence vers chaque véhicule, que la régulation soit active ou non. Les piétons n'en reçoivent pas.
 
-- `distance` : distance, en mètres, jusqu'à l'obstacle le plus proche devant le véhicule sur sa voie, ou `null` si rien ne gêne dans les 50 m. Un obstacle est un autre véhicule sur la même voie (même branche et même sens, ou anneau jusqu'à la sortie du véhicule), ou un piéton en train de traverser le passage piéton. Un véhicule rangé sur le côté (décalé par DEGAGEZ ou CHANGEZ_VOIE) n'est plus sur la voie et ne gêne pas ceux qui roulent au milieu.
-- `ceder` : `true` si le véhicule doit attendre sur sa ligne d'entrée, parce que l'anneau n'est pas libre sur 15 m avant et 10 m après son point d'entrée (cédez-le-passage). Un véhicule rangé sur le côté de l'anneau ne compte pas.
+- `distance` : distance, en mètres, jusqu'à l'obstacle le plus proche devant le véhicule sur sa voie, ou `null` si rien ne gêne dans les 50 m. Un obstacle est un autre véhicule sur la même voie, ou un piéton en train de traverser le passage piéton de la branche. Sur une chaussée de branche, deux véhicules sont sur la même file si leurs écarts à l'axe diffèrent de moins de 1 m : un véhicule rangé sur le bord (CHANGEZ_VOIE) ne gêne pas ceux qui roulent au milieu. Sur l'anneau, deux véhicules sont sur la même voie si leurs distances au centre diffèrent de moins d'une demi-largeur de voie ; l'obstacle compte jusqu'à la sortie du véhicule, chaussée de sortie comprise. Les distances sur l'anneau sont mesurées à la distance au centre du véhicule, ce qui compte un peu court dans les raccords : c'est le côté prudent.
+- `ceder` : `true` si le véhicule doit attendre sur sa ligne d'entrée, au bord de l'anneau, parce que l'anneau n'est pas libre sur 15 m avant et 10 m après son point d'entrée (cédez-le-passage). Pour rejoindre sa voie, un véhicule qui entre traverse la voie extérieure : il cède le passage aux véhicules des deux voies.
 
 Le client garde une distance de sécurité de 6 m avec l'obstacle signalé, qui couvre aussi le retard d'un pas de la position vue par le serveur. Il ne recule jamais, et s'arrête sur sa ligne d'entrée tant que `ceder` vaut `true`. Les usagers arrêtés forment ainsi une vraie file au lieu de s'empiler au même point.
 
@@ -96,8 +98,8 @@ Les marges du cédez-le-passage empêchent l'anneau de se remplir au point de se
 
 À chaque cadence, le régulateur du serveur décide de la consigne de chaque usager et n'envoie une NOTIF que si elle change. Quand un VP traverse, ses segments réservés qu'il n'a pas encore quittés doivent rester libres :
 
-1. un usager sur l'anneau qui est, ou va passer, sur un de ces segments reçoit DEGAGEZ (il ralentit et se range sur la droite) ;
-2. un usager en file sur la branche d'entrée d'un VP encore en approche reçoit CHANGEZ_VOIE (il se range pour le laisser passer) ;
+1. un usager sur l'anneau qui est, ou va passer, sur un de ces segments reçoit DEGAGEZ : il passe sur la voie extérieure, puis ralentit. Le VP roule sur la voie intérieure, qui se libère ; un usager déjà sur la voie extérieure ne fait que ralentir ;
+2. un usager en file sur la branche d'entrée d'un VP encore en approche reçoit CHANGEZ_VOIE : il se range sur le bord droit de sa chaussée pour laisser passer le VP à sa gauche ;
 3. un usager en approche dont le trajet passe par un de ces segments reçoit ATTENDEZ (il s'arrête sur sa ligne d'entrée) ;
 4. un piéton qui attend devant le passage de la branche d'entrée ou de sortie d'un VP reçoit ATTENDEZ (« attendez pour traverser »).
 
@@ -138,9 +140,9 @@ REGLAGE n'est accepté que d'une session de supervision abonnée, avec `regulati
 
 ## Positions en UDP
 
-Le serveur ne répond pas aux POS. Il n'accepte une position que si son émetteur a une session TCP ouverte, où son HELLO a été accepté : c'est le contrôle d'identité. Il vérifie aussi que `x` et `y` sont des nombres finis, que `vitesse` reste entre 0 et la vitesse maximale de la catégorie, et que `segment` est le nom d'un segment de l'anneau, ou `null` hors de l'anneau.
+Le serveur ne répond pas aux POS. Il n'accepte une position que si son émetteur a une session TCP ouverte, où son HELLO a été accepté : c'est le contrôle d'identité. Il vérifie aussi que `x` et `y` sont des nombres finis, que `cap` est un nombre compris entre 0 (inclus) et 360 (exclu), que `vitesse` reste entre 0 et la vitesse maximale de la catégorie, et que `segment` est le nom d'un segment de l'anneau, ou `null` hors de l'anneau.
 
-Le champ `etape` dit où en est l'usager sur son trajet : `approche` (sur sa branche d'entrée, avant la ligne), `anneau`, `traversee` (piéton sur le passage) ou `sortie`. Le serveur s'en sert pour savoir qui attend en file sur chaque branche. Un `segment` n'est accepté qu'avec l'étape `anneau`, et l'étape `anneau` exige un segment.
+Le champ `etape` dit où en est l'usager sur son trajet : `approche` (sur la chaussée d'entrée de sa branche, jusqu'à la ligne au bord de l'anneau), `anneau`, `traversee` (piéton sur le passage, d'un trottoir à l'autre) ou `sortie`. Le serveur s'en sert pour savoir qui attend en file sur chaque branche. Un `segment` n'est accepté qu'avec l'étape `anneau`, et l'étape `anneau` exige un segment.
 
 ## Trames refusées
 
