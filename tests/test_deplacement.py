@@ -134,24 +134,41 @@ def test_attendez_sans_effet_une_fois_la_ligne_franchie(deplacement: Deplacement
 
 # ---------- DEGAGEZ et CHANGEZ_VOIE ----------
 
-def test_degagez_ralentit(deplacement: Deplacement, voiture: Voiture) -> None:
+@pytest.fixture
+def longue_traversee(rond_point: RondPoint) -> Deplacement:
+    """Voiture qui reste sur la voie intérieure pendant deux segments, de quoi changer de voie."""
+    voiture = Voiture("voiture_13", "nations_sud", "albert_camus")
+    deplacement = Deplacement(voiture, voiture.calculer_trajectoire(rond_point))
     amener_a(deplacement, SUR_LA_VOIE_INTERIEURE)
     voiture.reagir(CodeNotification.DEGAGEZ)
-    avant = deplacement.avancement
-    deplacement.avancer(PAS)
-    assert deplacement.avancement - avant == pytest.approx(Voiture.VITESSE_MAX * FACTEUR_RALENTISSEMENT * PAS)
+    return deplacement
 
 
-def test_degagez_fait_passer_sur_la_voie_exterieure(
-    rond_point: RondPoint, deplacement: Deplacement, voiture: Voiture
-) -> None:
-    amener_a(deplacement, SUR_LA_VOIE_INTERIEURE)
-    voiture.reagir(CodeNotification.DEGAGEZ)
+def se_ranger(rond_point: RondPoint, deplacement: Deplacement) -> None:
+    """Fait avancer l'usager le temps qu'il passe d'une voie de l'anneau à l'autre."""
     duree_du_changement = rond_point.largeur_voie_anneau / VITESSE_LATERALE
     for _ in range(math.ceil(duree_du_changement / PAS)):
         deplacement.avancer(PAS)
-    assert voiture.segment == "nations_sud-jean_de_la_bruyere"
-    assert math.hypot(voiture.position.x, voiture.position.y) == pytest.approx(rond_point.rayon_voie_exterieure)
+
+
+def test_degagez_garde_son_allure_le_temps_de_se_ranger(longue_traversee: Deplacement) -> None:
+    avant = longue_traversee.avancement
+    longue_traversee.avancer(PAS)
+    assert longue_traversee.avancement - avant == pytest.approx(Voiture.VITESSE_MAX * PAS)
+
+
+def test_degagez_ralentit_une_fois_range(rond_point: RondPoint, longue_traversee: Deplacement) -> None:
+    se_ranger(rond_point, longue_traversee)
+    avant = longue_traversee.avancement
+    longue_traversee.avancer(PAS)
+    assert longue_traversee.avancement - avant == pytest.approx(Voiture.VITESSE_MAX * FACTEUR_RALENTISSEMENT * PAS)
+
+
+def test_degagez_fait_passer_sur_la_voie_exterieure(rond_point: RondPoint, longue_traversee: Deplacement) -> None:
+    se_ranger(rond_point, longue_traversee)
+    usager = longue_traversee.usager
+    assert usager.segment == "jean_de_la_bruyere-nations_nord"
+    assert math.hypot(usager.position.x, usager.position.y) == pytest.approx(rond_point.rayon_voie_exterieure)
 
 
 def test_changement_de_voie_progressif(deplacement: Deplacement, voiture: Voiture) -> None:

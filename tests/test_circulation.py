@@ -37,7 +37,8 @@ def placer(rond_point: RondPoint, registre: Registre):
         if consigne is not None:
             usager.reagir(consigne)
         deplacement = Deplacement(usager, usager.calculer_trajectoire(rond_point))
-        deplacement.avancer(avancement / usager.vitesse_autorisee())
+        # En un seul pas, l'usager n'est pas encore rangé au départ : il roule à sa vitesse maximale.
+        deplacement.avancer(avancement / usager.VITESSE_MAX)
         registre.ajouter(usager)
         return usager
 

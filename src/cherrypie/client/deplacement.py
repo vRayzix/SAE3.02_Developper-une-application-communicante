@@ -14,6 +14,8 @@ DISTANCE_SECURITE = 6.0
 # Vitesse à laquelle un usager se décale sur le côté pour se ranger ou changer de voie, en m/s :
 # le mouvement reste visible à l'écran au lieu de se faire d'un coup.
 VITESSE_LATERALE = 2.0
+# Écart latéral, en mètres, en deçà duquel un usager qui se décale est considéré comme rangé.
+TOLERANCE_RANGEMENT = 0.05
 
 
 class Deplacement:
@@ -106,7 +108,7 @@ class Deplacement:
         """
         if not math.isfinite(duree) or duree < 0:
             raise ValueError(f"durée de pas invalide : {duree}")
-        vitesse = self.__usager.vitesse_autorisee()
+        vitesse = self.__vitesse_permise()
         arrivee = self.__avancement + vitesse * duree
         if self.__doit_s_arreter_a_la_ligne():
             arrivee = min(arrivee, self.__trajectoire.longueur_approche)
@@ -125,11 +127,24 @@ class Deplacement:
         doit_attendre = self.__usager.consigne is CodeNotification.ATTENDEZ or self.__ceder
         return doit_attendre and self.__avancement <= self.__trajectoire.longueur_approche
 
+    def __vitesse_permise(self) -> float:
+        """Vitesse que permet la consigne ; un usager qui dégage la voie ne ralentit qu'une fois rangé.
+
+        Tant qu'il se décale, il garde son allure : ralentir sur la voie qu'il quitte la
+        boucherait plus longtemps pour le VP qui arrive derrière.
+        """
+        if self.__usager.se_range() and abs(self.__decalage_voulu() - self.__decalage) > TOLERANCE_RANGEMENT:
+            return self.__usager.VITESSE_MAX
+        return self.__usager.vitesse_autorisee()
+
+    def __decalage_voulu(self) -> float:
+        """Écart latéral que demande la consigne à l'endroit où se trouve l'usager."""
+        return self.__trajectoire.place_a_droite_a(self.__avancement) if self.__usager.se_range() else 0.0
+
     def __decaler(self, duree: float) -> None:
         """Rapproche l'écart latéral de celui que demande la consigne, sans dépasser VITESSE_LATERALE."""
-        voulu = self.__trajectoire.place_a_droite_a(self.__avancement) if self.__usager.se_range() else 0.0
         pas = VITESSE_LATERALE * duree
-        self.__decalage += max(-pas, min(pas, voulu - self.__decalage))
+        self.__decalage += max(-pas, min(pas, self.__decalage_voulu() - self.__decalage))
 
     def __placer_usager(self, vitesse: float) -> None:
         """Reporte l'avancement sur l'usager : position (décalage compris), cap, vitesse, segment et étape."""
