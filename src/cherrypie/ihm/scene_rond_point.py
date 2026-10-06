@@ -52,11 +52,9 @@ from cherrypie.ihm.style import (
 )
 from cherrypie.modele.position import Position
 from cherrypie.modele.rond_point import Branche, RondPoint, Segment
-from cherrypie.modele.trajectoire import DISTANCE_PASSAGE_PIETON, LARGEUR_CHAUSSEE, LONGUEUR_BRANCHE
 from cherrypie.modele.usager import KMH, VehiculePrioritaire
 from cherrypie.serveur.densite import CalculateurDensite, NiveauDensite
 
-TOUR_COMPLET = 360.0
 POURCENT = 100
 # Côté minimal de la vue, en pixels, pour que les usagers restent visibles.
 TAILLE_MIN_VUE = 400
@@ -141,7 +139,7 @@ class SceneRondPoint(QGraphicsScene):
         self.__arcs_reserves: dict[str, QGraphicsPathItem] = {}
         self.__feux_entree: dict[str, QGraphicsRectItem] = {}
         self.__marqueurs: dict[str, MarqueurUsager] = {}
-        demi_cote = rond_point.rayon + LONGUEUR_BRANCHE + MARGE_SCENE
+        demi_cote = rond_point.rayon_bord + rond_point.longueur_branche + MARGE_SCENE
         self.setSceneRect(-demi_cote, -demi_cote, 2 * demi_cote, 2 * demi_cote)
         self.setBackgroundBrush(QBrush(COULEUR_FOND))
         for branche in rond_point.branches:
@@ -239,37 +237,37 @@ class SceneRondPoint(QGraphicsScene):
 
     def __dessiner_branche(self, branche: Branche) -> None:
         """Dessine la chaussée d'une branche, du centre de l'anneau jusqu'à son extrémité."""
-        rayon = self.__rond_point.rayon
-        crayon = QPen(COULEUR_CHAUSSEE, LARGEUR_CHAUSSEE)
+        crayon = QPen(COULEUR_CHAUSSEE, 2 * branche.demi_largeur)
         crayon.setCapStyle(Qt.PenCapStyle.FlatCap)
-        self.__ajouter_ligne(branche.point(rayon), branche.point(rayon + LONGUEUR_BRANCHE), crayon)
+        extremite = self.__rond_point.rayon_bord + self.__rond_point.longueur_branche
+        self.__ajouter_ligne(branche.point(self.__rond_point.rayon), branche.point(extremite), crayon)
 
     def __dessiner_anneau(self) -> None:
-        """Dessine l'anneau, large d'une chaussée, et l'îlot central."""
-        exterieur = self.__rond_point.rayon + LARGEUR_CHAUSSEE / 2
-        interieur = self.__rond_point.rayon - LARGEUR_CHAUSSEE / 2
+        """Dessine l'anneau et l'îlot central."""
+        exterieur = self.__rond_point.rayon_bord
+        interieur = self.__rond_point.rayon_ilot
         sans_contour = QPen(Qt.PenStyle.NoPen)
         self.addEllipse(-exterieur, -exterieur, 2 * exterieur, 2 * exterieur, sans_contour, QBrush(COULEUR_CHAUSSEE))
         self.addEllipse(-interieur, -interieur, 2 * interieur, 2 * interieur, sans_contour, QBrush(COULEUR_ILOT))
 
     def __dessiner_passage_pieton(self, branche: Branche) -> None:
         """Dessine les bandes du passage piéton, en travers de la branche."""
-        distance = self.__rond_point.rayon + DISTANCE_PASSAGE_PIETON
+        distance = self.__rond_point.rayon_bord + branche.passage_pieton
         crayon = QPen(COULEUR_PASSAGE_PIETON, EPAISSEUR_PASSAGE_PIETON)
         crayon.setDashPattern(MOTIF_PASSAGE_PIETON)
         crayon.setCapStyle(Qt.PenCapStyle.FlatCap)
-        self.__ajouter_ligne(
-            branche.point(distance, LARGEUR_CHAUSSEE / 2), branche.point(distance, -LARGEUR_CHAUSSEE / 2), crayon
-        )
+        demi_largeur = branche.demi_largeur
+        self.__ajouter_ligne(branche.point(distance, demi_largeur), branche.point(distance, -demi_largeur), crayon)
 
     def __dessiner_densite(self, branche: Branche) -> None:
         """Pose la bande de densité, côté entrée, et l'étiquette de la branche, côté sortie."""
-        rayon = self.__rond_point.rayon
-        decalage = (LARGEUR_CHAUSSEE + LARGEUR_BANDE_DENSITE) / 2
+        bord = self.__rond_point.rayon_bord
+        extremite = bord + self.__rond_point.longueur_branche
+        decalage = branche.demi_largeur + LARGEUR_BANDE_DENSITE / 2
         crayon = QPen(COULEURS_DENSITE[NiveauDensite.FAIBLE], LARGEUR_BANDE_DENSITE)
         crayon.setCapStyle(Qt.PenCapStyle.FlatCap)
         self.__bandes_densite[branche.nom] = self.__ajouter_ligne(
-            branche.point(rayon + LARGEUR_CHAUSSEE / 2, decalage), branche.point(rayon + LONGUEUR_BRANCHE, decalage), crayon
+            branche.point(bord, decalage), branche.point(extremite, decalage), crayon
         )
         texte = self.addText("")
         police = QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont)
@@ -279,20 +277,19 @@ class SceneRondPoint(QGraphicsScene):
         texte.document().setDefaultTextOption(QTextOption(Qt.AlignmentFlag.AlignHCenter))
         # L'étiquette garde la même taille à l'écran, quel que soit le zoom de la vue.
         texte.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
-        ancrage = branche.point(rayon + LONGUEUR_BRANCHE - RECUL_ETIQUETTE, -(LARGEUR_CHAUSSEE / 2 + ECART_ETIQUETTE))
+        ancrage = branche.point(extremite - RECUL_ETIQUETTE, -(branche.demi_largeur + ECART_ETIQUETTE))
         texte.setPos(self.vers_scene(ancrage))
         self.__textes_densite[branche.nom] = texte
         self.__ecrire(texte, branche.nom, branche)
 
     def __dessiner_feu_entree(self, branche: Branche) -> None:
-        """Pose, caché, le feu de l'entrée : au bord de la voie d'entrée, à hauteur de la ligne."""
-        ligne = self.__rond_point.rayon + LARGEUR_CHAUSSEE / 2
-        decalage = LARGEUR_CHAUSSEE / 2 + LARGEUR_BANDE_DENSITE + ECART_FEU_ENTREE + COTE_FEU_ENTREE / 2
+        """Pose, caché, le feu de l'entrée : au bord de la chaussée d'entrée, à hauteur de la ligne."""
+        decalage = branche.demi_largeur + LARGEUR_BANDE_DENSITE + ECART_FEU_ENTREE + COTE_FEU_ENTREE / 2
         feu = self.addRect(
             -COTE_FEU_ENTREE / 2, -COTE_FEU_ENTREE / 2, COTE_FEU_ENTREE, COTE_FEU_ENTREE,
             QPen(COULEUR_CONTOUR_USAGER, EPAISSEUR_CONTOUR_USAGER), QBrush(COULEUR_FEU_ENTREE),
         )
-        feu.setPos(self.vers_scene(branche.point(ligne, decalage)))
+        feu.setPos(self.vers_scene(branche.point(self.__rond_point.rayon_bord, decalage)))
         feu.setZValue(PLAN_MARQUE)
         feu.setVisible(False)
         self.__feux_entree[branche.nom] = feu
@@ -302,10 +299,9 @@ class SceneRondPoint(QGraphicsScene):
         rayon = self.__rond_point.rayon
         cadre = QRectF(-rayon, -rayon, 2 * rayon, 2 * rayon)
         # Les angles de Qt tournent comme ceux du rond-point, dans le sens de circulation.
-        ouverture = (segment.arrivee.angle - segment.depart.angle) % TOUR_COMPLET
         chemin = QPainterPath()
         chemin.arcMoveTo(cadre, segment.depart.angle)
-        chemin.arcTo(cadre, segment.depart.angle, ouverture)
+        chemin.arcTo(cadre, segment.depart.angle, segment.ouverture)
         crayon = QPen(COULEUR_RESERVE, LARGEUR_RESERVE)
         crayon.setCapStyle(Qt.PenCapStyle.FlatCap)
         arc = self.addPath(chemin, crayon)

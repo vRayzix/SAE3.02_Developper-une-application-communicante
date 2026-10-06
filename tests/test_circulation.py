@@ -3,18 +3,20 @@
 import math
 
 import pytest
-from geometrie import rond_point_bel_air
+from geometrie import ALBERT_CAMUS, JEAN_DE_LA_BRUYERE, NATIONS_NORD, NATIONS_SUD, rond_point_bel_air
 
 from cherrypie.client.deplacement import Deplacement
 from cherrypie.commun.protocole import CodeNotification
 from cherrypie.modele.rond_point import RondPoint
-from cherrypie.modele.trajectoire import DISTANCE_PASSAGE_PIETON, LONGUEUR_BRANCHE, LONGUEUR_TROTTOIR
+from cherrypie.modele.trajectoire import LONGUEUR_TROTTOIR, Trajectoire
 from cherrypie.modele.usager import Pieton, Usager, Voiture
 from cherrypie.serveur.circulation import Circulation, Vue
 from cherrypie.serveur.registre import Registre
 
-RAYON = 20.0
-QUART = 2 * math.pi * RAYON / 4
+LONGUEUR_BRANCHE = rond_point_bel_air().longueur_branche
+# Pas utilisé pour chercher sur une trajectoire l'avancement d'un point donné, en mètres.
+PAS_DE_RECHERCHE = 0.05
+PART_MIN_DU_CHEMIN = 0.9
 
 
 @pytest.fixture
@@ -46,97 +48,159 @@ def voir(rond_point: RondPoint, registre: Registre) -> dict[str, Vue]:
     return Circulation(rond_point).voir(registre)
 
 
+def milieu_de_voie(rond_point: RondPoint, usager: Usager, segment: str) -> float:
+    """Avancement au milieu du morceau de voie qu'un usager suit sur un segment."""
+    avancement = 0.0
+    for troncon in usager.calculer_trajectoire(rond_point).troncons:
+        if troncon.segment is not None and troncon.segment.nom == segment and troncon.rayon_debut == troncon.rayon_fin:
+            return avancement + troncon.longueur / 2
+        avancement += troncon.longueur
+    raise AssertionError(f"pas de voie suivie sur {segment}")
+
+
+def debut_de_sortie(rond_point: RondPoint, usager: Usager) -> float:
+    """Avancement où l'usager quitte l'anneau pour sa chaussée de sortie."""
+    return usager.calculer_trajectoire(rond_point).longueur - rond_point.longueur_branche
+
+
+def avancement_a_l_angle(trajectoire: Trajectoire, angle: float) -> float:
+    """Premier avancement sur l'anneau où la position vue du centre atteint un angle, en degrés."""
+    avancement = trajectoire.longueur_approche
+    precedent = None
+    while avancement <= trajectoire.longueur:
+        position = trajectoire.position_a(avancement)
+        courant = math.degrees(math.atan2(position.y, position.x)) % 360
+        if precedent is not None and (angle - precedent) % 360 <= (courant - precedent) % 360:
+            return avancement
+        precedent, avancement = courant, avancement + PAS_DE_RECHERCHE
+    raise AssertionError(f"angle {angle} jamais atteint")
+
+
 # ---------- File sur une branche ----------
 
 def test_voie_libre_sans_personne_devant(rond_point: RondPoint, registre: Registre, placer) -> None:
-    placer(Voiture("voiture_1", "nations_nord", "nations_sud"), 10.0)
+    placer(Voiture("voiture_1", NATIONS_NORD, NATIONS_SUD), 10.0)
     assert voir(rond_point, registre) == {"voiture_1": Vue(None, False)}
 
 
 def test_vehicule_voit_celui_qui_le_precede(rond_point: RondPoint, registre: Registre, placer) -> None:
-    placer(Voiture("voiture_1", "nations_nord", "nations_sud"), 30.0)
-    placer(Voiture("voiture_2", "nations_nord", "nations_sud"), 20.0)
+    placer(Voiture("voiture_1", NATIONS_NORD, NATIONS_SUD), 30.0)
+    placer(Voiture("voiture_2", NATIONS_NORD, NATIONS_SUD), 20.0)
     vues = voir(rond_point, registre)
     assert vues["voiture_2"].distance == pytest.approx(10.0)
     assert vues["voiture_1"].distance is None
 
 
 def test_au_meme_point_le_premier_arrive_passe_devant(rond_point: RondPoint, registre: Registre, placer) -> None:
-    placer(Voiture("voiture_1", "nations_nord", "nations_sud"), 0.0)
-    placer(Voiture("voiture_2", "nations_nord", "nations_sud"), 0.0)
+    placer(Voiture("voiture_1", NATIONS_NORD, NATIONS_SUD), 0.0)
+    placer(Voiture("voiture_2", NATIONS_NORD, NATIONS_SUD), 0.0)
     vues = voir(rond_point, registre)
     assert vues["voiture_2"].distance == pytest.approx(0.0)
     assert vues["voiture_1"].distance is None
 
 
 def test_vehicule_range_sur_le_cote_ne_gene_pas(rond_point: RondPoint, registre: Registre, placer) -> None:
-    placer(Voiture("voiture_1", "nations_nord", "nations_sud"), 30.0, CodeNotification.CHANGEZ_VOIE)
-    placer(Voiture("voiture_2", "nations_nord", "nations_sud"), 20.0)
+    placer(Voiture("voiture_1", NATIONS_NORD, NATIONS_SUD), 30.0, CodeNotification.CHANGEZ_VOIE)
+    placer(Voiture("voiture_2", NATIONS_NORD, NATIONS_SUD), 20.0)
     assert voir(rond_point, registre)["voiture_2"].distance is None
 
 
 def test_vehicules_ranges_font_la_file_entre_eux(rond_point: RondPoint, registre: Registre, placer) -> None:
-    placer(Voiture("voiture_1", "nations_nord", "nations_sud"), 30.0, CodeNotification.CHANGEZ_VOIE)
-    placer(Voiture("voiture_2", "nations_nord", "nations_sud"), 20.0, CodeNotification.CHANGEZ_VOIE)
+    placer(Voiture("voiture_1", NATIONS_NORD, NATIONS_SUD), 30.0, CodeNotification.CHANGEZ_VOIE)
+    placer(Voiture("voiture_2", NATIONS_NORD, NATIONS_SUD), 20.0, CodeNotification.CHANGEZ_VOIE)
     assert voir(rond_point, registre)["voiture_2"].distance == pytest.approx(10.0)
 
 
 def test_vehicule_en_sortie_voit_celui_qui_le_precede(rond_point: RondPoint, registre: Registre, placer) -> None:
-    sortie = LONGUEUR_BRANCHE + 2 * QUART
-    placer(Voiture("voiture_1", "nations_sud", "nations_nord"), sortie + 25.0)
-    placer(Voiture("voiture_2", "nations_sud", "nations_nord"), sortie + 12.0)
+    premiere = Voiture("voiture_1", NATIONS_SUD, NATIONS_NORD)
+    sortie = debut_de_sortie(rond_point, premiere)
+    placer(premiere, sortie + 25.0)
+    placer(Voiture("voiture_2", NATIONS_SUD, NATIONS_NORD), sortie + 12.0)
     assert voir(rond_point, registre)["voiture_2"].distance == pytest.approx(13.0)
 
 
 # ---------- Sur l'anneau ----------
 
 def test_vehicule_sur_l_anneau_voit_celui_de_devant(rond_point: RondPoint, registre: Registre, placer) -> None:
-    placer(Voiture("voiture_1", "nations_sud", "nations_nord"), LONGUEUR_BRANCHE + 20.0)
-    placer(Voiture("voiture_2", "nations_sud", "nations_nord"), LONGUEUR_BRANCHE + 5.0)
-    assert voir(rond_point, registre)["voiture_2"].distance == pytest.approx(15.0)
+    segment = f"{NATIONS_SUD}-{JEAN_DE_LA_BRUYERE}"
+    milieu = milieu_de_voie(rond_point, Voiture("voiture_0", NATIONS_SUD, NATIONS_NORD), segment)
+    placer(Voiture("voiture_1", NATIONS_SUD, NATIONS_NORD), milieu + 5.0)
+    placer(Voiture("voiture_2", NATIONS_SUD, NATIONS_NORD), milieu - 5.0)
+    assert voir(rond_point, registre)["voiture_2"].distance == pytest.approx(10.0)
+
+
+def test_vehicule_sur_l_autre_voie_ne_gene_pas(rond_point: RondPoint, registre: Registre, placer) -> None:
+    # Sur ce segment, la voiture 1 sort à la sortie suivante (voie extérieure), la voiture 2 va plus loin (intérieure).
+    segment = f"{NATIONS_NORD}-{ALBERT_CAMUS}"
+    exterieure = Voiture("voiture_1", NATIONS_NORD, ALBERT_CAMUS)
+    interieure = Voiture("voiture_2", JEAN_DE_LA_BRUYERE, NATIONS_SUD)
+    placer(exterieure, milieu_de_voie(rond_point, exterieure, segment))
+    placer(interieure, milieu_de_voie(rond_point, interieure, segment) - 10.0)
+    assert voir(rond_point, registre)["voiture_2"].distance is None
+
+
+def test_vehicule_degage_passe_sur_la_voie_exterieure(rond_point: RondPoint, registre: Registre, placer) -> None:
+    segment = f"{NATIONS_SUD}-{JEAN_DE_LA_BRUYERE}"
+    milieu = milieu_de_voie(rond_point, Voiture("voiture_0", NATIONS_SUD, NATIONS_NORD), segment)
+    placer(Voiture("voiture_1", NATIONS_SUD, NATIONS_NORD), milieu + 5.0, CodeNotification.DEGAGEZ)
+    placer(Voiture("voiture_2", NATIONS_SUD, NATIONS_NORD), milieu - 5.0)
+    assert voir(rond_point, registre)["voiture_2"].distance is None
 
 
 def test_vehicule_au_dela_de_sa_sortie_ignore(rond_point: RondPoint, registre: Registre, placer) -> None:
-    # La voiture 1 sort à O ; la voiture 2 est déjà plus loin sur l'anneau, entre O et S.
-    placer(Voiture("voiture_1", "nations_nord", "albert_camus"), LONGUEUR_BRANCHE + 5.0)
-    placer(Voiture("voiture_2", "jean_de_la_bruyere", "nations_sud"), LONGUEUR_BRANCHE + 2 * QUART + 10.0)
+    # La voiture 1 sort rue Albert Camus ; la voiture 2 roule déjà plus loin, sur la même voie extérieure.
+    premiere = Voiture("voiture_1", NATIONS_NORD, ALBERT_CAMUS)
+    seconde = Voiture("voiture_2", JEAN_DE_LA_BRUYERE, NATIONS_SUD)
+    placer(premiere, LONGUEUR_BRANCHE + 5.0)
+    placer(seconde, milieu_de_voie(rond_point, seconde, f"{ALBERT_CAMUS}-{NATIONS_SUD}"))
     assert voir(rond_point, registre)["voiture_1"].distance is None
 
 
 def test_vehicule_sur_sa_branche_de_sortie_vu_depuis_l_anneau(
     rond_point: RondPoint, registre: Registre, placer
 ) -> None:
-    placer(Voiture("voiture_1", "nations_sud", "nations_nord"), LONGUEUR_BRANCHE + 2 * QUART + 6.0)
-    placer(Voiture("voiture_2", "jean_de_la_bruyere", "nations_nord"), LONGUEUR_BRANCHE + QUART - 4.0)
-    assert voir(rond_point, registre)["voiture_2"].distance == pytest.approx(10.0)
+    devant = Voiture("voiture_1", NATIONS_SUD, NATIONS_NORD)
+    derriere = Voiture("voiture_2", JEAN_DE_LA_BRUYERE, NATIONS_NORD)
+    placer(devant, debut_de_sortie(rond_point, devant) + 6.0)
+    avancement = milieu_de_voie(rond_point, derriere, f"{JEAN_DE_LA_BRUYERE}-{NATIONS_NORD}")
+    placer(derriere, avancement)
+    chemin_restant = debut_de_sortie(rond_point, derriere) + 6.0 - avancement
+    # Le serveur mesure le reste de l'anneau à la distance au centre du suiveur : il compte un
+    # peu court, ce qui garde le suiveur un peu plus loin que la distance de sécurité.
+    distance = voir(rond_point, registre)["voiture_2"].distance
+    assert PART_MIN_DU_CHEMIN * chemin_restant <= distance <= chemin_restant
 
 
 def test_obstacle_hors_de_portee_ignore(rond_point: RondPoint, registre: Registre, placer) -> None:
-    placer(Voiture("voiture_1", "nations_nord", "jean_de_la_bruyere"), LONGUEUR_BRANCHE + 60.0)
-    placer(Voiture("voiture_2", "nations_nord", "jean_de_la_bruyere"), LONGUEUR_BRANCHE)
+    placer(Voiture("voiture_1", NATIONS_NORD, JEAN_DE_LA_BRUYERE), LONGUEUR_BRANCHE + 80.0)
+    placer(Voiture("voiture_2", NATIONS_NORD, JEAN_DE_LA_BRUYERE), LONGUEUR_BRANCHE + 1.0)
     assert voir(rond_point, registre)["voiture_2"].distance is None
 
 
 # ---------- Cédez-le-passage ----------
 
 @pytest.mark.parametrize(
-    ("avancement_sur_l_anneau", "doit_ceder"),
-    [(QUART - 5.0, True), (QUART - 30.0, False), (QUART + 5.0, True), (QUART + 20.0, False)],
-    ids=["5-m-en-amont", "30-m-en-amont", "5-m-en-aval", "20-m-en-aval"],
+    ("ecart_au_point_d_entree", "doit_ceder"),
+    [(-5.0, True), (-25.0, False), (5.0, True), (20.0, False)],
+    ids=["5-m-en-amont", "25-m-en-amont", "5-m-en-aval", "20-m-en-aval"],
 )
+@pytest.mark.parametrize("consigne", [None, CodeNotification.DEGAGEZ], ids=["voie-interieure", "voie-exterieure"])
 def test_entree_retenue_si_l_anneau_est_occupe_pres_du_point_d_entree(
-    rond_point: RondPoint, registre: Registre, placer, avancement_sur_l_anneau: float, doit_ceder: bool
+    rond_point: RondPoint,
+    registre: Registre,
+    placer,
+    ecart_au_point_d_entree: float,
+    doit_ceder: bool,
+    consigne: CodeNotification | None,
 ) -> None:
-    # La voiture 1 vient de E et passe devant l'entrée N, un quart de tour plus loin.
-    placer(Voiture("voiture_1", "jean_de_la_bruyere", "nations_sud"), LONGUEUR_BRANCHE + avancement_sur_l_anneau)
-    placer(Voiture("voiture_2", "nations_nord", "nations_sud"), 40.0)
+    # La voiture 1 vient de la rue Jean de la Bruyère et passe devant l'entrée du boulevard, côté nord.
+    nord = rond_point.branche(NATIONS_NORD)
+    point_d_entree = nord.angle + rond_point.ecart_raccord(nord)
+    angle = point_d_entree + math.degrees(ecart_au_point_d_entree / rond_point.rayon)
+    passante = Voiture("voiture_1", JEAN_DE_LA_BRUYERE, NATIONS_SUD)
+    placer(passante, avancement_a_l_angle(passante.calculer_trajectoire(rond_point), angle), consigne)
+    placer(Voiture("voiture_2", NATIONS_NORD, NATIONS_SUD), 40.0)
     assert voir(rond_point, registre)["voiture_2"].ceder is doit_ceder
-
-
-def test_vehicule_range_sur_l_anneau_laisse_entrer(rond_point: RondPoint, registre: Registre, placer) -> None:
-    placer(Voiture("voiture_1", "jean_de_la_bruyere", "nations_sud"), LONGUEUR_BRANCHE + QUART - 5.0, CodeNotification.DEGAGEZ)
-    placer(Voiture("voiture_2", "nations_nord", "nations_sud"), 40.0)
-    assert voir(rond_point, registre)["voiture_2"].ceder is False
 
 
 # ---------- Passage piéton ----------
@@ -144,25 +208,33 @@ def test_vehicule_range_sur_l_anneau_laisse_entrer(rond_point: RondPoint, regist
 def test_pieton_qui_traverse_bloque_la_branche_avant_le_passage(
     rond_point: RondPoint, registre: Registre, placer
 ) -> None:
-    placer(Pieton("pieton_1", "nations_nord", "nations_nord"), LONGUEUR_TROTTOIR + 2.0)
-    placer(Voiture("voiture_1", "nations_nord", "nations_sud"), 10.0)
-    distance_au_passage = LONGUEUR_BRANCHE - 10.0 - DISTANCE_PASSAGE_PIETON
+    placer(Pieton("pieton_1", NATIONS_NORD, NATIONS_NORD), LONGUEUR_TROTTOIR + 2.0)
+    placer(Voiture("voiture_1", NATIONS_NORD, NATIONS_SUD), 10.0)
+    distance_au_passage = LONGUEUR_BRANCHE - 10.0 - rond_point.branche(NATIONS_NORD).passage_pieton
+    assert voir(rond_point, registre)["voiture_1"].distance == pytest.approx(distance_au_passage)
+
+
+def test_pieton_qui_traverse_bloque_aussi_la_sortie(rond_point: RondPoint, registre: Registre, placer) -> None:
+    placer(Pieton("pieton_1", NATIONS_NORD, NATIONS_NORD), LONGUEUR_TROTTOIR + 2.0)
+    sortante = Voiture("voiture_1", NATIONS_SUD, NATIONS_NORD)
+    placer(sortante, debut_de_sortie(rond_point, sortante) + 2.0)
+    distance_au_passage = rond_point.branche(NATIONS_NORD).passage_pieton - 2.0
     assert voir(rond_point, registre)["voiture_1"].distance == pytest.approx(distance_au_passage)
 
 
 def test_pieton_qui_attend_ne_bloque_pas(rond_point: RondPoint, registre: Registre, placer) -> None:
-    placer(Pieton("pieton_1", "nations_nord", "nations_nord"), 1.0)
-    placer(Voiture("voiture_1", "nations_nord", "nations_sud"), 10.0)
+    placer(Pieton("pieton_1", NATIONS_NORD, NATIONS_NORD), 1.0)
+    placer(Voiture("voiture_1", NATIONS_NORD, NATIONS_SUD), 10.0)
     assert voir(rond_point, registre)["voiture_1"].distance is None
 
 
 def test_vehicule_deja_passe_ne_voit_plus_le_pieton(rond_point: RondPoint, registre: Registre, placer) -> None:
-    placer(Pieton("pieton_1", "nations_nord", "nations_nord"), LONGUEUR_TROTTOIR + 2.0)
-    placer(Voiture("voiture_1", "nations_nord", "nations_sud"), LONGUEUR_BRANCHE - 2.0)
+    placer(Pieton("pieton_1", NATIONS_NORD, NATIONS_NORD), LONGUEUR_TROTTOIR + 2.0)
+    placer(Voiture("voiture_1", NATIONS_NORD, NATIONS_SUD), LONGUEUR_BRANCHE - 2.0)
     assert voir(rond_point, registre)["voiture_1"].distance is None
 
 
 def test_pieton_et_usager_sans_position_n_ont_pas_de_vue(rond_point: RondPoint, registre: Registre, placer) -> None:
-    placer(Pieton("pieton_1", "nations_nord", "nations_nord"), 1.0)
-    registre.ajouter(Voiture("voiture_1", "nations_nord", "nations_sud"))
+    placer(Pieton("pieton_1", NATIONS_NORD, NATIONS_NORD), 1.0)
+    registre.ajouter(Voiture("voiture_1", NATIONS_NORD, NATIONS_SUD))
     assert voir(rond_point, registre) == {}

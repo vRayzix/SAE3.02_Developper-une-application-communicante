@@ -15,7 +15,6 @@ from cherrypie.ihm.style import (
 )
 from cherrypie.modele.position import Position
 from cherrypie.modele.rond_point import RondPoint
-from cherrypie.modele.trajectoire import LONGUEUR_BRANCHE
 from cherrypie.modele.usager import KMH, Usager, VehiculePrioritaire, Voiture
 from cherrypie.serveur.densite import NiveauDensite
 
@@ -36,7 +35,7 @@ def test_vers_scene_inverse_les_ordonnees() -> None:
 
 
 def test_scene_englobe_les_branches_et_la_marge(scene: SceneRondPoint) -> None:
-    demi_cote = RAYON + LONGUEUR_BRANCHE + MARGE_SCENE
+    demi_cote = scene.rond_point.rayon_bord + scene.rond_point.longueur_branche + MARGE_SCENE
     cadre = scene.sceneRect()
     assert (cadre.left(), cadre.top(), cadre.width()) == pytest.approx((-demi_cote, -demi_cote, 2 * demi_cote))
 

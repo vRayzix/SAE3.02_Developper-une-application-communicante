@@ -1,6 +1,5 @@
 """Tests du client usager face à un vrai serveur, sur 127.0.0.1."""
 
-import math
 import os
 import socket
 import subprocess
@@ -18,7 +17,6 @@ from cherrypie.commun.config import Configuration
 from cherrypie.commun.protocole import CodeNotification, Enveloppe, Message, TypeMessage
 from cherrypie.commun.securite import Signataire
 from cherrypie.commun.trame import DecoupeurTrames
-from cherrypie.modele.trajectoire import LONGUEUR_BRANCHE
 from cherrypie.modele.usager import FACTEUR_RALENTISSEMENT, VehiculePrioritaire, Voiture
 from cherrypie.serveur.serveur import Serveur
 
@@ -307,7 +305,7 @@ def test_attendez_arrete_sur_la_ligne_jusqu_a_ok_passer(
     faux_serveur: FauxServeur, preparer_client: Callable[..., ClientUsager]
 ) -> None:
     client = preparer_client(faux_serveur.config)
-    ligne = client.deplacement.trajectoire.ligne_entree
+    ligne = client.deplacement.trajectoire.longueur_approche
     # Placé à deux mètres de la ligne d'entrée, l'usager l'atteint en quelques pas.
     client.deplacement.avancer((ligne - 2.0) / Voiture.VITESSE_MAX)
     client.start()
@@ -380,7 +378,7 @@ def test_vp_s_annonce_des_son_inscription(faux_serveur: FauxServeur, preparer_cl
     faux_serveur.accepter()
     faux_serveur.envoyer(accuse_d_inscription())
     annonce = faux_serveur.recevoir(TypeMessage.VP_ALERT)
-    eta = LONGUEUR_BRANCHE / VehiculePrioritaire.VITESSE_MAX
+    eta = client.deplacement.trajectoire.longueur_approche / VehiculePrioritaire.VITESSE_MAX
     assert annonce.donnees == {"entree": "nations_sud", "sortie": "nations_nord", "eta": pytest.approx(eta)}
 
 
@@ -396,8 +394,9 @@ def test_traversee_d_un_vp_mesuree_par_le_serveur(
     attendre(lambda: serveur.logique.vp_actif)
     attendre(lambda: len(serveur.logique.passages) == 1)
     (mesure,) = serveur.logique.passages
-    quart_d_anneau = 2 * math.pi * 5 / 4
-    assert mesure.duree_anneau == pytest.approx(quart_d_anneau / VehiculePrioritaire.VITESSE_MAX, abs=0.15)
+    trajectoire = client.deplacement.trajectoire
+    sur_l_anneau = trajectoire.longueur - trajectoire.longueur_approche - serveur.config.longueur_branche
+    assert mesure.duree_anneau == pytest.approx(sur_l_anneau / VehiculePrioritaire.VITESSE_MAX, abs=0.15)
     assert mesure.duree >= mesure.duree_anneau
     assert (mesure.identifiant, mesure.entree, mesure.sortie, mesure.regulation) == ("vp_1", "nations_sud", "jean_de_la_bruyere", True)
     assert not serveur.logique.vp_actif
@@ -428,7 +427,7 @@ def test_cedez_le_passage_arrete_sur_la_ligne(
     faux_serveur: FauxServeur, preparer_client: Callable[..., ClientUsager]
 ) -> None:
     client = preparer_client(faux_serveur.config)
-    ligne = client.deplacement.trajectoire.ligne_entree
+    ligne = client.deplacement.trajectoire.longueur_approche
     client.deplacement.avancer((ligne - 2.0) / Voiture.VITESSE_MAX)
     client.start()
     faux_serveur.accepter()

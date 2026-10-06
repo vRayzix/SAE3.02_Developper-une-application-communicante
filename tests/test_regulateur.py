@@ -1,14 +1,12 @@
 """Tests du régulateur : qui reçoit quelle consigne."""
 
-import math
-
 import pytest
 from geometrie import rond_point_bel_air
 
 from cherrypie.client.deplacement import Deplacement
 from cherrypie.commun.protocole import CodeNotification
 from cherrypie.modele.rond_point import RondPoint
-from cherrypie.modele.trajectoire import LONGUEUR_BRANCHE, LONGUEUR_TROTTOIR
+from cherrypie.modele.trajectoire import LONGUEUR_TROTTOIR, Trajectoire
 from cherrypie.modele.usager import Pieton, Usager, VehiculePrioritaire, Voiture
 from cherrypie.serveur.notifications import (
     TEXTE_ATTENDEZ_DOSAGE,
@@ -20,9 +18,8 @@ from cherrypie.serveur.passages import PassageEnCours
 from cherrypie.serveur.registre import Registre
 from cherrypie.serveur.regulateur import Regulateur
 
-RAYON = 20.0
-QUART = 2 * math.pi * RAYON / 4
-ANNEAU = LONGUEUR_BRANCHE
+# Avancement de la ligne d'entrée : au-delà, l'usager est sur l'anneau.
+ANNEAU = rond_point_bel_air().longueur_branche
 SANS_CHARGE = {"nations_nord": 0.0, "jean_de_la_bruyere": 0.0, "nations_sud": 0.0, "albert_camus": 0.0}
 
 ATTENDEZ = CodeNotification.ATTENDEZ
@@ -44,6 +41,16 @@ def registre() -> Registre:
 @pytest.fixture
 def regulateur(rond_point: RondPoint) -> Regulateur:
     return Regulateur(rond_point)
+
+
+def debut_du_segment(trajectoire: Trajectoire, segment: str) -> float:
+    """Avancement où une trajectoire entre sur un segment de l'anneau."""
+    avancement = 0.0
+    for troncon in trajectoire.troncons:
+        if troncon.segment is not None and troncon.segment.nom == segment:
+            return avancement
+        avancement += troncon.longueur
+    raise AssertionError(f"segment {segment} absent du trajet")
 
 
 @pytest.fixture
@@ -144,7 +151,8 @@ def test_pieton_attend_pour_traverser(
 def test_segment_deja_quitte_par_le_vp_libere(
     rond_point: RondPoint, regulateur: Regulateur, registre: Registre, placer
 ) -> None:
-    vp = placer(VehiculePrioritaire("vp_1", "nations_sud", "nations_nord"), ANNEAU + QUART + 5.0)
+    vp = VehiculePrioritaire("vp_1", "nations_sud", "nations_nord")
+    placer(vp, debut_du_segment(vp.calculer_trajectoire(rond_point), "jean_de_la_bruyere-nations_nord") + 5.0)
     passage = PassageEnCours("vp_1", "nations_sud", "nations_nord", ["nations_sud-jean_de_la_bruyere", "jean_de_la_bruyere-nations_nord"], annonce=0.0, regulation=True)
     placer(Voiture("voiture_1", "nations_sud", "jean_de_la_bruyere"), ANNEAU + 2.0)
     placer(Voiture("voiture_2", "nations_sud", "albert_camus"), 20.0)

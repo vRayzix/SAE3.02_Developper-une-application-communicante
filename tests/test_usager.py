@@ -10,7 +10,6 @@ from cherrypie.modele.rond_point import RondPoint
 from cherrypie.modele.trajectoire import Etape
 from cherrypie.modele.usager import (
     CLASSES_PAR_CATEGORIE,
-    DECALAGE_DEGAGEMENT,
     FACTEUR_RALENTISSEMENT,
     Moto,
     Pieton,
@@ -80,23 +79,23 @@ def test_nouvel_usager_en_approche(voiture: Voiture) -> None:
 
 # ---------- Consignes ----------
 
-def test_degagez_ralentit_et_decale(voiture: Voiture) -> None:
+def test_degagez_ralentit_et_range(voiture: Voiture) -> None:
     assert voiture.reagir(CodeNotification.DEGAGEZ)
     assert voiture.vitesse_autorisee() == pytest.approx(Voiture.VITESSE_MAX * FACTEUR_RALENTISSEMENT)
-    assert voiture.decalage_lateral() == pytest.approx(DECALAGE_DEGAGEMENT)
+    assert voiture.se_range()
 
 
-def test_changez_voie_decale_sans_ralentir(voiture: Voiture) -> None:
+def test_changez_voie_range_sans_ralentir(voiture: Voiture) -> None:
     assert voiture.reagir(CodeNotification.CHANGEZ_VOIE)
     assert voiture.vitesse_autorisee() == pytest.approx(Voiture.VITESSE_MAX)
-    assert voiture.decalage_lateral() == pytest.approx(DECALAGE_DEGAGEMENT)
+    assert voiture.se_range()
 
 
 def test_attendez_ne_ralentit_pas_avant_la_ligne(voiture: Voiture) -> None:
     assert voiture.reagir(CodeNotification.ATTENDEZ)
     assert voiture.consigne is CodeNotification.ATTENDEZ
     assert voiture.vitesse_autorisee() == pytest.approx(Voiture.VITESSE_MAX)
-    assert voiture.decalage_lateral() == 0.0
+    assert not voiture.se_range()
 
 
 def test_ok_passer_leve_la_consigne(voiture: Voiture) -> None:
@@ -104,7 +103,7 @@ def test_ok_passer_leve_la_consigne(voiture: Voiture) -> None:
     assert voiture.reagir(CodeNotification.OK_PASSER)
     assert voiture.consigne is None
     assert voiture.vitesse_autorisee() == pytest.approx(Voiture.VITESSE_MAX)
-    assert voiture.decalage_lateral() == 0.0
+    assert not voiture.se_range()
 
 
 def test_nouvelle_consigne_remplace_la_precedente(voiture: Voiture) -> None:
@@ -124,7 +123,7 @@ def test_vehicule_prioritaire_ignore_toutes_les_consignes(code: CodeNotification
 def test_pieton_ignore_les_consignes_de_circulation(pieton: Pieton, code: CodeNotification) -> None:
     assert not pieton.reagir(code)
     assert pieton.consigne is None
-    assert pieton.decalage_lateral() == 0.0
+    assert not pieton.se_range()
 
 
 def test_pieton_attend_pour_traverser(pieton: Pieton) -> None:
@@ -237,7 +236,24 @@ def rond_point() -> RondPoint:
 @pytest.mark.parametrize("classe", [Voiture, Moto, Trottinette, VehiculePrioritaire])
 def test_vehicule_passe_par_l_anneau(rond_point: RondPoint, classe: type) -> None:
     trajectoire = classe(f"{classe.CATEGORIE}_1", "nations_sud", "nations_nord").calculer_trajectoire(rond_point)
-    assert [segment.nom for segment in trajectoire.segments] == ["nations_sud-jean_de_la_bruyere", "jean_de_la_bruyere-nations_nord"]
+    noms = [segment.nom for segment in trajectoire.segments]
+    assert noms == ["nations_sud-jean_de_la_bruyere", "jean_de_la_bruyere-nations_nord"]
+
+
+@pytest.mark.parametrize(
+    ("classe", "voie_du_dernier_segment"),
+    [(VehiculePrioritaire, "rayon_voie_interieure"), (Voiture, "rayon_voie_exterieure")],
+    ids=["vp", "voiture"],
+)
+def test_voie_suivie_sur_le_dernier_segment(rond_point: RondPoint, classe: type, voie_du_dernier_segment: str) -> None:
+    trajectoire = classe(f"{classe.CATEGORIE}_1", "nations_sud", "nations_nord").calculer_trajectoire(rond_point)
+    dernier = trajectoire.segments[-1]
+    rayons = [
+        troncon.rayon_debut
+        for troncon in trajectoire.troncons
+        if troncon.segment is dernier and troncon.rayon_debut == troncon.rayon_fin
+    ]
+    assert rayons == [pytest.approx(getattr(rond_point, voie_du_dernier_segment))]
 
 
 def test_pieton_traverse_sa_branche_sans_prendre_l_anneau(rond_point: RondPoint, pieton: Pieton) -> None:

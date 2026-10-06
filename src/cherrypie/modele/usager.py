@@ -11,8 +11,6 @@ from cherrypie.modele.trajectoire import Etape, Trajectoire
 KMH = 1 / 3.6
 # Part de sa vitesse maximale que garde un usager qui dégage la voie.
 FACTEUR_RALENTISSEMENT = 0.5
-# Écart pris sur la droite de sa voie pour laisser passer un véhicule prioritaire, en mètres.
-DECALAGE_DEGAGEMENT = 2.0
 CHAMPS_OBLIGATOIRES = {"id", "categorie", "entree", "sortie"}
 
 
@@ -216,15 +214,16 @@ class Usager:
             return self.VITESSE_MAX * FACTEUR_RALENTISSEMENT
         return self.VITESSE_MAX
 
-    def decalage_lateral(self) -> float:
-        """Donne l'écart à prendre sur la droite de sa voie.
+    def se_range(self) -> bool:
+        """Indique si l'usager doit se ranger sur sa droite pour laisser passer un véhicule prioritaire.
+
+        La place dont il dispose dépend de l'endroit où il se trouve : le bord de sa
+        chaussée sur une branche, la voie extérieure sur l'anneau.
 
         Returns:
-            float: écart en mètres, non nul pendant un DEGAGEZ ou un CHANGEZ_VOIE.
+            bool: True pendant un DEGAGEZ ou un CHANGEZ_VOIE.
         """
-        if self.__consigne in (CodeNotification.DEGAGEZ, CodeNotification.CHANGEZ_VOIE):
-            return DECALAGE_DEGAGEMENT
-        return 0.0
+        return self.__consigne in (CodeNotification.DEGAGEZ, CodeNotification.CHANGEZ_VOIE)
 
     def calculer_trajectoire(self, rond_point: RondPoint) -> Trajectoire:
         """Calcule le chemin de l'usager : approche, anneau, puis sortie.
@@ -335,6 +334,20 @@ class VehiculePrioritaire(Usager):
     CATEGORIE = "vp"
     VITESSE_MAX = 40 * KMH
     CONSIGNES_SUIVIES = frozenset()
+
+    def calculer_trajectoire(self, rond_point: RondPoint) -> Trajectoire:
+        """Calcule le chemin du VP, qui reste sur la voie intérieure de l'anneau de bout en bout.
+
+        Args:
+            rond_point (RondPoint): rond-point traversé.
+
+        Returns:
+            Trajectoire: la trajectoire du VP.
+
+        Raises:
+            BrancheInconnueError: si sa branche d'entrée ou de sortie n'existe pas.
+        """
+        return Trajectoire.pour_vehicule(rond_point, self.branche_entree, self.branche_sortie, prioritaire=True)
 
 
 CLASSES_PAR_CATEGORIE = {

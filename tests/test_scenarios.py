@@ -9,12 +9,12 @@ from simulation import Simulation
 
 from cherrypie.client.deplacement import DISTANCE_SECURITE
 from cherrypie.commun.protocole import CodeNotification
-from cherrypie.modele.trajectoire import LONGUEUR_BRANCHE, Etape
+from cherrypie.modele.trajectoire import Etape
 from cherrypie.modele.usager import Moto, Pieton, Trottinette, VehiculePrioritaire, Voiture
 from cherrypie.serveur.passages import PassageVp
 
 BRANCHES = ["nations_nord", "jean_de_la_bruyere", "nations_sud", "albert_camus"]
-RAYON = 20.0
+LONGUEUR_BRANCHE = rond_point_bel_air().longueur_branche
 # Écart minimal entre deux véhicules sur l'anneau : en dessous, ils se chevaucheraient.
 ECART_SANS_CHEVAUCHEMENT = 3.0
 
@@ -33,7 +33,7 @@ def test_usagers_arretes_font_la_file_sans_s_empiler(simulation: Simulation) -> 
         voiture.reagir(CodeNotification.ATTENDEZ)
     simulation.avancer_jusqu_a(lambda: False, duree_max=20.0)
     avancements = [deplacement.avancement for deplacement in deplacements]
-    assert avancements[0] == pytest.approx(deplacements[0].trajectoire.ligne_entree)
+    assert avancements[0] == pytest.approx(deplacements[0].trajectoire.longueur_approche)
     for devant, derriere in zip(avancements, avancements[1:]):
         assert devant - derriere >= DISTANCE_SECURITE - 1e-6
     assert all(voiture.vitesse == 0.0 for voiture in voitures)
@@ -53,15 +53,26 @@ def test_la_file_repart_quand_l_attente_est_levee(simulation: Simulation) -> Non
 # ---------- Anneau chargé ----------
 
 def ecarts_sur_l_anneau(simulation: Simulation) -> list[float]:
-    """Écarts, le long de l'anneau, entre véhicules consécutifs qui roulent au milieu de la voie."""
-    angles = sorted(
-        math.atan2(deplacement.usager.position.y, deplacement.usager.position.x) % math.tau
-        for deplacement in simulation.en_route
-        if deplacement.usager.etape is Etape.ANNEAU
-    )
-    if len(angles) < 2:
-        return []
-    return [RAYON * ((suivant - angle) % math.tau) for angle, suivant in zip(angles, angles[1:] + angles[:1])]
+    """Écarts, le long de chaque voie de l'anneau, entre véhicules consécutifs de cette voie.
+
+    Deux véhicules côte à côte sur des voies différentes ne se chevauchent pas : on
+    compare chaque véhicule à ceux de sa voie, d'après sa distance au centre.
+    """
+    rayon_axe = simulation.rond_point.rayon
+    ecarts = []
+    for interieure in (True, False):
+        positions = [
+            deplacement.usager.position
+            for deplacement in simulation.en_route
+            if deplacement.usager.etape is Etape.ANNEAU
+            and (math.hypot(deplacement.usager.position.x, deplacement.usager.position.y) < rayon_axe) is interieure
+        ]
+        if len(positions) < 2:
+            continue
+        angles = sorted(math.atan2(position.y, position.x) % math.tau for position in positions)
+        rayon = min(math.hypot(position.x, position.y) for position in positions)
+        ecarts += [rayon * ((suivant - angle) % math.tau) for angle, suivant in zip(angles, angles[1:] + angles[:1])]
+    return ecarts
 
 
 def test_anneau_charge_ne_se_bloque_pas(simulation: Simulation) -> None:
