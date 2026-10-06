@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import math
+
+from cherrypie.commun.config import TOUR_COMPLET
 from cherrypie.commun.protocole import CodeNotification
 from cherrypie.modele.position import Position
 from cherrypie.modele.rond_point import RondPoint
@@ -51,6 +54,7 @@ class Usager:
         self.__branche_entree = branche_entree
         self.__branche_sortie = branche_sortie
         self.__position: Position | None = None
+        self.__cap: float | None = None
         self.__vitesse = 0.0
         self.__segment: str | None = None
         # Un usager qui vient de se présenter arrive par sa branche d'entrée.
@@ -87,6 +91,8 @@ class Usager:
         usager = classe(contenu["id"], contenu["entree"], contenu["sortie"])
         if contenu.get("x") is not None and contenu.get("y") is not None:
             usager.position = Position(contenu["x"], contenu["y"])
+        if contenu.get("cap") is not None:
+            usager.cap = contenu["cap"]
         usager.vitesse = contenu.get("vitesse", 0.0)
         usager.segment = contenu.get("segment")
         if contenu.get("etape") is not None:
@@ -125,6 +131,42 @@ class Usager:
         if not isinstance(valeur, Position):
             raise TypeError(f"position invalide : {valeur!r}")
         self.__position = valeur
+
+    @property
+    def cap(self) -> float | None:
+        """float | None: direction de marche, en degrés depuis le nord ; None tant que l'usager n'a pas bougé."""
+        return self.__cap
+
+    @cap.setter
+    def cap(self, valeur: float) -> None:
+        """Enregistre une nouvelle direction.
+
+        Raises:
+            TypeError: si la valeur n'est pas un nombre.
+            ValueError: si elle n'est pas comprise entre 0 et 360.
+        """
+        self.__cap = self.verifier_cap(valeur)
+
+    @staticmethod
+    def verifier_cap(valeur: object) -> float:
+        """Vérifie qu'une valeur peut servir de cap.
+
+        Args:
+            valeur (object): valeur à vérifier, reçue par exemple dans un POS.
+
+        Returns:
+            float: le cap, en degrés.
+
+        Raises:
+            TypeError: si la valeur n'est pas un nombre.
+            ValueError: si elle n'est pas un nombre fini compris entre 0 et 360.
+        """
+        # bool est une sous-classe de int : sans ce test, True passerait pour 1°.
+        if isinstance(valeur, bool) or not isinstance(valeur, (int, float)):
+            raise TypeError(f"le cap doit être un nombre (reçu : {valeur!r})")
+        if not math.isfinite(valeur) or not 0 <= valeur < TOUR_COMPLET:
+            raise ValueError(f"le cap doit être compris entre 0 et 360 degrés (reçu : {valeur!r})")
+        return float(valeur)
 
     @property
     def vitesse(self) -> float:
@@ -243,7 +285,7 @@ class Usager:
         """Convertit l'usager en dictionnaire prêt pour json.dumps.
 
         Returns:
-            dict: identité, trajet, position (x et y à None si elle est inconnue),
+            dict: identité, trajet, position (x et y à None si elle est inconnue), cap,
                 vitesse, segment, étape et consigne.
         """
         return {
@@ -253,6 +295,7 @@ class Usager:
             "sortie": self.__branche_sortie,
             "x": None if self.__position is None else self.__position.x,
             "y": None if self.__position is None else self.__position.y,
+            "cap": self.__cap,
             "vitesse": self.__vitesse,
             "segment": self.__segment,
             "etape": self.__etape.value,

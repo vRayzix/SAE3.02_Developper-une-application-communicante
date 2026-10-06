@@ -194,6 +194,7 @@ def test_vers_dict_nouvel_usager(voiture: Voiture) -> None:
         "sortie": "jean_de_la_bruyere",
         "x": None,
         "y": None,
+        "cap": None,
         "vitesse": 0.0,
         "segment": None,
         "etape": "approche",

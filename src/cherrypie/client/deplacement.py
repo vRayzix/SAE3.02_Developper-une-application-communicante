@@ -132,8 +132,9 @@ class Deplacement:
         self.__decalage += max(-pas, min(pas, voulu - self.__decalage))
 
     def __placer_usager(self, vitesse: float) -> None:
-        """Reporte l'avancement sur l'usager : position (décalage compris), vitesse, segment et étape."""
+        """Reporte l'avancement sur l'usager : position (décalage compris), cap, vitesse, segment et étape."""
         self.__usager.position = self.__trajectoire.position_a(self.__avancement, self.__decalage)
+        self.__usager.cap = self.__trajectoire.cap_a(self.__avancement)
         self.__usager.vitesse = vitesse
         segment = self.__trajectoire.segment_a(self.__avancement)
         self.__usager.segment = None if segment is None else segment.nom

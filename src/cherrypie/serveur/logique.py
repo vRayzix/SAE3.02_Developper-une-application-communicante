@@ -26,7 +26,7 @@ from cherrypie.serveur.session import Session
 
 IDENTIFIANT_SERVEUR = "serveur"
 CHAMPS_HELLO = ("categorie", "entree", "sortie")
-CHAMPS_POS = ("x", "y", "vitesse", "segment", "etape")
+CHAMPS_POS = ("x", "y", "cap", "vitesse", "segment", "etape")
 
 journal = logging.getLogger(__name__)
 
@@ -237,10 +237,12 @@ class LogiqueServeur:
             raise TrameInvalideError(f"POS incohérent : étape {etape.value} et segment {donnees['segment']!r}")
         try:
             position = Position(donnees["x"], donnees["y"])
+            cap = Usager.verifier_cap(donnees["cap"])
             # La vitesse est la première valeur modifiée : si elle est refusée, l'usager reste tel quel.
             usager.vitesse = donnees["vitesse"]
         except (TypeError, ValueError) as erreur:
             raise TrameInvalideError(f"POS invalide de {message.emetteur} : {erreur}") from erreur
+        usager.cap = cap
         usager.segment = donnees["segment"]
         usager.etape = etape
         usager.position = position

@@ -177,7 +177,9 @@ def test_position_envoyee_en_tcp_refusee(logique: LogiqueServeur) -> None:
 # ---------- Positions reçues en UDP ----------
 
 def pos(identifiant: str = "voiture_12", **modifications: object) -> Message:
-    donnees = {"x": 3.5, "y": -20.0, "vitesse": 4.2, "segment": "nations_sud-jean_de_la_bruyere", "etape": "anneau"}
+    donnees = {
+        "x": 3.5, "y": -20.0, "cap": 90.0, "vitesse": 4.2, "segment": "nations_sud-jean_de_la_bruyere", "etape": "anneau"
+    }
     donnees |= modifications
     return Message(TypeMessage.POS, identifiant, donnees)
 
@@ -236,7 +238,7 @@ def test_pos_invalide_refuse_sans_toucher_l_usager(
 def test_pos_incomplet_refuse(logique: LogiqueServeur) -> None:
     session_inscrite(logique)
     incomplet = Message(TypeMessage.POS, "voiture_12", {"x": 0.0, "y": 0.0, "vitesse": 1.0})
-    with pytest.raises(TrameInvalideError, match="il manque : segment, etape"):
+    with pytest.raises(TrameInvalideError, match="il manque : cap, segment, etape"):
         logique.traiter_udp(incomplet, 1.0)
 
 

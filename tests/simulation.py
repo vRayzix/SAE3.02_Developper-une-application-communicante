@@ -107,6 +107,7 @@ class Simulation:
         donnees = {
             "x": usager.position.x,
             "y": usager.position.y,
+            "cap": usager.cap,
             "vitesse": usager.vitesse,
             "segment": usager.segment,
             "etape": usager.etape.value,

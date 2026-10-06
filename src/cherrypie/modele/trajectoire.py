@@ -14,8 +14,9 @@ import math
 from dataclasses import dataclass
 from enum import Enum
 
+from cherrypie.commun.config import TOUR_COMPLET
 from cherrypie.modele.position import Position
-from cherrypie.modele.rond_point import Branche, RondPoint, Segment
+from cherrypie.modele.rond_point import ANGLE_DU_NORD, Branche, RondPoint, Segment
 
 # Trottoir parcouru par un piéton avant et après sa traversée, en mètres.
 LONGUEUR_TROTTOIR = 4.0
@@ -32,6 +33,19 @@ ANGLE_MAX_TRANSITION = 3.0
 # Un usager rangé sur sa chaussée garde cette distance entre son milieu et le bord :
 # sa demi-largeur et un peu de marge, en mètres.
 MARGE_BORD_CHAUSSEE = 1.0
+
+
+def cap_de_la_direction(dx: float, dy: float) -> float:
+    """Convertit une direction du repère du rond-point en cap.
+
+    Args:
+        dx (float): composante vers l'est.
+        dy (float): composante vers le nord.
+
+    Returns:
+        float: cap en degrés depuis le nord, dans le sens des aiguilles d'une montre, entre 0 et 360.
+    """
+    return (ANGLE_DU_NORD - math.degrees(math.atan2(dy, dx))) % TOUR_COMPLET
 
 
 class Etape(Enum):
@@ -97,6 +111,17 @@ class TronconDroit:
             self.depart.y + uy * distance - ux * decalage,
         )
 
+    def cap_a(self, distance: float) -> float:
+        """Donne le cap suivi sur le tronçon, le même tout du long.
+
+        Args:
+            distance (float): distance depuis le début du tronçon, en mètres.
+
+        Returns:
+            float: cap en degrés depuis le nord.
+        """
+        return cap_de_la_direction(self.arrivee.x - self.depart.x, self.arrivee.y - self.depart.y)
+
 
 @dataclass(frozen=True)
 class TronconArc:
@@ -160,6 +185,25 @@ class TronconArc:
         # sens de marche est l'extérieur de l'anneau.
         distance_au_centre = self.rayon_debut + part * (self.rayon_fin - self.rayon_debut) + decalage
         return Position(distance_au_centre * math.cos(angle), distance_au_centre * math.sin(angle))
+
+    def cap_a(self, distance: float) -> float:
+        """Donne le cap suivi après une distance parcourue sur le morceau.
+
+        Args:
+            distance (float): distance depuis le début du morceau, en mètres.
+
+        Returns:
+            float: cap en degrés depuis le nord, tangent au morceau.
+        """
+        part = distance / self.longueur
+        angle = math.radians(self.angle_debut + part * (self.angle_fin - self.angle_debut))
+        rayon = self.rayon_debut + part * (self.rayon_fin - self.rayon_debut)
+        # Dérivée de la position : la variation de distance au centre, puis la rotation.
+        rotation = math.radians(self.angle_fin - self.angle_debut)
+        ecartement = self.rayon_fin - self.rayon_debut
+        dx = ecartement * math.cos(angle) - rayon * rotation * math.sin(angle)
+        dy = ecartement * math.sin(angle) + rayon * rotation * math.cos(angle)
+        return cap_de_la_direction(dx, dy)
 
 
 Troncon = TronconDroit | TronconArc
@@ -305,6 +349,21 @@ class Trajectoire:
         """
         troncon, distance = self.__troncon_a(avancement)
         return troncon.position_a(distance, decalage)
+
+    def cap_a(self, avancement: float) -> float:
+        """Donne le cap d'un usager, la direction dans laquelle il avance.
+
+        Args:
+            avancement (float): distance parcourue depuis le départ, en mètres.
+
+        Returns:
+            float: cap en degrés depuis le nord, dans le sens des aiguilles d'une montre.
+
+        Raises:
+            ValueError: si l'avancement est négatif ou n'est pas un nombre fini.
+        """
+        troncon, distance = self.__troncon_a(avancement)
+        return troncon.cap_a(distance)
 
     def etape_a(self, avancement: float) -> Etape:
         """Donne l'étape où se trouve un usager.
