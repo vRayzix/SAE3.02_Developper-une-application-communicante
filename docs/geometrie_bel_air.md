@@ -119,10 +119,18 @@ Le tram n'est pas modélisé. Une section par branche permettra d'y ajouter plus
 
 - Un usager qui sort à la première sortie roule sur la voie extérieure. Les autres roulent sur la voie intérieure et se rabattent sur la voie extérieure au début du segment qui mène à leur sortie.
 - Le véhicule prioritaire roule sur la voie intérieure de bout en bout.
-- DEGAGEZ : un usager sur la voie intérieure, devant le VP, passe sur la voie extérieure et ralentit. Le changement de voie se voit sur la scène.
+- DEGAGEZ : un usager sur la voie intérieure, devant le VP, passe sur la voie extérieure, puis ralentit. Il garde son allure le temps de se décaler, pour ne pas boucher plus longtemps la voie qu'il libère. Le changement de voie se voit sur la scène.
 - CHANGEZ_VOIE : dans la file d'entrée du VP, l'usager se range sur la droite de sa chaussée d'entrée pour laisser passer le VP à sa gauche.
 - Deux usagers ne se gênent que s'ils sont sur la même voie, comme aujourd'hui avec la règle « même voie ». Un usager qui entre sur l'anneau traverse la voie extérieure : il cède le passage aux usagers des deux voies.
 - Un piéton traverse toute la branche sur son passage piéton : chaussée d'entrée, terre-plein, chaussée de sortie. Pendant sa traversée, il bloque les deux chaussées de la branche, comme aujourd'hui.
+
+## Mise en œuvre dans la maquette
+
+- Une branche est une droite qui part du centre, à son cap ; ses deux chaussées sont parallèles à cette droite, de part et d'autre du terre-plein. La chaussée d'entrée rejoint l'anneau un peu après l'axe de la branche, dans le sens de circulation, et la chaussée de sortie le quitte un peu avant.
+- La ligne d'entrée est au bout de l'approche, au bord de l'anneau. Un véhicule qui attend s'y arrête sans empiéter sur la voie extérieure.
+- Sur l'anneau, la trajectoire rejoint la voie en 8 m, change de voie en 10 m et rejoint la chaussée de sortie en 8 m ; sur un parcours court, chacune de ces transitions est raccourcie.
+- Un usager se décale à 2 m/s : passer d'une voie de l'anneau à l'autre prend un peu plus de 2 s, ce qui reste lisible à l'écran.
+- La supervision dessine chaque usager à son gabarit, l'avant sur sa position et tourné selon le cap qu'il transmet. Les petits usagers (piéton, trottinette, moto) sont un peu agrandis pour rester visibles.
 
 ## Décisions
 
