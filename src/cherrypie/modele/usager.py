@@ -193,7 +193,7 @@ class Usager:
 
     @property
     def segment(self) -> str | None:
-        """str | None: segment de l'anneau occupé (ex. "N-O"), None hors de l'anneau."""
+        """str | None: segment de l'anneau occupé (ex. "nations_nord-albert_camus"), None hors de l'anneau."""
         return self.__segment
 
     @segment.setter

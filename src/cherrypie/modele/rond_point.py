@@ -218,7 +218,7 @@ class RondPoint:
             )
         if not 0 < largeur_voie_anneau < rayon:
             raise ValueError(
-                f"la largeur d'une voie de l'anneau doit être comprise entre 0 et le rayon (reçu : {largeur_voie_anneau})"
+                f"une voie de l'anneau doit être moins large que le rayon (reçu : {largeur_voie_anneau})"
             )
         self.__rayon = rayon
         self.__largeur_voie_anneau = largeur_voie_anneau
