@@ -80,7 +80,7 @@ def test_state_dessine_sur_la_scene(fenetre: FenetreSupervision) -> None:
     fenetre.reseau.etat_recu.emit(etat(vp_actif=True))
     assert list(fenetre.scene.marqueurs) == ["voiture_1"]
     assert fenetre.scene.arcs_reserves["nations_sud-jean_de_la_bruyere"].isVisible()
-    assert fenetre.scene.textes_densite["albert_camus"].toPlainText() == "albert_camus\n88 % forte"
+    assert fenetre.scene.textes_densite["albert_camus"].toPlainText() == "Rue Albert Camus\n88 % (forte)"
 
 
 def test_indicateurs_d_apres_le_state(fenetre: FenetreSupervision) -> None:

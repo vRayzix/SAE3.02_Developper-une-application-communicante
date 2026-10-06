@@ -1,4 +1,4 @@
-"""Tests de la scène 2D : dessin du rond-point d'après la configuration."""
+"""Tests de la scène 2D : dessin du rond-point d'après la configuration, puis affichage d'un STATE."""
 
 import pytest
 from geometrie import rond_point_a_trois_branches, rond_point_bel_air
@@ -11,14 +11,14 @@ from cherrypie.ihm.style import (
     COULEURS_CATEGORIE,
     COULEURS_CONSIGNE,
     COULEURS_DENSITE,
+    GABARITS_CATEGORIE,
     MARGE_SCENE,
 )
 from cherrypie.modele.position import Position
-from cherrypie.modele.rond_point import RondPoint
-from cherrypie.modele.usager import KMH, Usager, VehiculePrioritaire, Voiture
+from cherrypie.modele.usager import KMH, Pieton, Usager, VehiculePrioritaire, Voiture
 from cherrypie.serveur.densite import NiveauDensite
 
-RAYON = 20.0
+LIBELLES = ["Bd des Nations (nord)", "Rue Jean de la Bruyère", "Bd des Nations (sud)", "Rue Albert Camus"]
 
 
 @pytest.fixture
@@ -34,10 +34,20 @@ def test_vers_scene_inverse_les_ordonnees() -> None:
     assert (point.x(), point.y()) == pytest.approx((3.0, -4.0))
 
 
-def test_scene_englobe_les_branches_et_la_marge(scene: SceneRondPoint) -> None:
-    demi_cote = scene.rond_point.rayon_bord + scene.rond_point.longueur_branche + MARGE_SCENE
+def test_scene_englobe_le_bout_de_chaque_chaussee_et_la_marge(scene: SceneRondPoint) -> None:
+    rond_point = scene.rond_point
+    cadre = scene.sceneRect().adjusted(MARGE_SCENE, MARGE_SCENE, -MARGE_SCENE, -MARGE_SCENE)
+    extremite = rond_point.rayon_bord + rond_point.longueur_branche
+    for branche in rond_point.branches:
+        for cote in (1, -1):
+            coin = SceneRondPoint.vers_scene(branche.point(extremite, cote * branche.demi_largeur))
+            assert cadre.adjusted(-1e-6, -1e-6, 1e-6, 1e-6).contains(coin)
+
+
+def test_scene_ajustee_au_dessin(scene: SceneRondPoint) -> None:
+    # Le cadre suit les branches réelles : il n'est plus le carré qui engloberait des branches à 90°.
     cadre = scene.sceneRect()
-    assert (cadre.left(), cadre.top(), cadre.width()) == pytest.approx((-demi_cote, -demi_cote, 2 * demi_cote))
+    assert cadre.width() != pytest.approx(cadre.height())
 
 
 # ---------- Branches ----------
@@ -46,7 +56,7 @@ def test_scene_englobe_les_branches_et_la_marge(scene: SceneRondPoint) -> None:
 def test_scene_une_bande_et_un_texte_par_branche(scene: SceneRondPoint) -> None:
     assert list(scene.bandes_densite) == ["nations_nord", "jean_de_la_bruyere", "nations_sud", "albert_camus"]
     textes = [texte.toPlainText() for texte in scene.textes_densite.values()]
-    assert textes == ["nations_nord", "jean_de_la_bruyere", "nations_sud", "albert_camus"]
+    assert textes == LIBELLES
 
 
 def test_scene_bandes_de_densite_faible_au_depart(scene: SceneRondPoint) -> None:
@@ -101,6 +111,28 @@ def test_usager_place_a_sa_position(scene: SceneRondPoint) -> None:
     assert marqueur.brush().color() == COULEURS_CATEGORIE["voiture"]
 
 
+@pytest.mark.parametrize(("cap", "rotation"), [(90.0, 0.0), (0.0, -90.0), (230.0, 140.0)], ids=["est", "nord", "camus"])
+def test_silhouette_tournee_dans_le_sens_de_marche(scene: SceneRondPoint, cap: float, rotation: float) -> None:
+    voiture = Voiture("voiture_1", "nations_sud", "nations_nord")
+    voiture.cap = cap
+    scene.afficher_etat(etat([decrire(voiture)]))
+    assert scene.marqueurs["voiture_1"].rotation() == pytest.approx(rotation)
+
+
+def test_avant_du_vehicule_sur_sa_position(scene: SceneRondPoint) -> None:
+    scene.afficher_etat(etat([decrire(Voiture("voiture_1", "nations_sud", "nations_nord"))]))
+    carrosserie = scene.marqueurs["voiture_1"].path().boundingRect()
+    longueur, largeur = GABARITS_CATEGORIE["voiture"]
+    assert (carrosserie.left(), carrosserie.right()) == pytest.approx((-longueur, 0.0))
+    assert carrosserie.height() == pytest.approx(largeur)
+
+
+def test_pieton_centre_sur_sa_position(scene: SceneRondPoint) -> None:
+    scene.afficher_etat(etat([decrire(Pieton("pieton_1", "nations_nord", "nations_nord"))]))
+    silhouette = scene.marqueurs["pieton_1"].path().boundingRect()
+    assert (silhouette.center().x(), silhouette.center().y()) == pytest.approx((0.0, 0.0))
+
+
 def test_usager_suivi_d_un_state_a_l_autre(scene: SceneRondPoint) -> None:
     voiture = Voiture("voiture_1", "nations_sud", "nations_nord")
     scene.afficher_etat(etat([decrire(voiture, 10.0, -30.0)]))
@@ -127,7 +159,7 @@ def test_vp_plus_gros_avec_halo_au_dessus(scene: SceneRondPoint) -> None:
     voiture = decrire(Voiture("voiture_1", "nations_sud", "nations_nord"))
     scene.afficher_etat(etat([voiture, decrire(VehiculePrioritaire("vp_1", "nations_sud", "nations_nord"))]))
     voiture, vp = scene.marqueurs["voiture_1"], scene.marqueurs["vp_1"]
-    assert vp.rect().width() > voiture.rect().width()
+    assert vp.path().boundingRect().width() > voiture.path().boundingRect().width()
     assert vp.zValue() > voiture.zValue()
     assert vp.halo is not None and voiture.halo is None
 
@@ -150,7 +182,7 @@ def test_infobulle_avec_trajet_et_vitesse(scene: SceneRondPoint) -> None:
     voiture.vitesse = 18 * KMH
     scene.afficher_etat(etat([decrire(voiture)]))
     infobulle = scene.marqueurs["voiture_1"].toolTip()
-    assert "de nations_sud vers nations_nord" in infobulle and "18 km/h" in infobulle
+    assert "de Bd des Nations (sud) vers Bd des Nations (nord)" in infobulle and "18 km/h" in infobulle
 
 
 def test_segments_reserves_surlignes(scene: SceneRondPoint) -> None:
@@ -161,17 +193,18 @@ def test_segments_reserves_surlignes(scene: SceneRondPoint) -> None:
     assert not any(arc.isVisible() for arc in scene.arcs_reserves.values())
 
 
-def test_entrees_bloquees_signalees_par_un_feu(scene: SceneRondPoint) -> None:
+def test_entrees_bloquees_signalees_par_une_barre_et_un_feu(scene: SceneRondPoint) -> None:
     scene.afficher_etat(etat(entrees_bloquees=["jean_de_la_bruyere"]))
-    visibles = {nom for nom, feu in scene.feux_entree.items() if feu.isVisible()}
+    visibles = {nom for nom, marque in scene.entrees_temporisees.items() if marque.isVisible()}
     assert visibles == {"jean_de_la_bruyere"}
+    assert len(scene.entrees_temporisees["jean_de_la_bruyere"].childItems()) == 2
 
 
 def test_densite_forte_coloree_et_ecrite(scene: SceneRondPoint) -> None:
     scene.afficher_etat(etat(densite={"nations_nord": 0.25, "nations_sud": 0.875}))
     assert scene.bandes_densite["nations_sud"].pen().color() == COULEURS_DENSITE[NiveauDensite.FORTE]
     assert scene.bandes_densite["nations_nord"].pen().color() == COULEURS_DENSITE[NiveauDensite.FAIBLE]
-    assert scene.textes_densite["nations_sud"].toPlainText() == "nations_sud\n88 % forte"
+    assert scene.textes_densite["nations_sud"].toPlainText() == "Bd des Nations (sud)\n88 % (forte)"
 
 
 def test_branche_inconnue_ignoree(scene: SceneRondPoint) -> None:
