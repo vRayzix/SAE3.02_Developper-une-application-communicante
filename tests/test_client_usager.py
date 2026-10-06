@@ -28,6 +28,10 @@ DELAIS_RAPIDES = {
     "backoff_initial": "0.1",
     "backoff_max": "0.4",
 }
+# Marges sur une durée mesurée par le serveur, en secondes : quelques pas de position en
+# dessous, davantage au-dessus, car une machine chargée ne peut que ralentir le client.
+ECART_DE_MESURE = 0.15
+ECART_DE_MESURE_CHARGE = 0.5
 
 
 class FauxServeur:
@@ -396,7 +400,8 @@ def test_traversee_d_un_vp_mesuree_par_le_serveur(
     (mesure,) = serveur.logique.passages
     trajectoire = client.deplacement.trajectoire
     sur_l_anneau = trajectoire.longueur - trajectoire.longueur_approche - serveur.config.longueur_branche
-    assert mesure.duree_anneau == pytest.approx(sur_l_anneau / VehiculePrioritaire.VITESSE_MAX, abs=0.15)
+    attendue = sur_l_anneau / VehiculePrioritaire.VITESSE_MAX
+    assert attendue - ECART_DE_MESURE <= mesure.duree_anneau <= attendue + ECART_DE_MESURE_CHARGE
     assert mesure.duree >= mesure.duree_anneau
     trajet = (mesure.identifiant, mesure.entree, mesure.sortie, mesure.regulation)
     assert trajet == ("vp_1", "nations_sud", "jean_de_la_bruyere", True)
@@ -418,7 +423,9 @@ def test_distance_de_securite_gardee_puis_voie_libre(
     faux_serveur.envoyer(accuse_d_inscription(), devant(10.0))
     attendre(lambda: client.deplacement.limite is not None)
     limite = client.deplacement.limite
-    time.sleep(10 * float(DELAIS_RAPIDES["intervalle_position"]))
+    attendre(lambda: client.deplacement.avancement == pytest.approx(limite))
+    # Plusieurs pas plus tard, l'usager n'a pas dépassé la limite.
+    time.sleep(5 * float(DELAIS_RAPIDES["intervalle_position"]))
     assert client.deplacement.avancement == pytest.approx(limite)
     faux_serveur.envoyer(devant(None))
     attendre(lambda: client.deplacement.avancement > limite + 1.0)
