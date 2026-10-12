@@ -438,14 +438,17 @@ def test_cadence_envoie_devant_a_chaque_vehicule_positionne(logique: LogiqueServ
     }
 
 
-def test_pas_de_devant_pour_un_pieton_ni_une_supervision(logique: LogiqueServeur) -> None:
+def test_devant_pour_un_pieton_mais_pas_pour_une_supervision(logique: LogiqueServeur) -> None:
     pieton = logique.ouvrir_session(0.0)
     inscription = hello("pieton_1", categorie="pieton", entree="nations_nord", sortie="nations_nord")
     logique.traiter_tcp(pieton, inscription, 0.5)
     logique.traiter_udp(pos("pieton_1", x=-7.5, y=28.0, vitesse=1.0, segment=None, etape="approche"), 1.0)
     supervision = logique.ouvrir_session(0.0)
     logique.traiter_tcp(supervision, Message(TypeMessage.ABONNEMENT, "supervision"), 0.5)
-    assert [message.type for _, message in logique.cadencer()] == [TypeMessage.STATE]
+    envois = logique.cadencer()
+    assert [(numero, message.type) for numero, message in envois] == [
+        (supervision, TypeMessage.STATE), (pieton, TypeMessage.DEVANT)
+    ]
 
 
 # ---------- Régulation ----------

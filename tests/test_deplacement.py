@@ -5,7 +5,7 @@ import math
 import pytest
 from geometrie import rond_point_bel_air
 
-from cherrypie.client.deplacement import DISTANCE_SECURITE, VITESSE_LATERALE, Deplacement
+from cherrypie.client.deplacement import VITESSE_LATERALE, Deplacement
 from cherrypie.commun.protocole import CodeNotification
 from cherrypie.modele.rond_point import RondPoint
 from cherrypie.modele.trajectoire import Etape
@@ -216,7 +216,7 @@ def test_pieton_attend_au_bord_de_la_chaussee(rond_point: RondPoint) -> None:
 def test_distance_de_securite_gardee_avec_l_obstacle(deplacement: Deplacement) -> None:
     deplacement.noter_devant(20.0, ceder=False)
     deplacement.avancer(10.0)
-    assert deplacement.avancement == pytest.approx(20.0 - DISTANCE_SECURITE)
+    assert deplacement.avancement == pytest.approx(20.0 - Voiture.DISTANCE_SECURITE)
 
 
 def test_obstacle_trop_proche_arrete_sans_reculer(deplacement: Deplacement, voiture: Voiture) -> None:

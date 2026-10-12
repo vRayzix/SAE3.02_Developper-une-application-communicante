@@ -62,10 +62,11 @@ class Circulation:
         return self.__rond_point
 
     def voir(self, registre: Registre) -> dict[str, Vue]:
-        """Calcule ce que voit chaque véhicule dont la position est connue.
+        """Calcule ce que voit chaque usager dont la position est connue.
 
-        Les piétons n'ont pas de vue : ils ne roulent pas sur la chaussée. En revanche, un
-        piéton en train de traverser bloque les véhicules avant son passage piéton.
+        Un piéton voit le piéton qui le précède sur le même passage : sans cela, des piétons
+        partis ensemble marcheraient l'un sur l'autre. Un piéton en train de traverser
+        bloque aussi les véhicules avant son passage piéton.
 
         Args:
             registre (Registre): usagers connectés, avec leur dernière position et leur étape.
@@ -81,10 +82,16 @@ class Circulation:
             for usager in registre.usagers
             if isinstance(usager, Pieton) and usager.etape is Etape.TRAVERSEE
         }
-        return {
+        pietons = [
+            usager for usager in registre.usagers if isinstance(usager, Pieton) and usager.position is not None
+        ]
+        vues = {
             vehicule.identifiant: self.__vue(rang, vehicules, passages_occupes)
             for rang, vehicule in enumerate(vehicules)
         }
+        for rang, pieton in enumerate(pietons):
+            vues[pieton.identifiant] = Vue(self.__plus_proche(self.__devant_sur_le_passage(rang, pietons)), False)
+        return vues
 
     def __vue(self, rang: int, vehicules: list[Usager], passages_occupes: set[str]) -> Vue:
         """Calcule la vue du véhicule de rang donné."""
@@ -121,6 +128,25 @@ class Circulation:
         passage = sens * (self.__rond_point.rayon_bord + branche.passage_pieton)
         if branche.nom in passages_occupes and passage > abscisse:
             distances.append(passage - abscisse)
+        return distances
+
+    def __devant_sur_le_passage(self, rang: int, pietons: list[Usager]) -> list[float]:
+        """Distances aux piétons qui précèdent un piéton sur le passage de sa branche.
+
+        Un piéton marche d'un trottoir à l'autre, en travers de la branche : son écart à
+        l'axe diminue à mesure qu'il avance.
+        """
+        pieton = pietons[rang]
+        branche = self.__rond_point.branche(pieton.branche_entree)
+        abscisse = -self.__ecart_a_l_axe(pieton.position, branche)
+        distances = []
+        for autre_rang, autre in enumerate(pietons):
+            if autre_rang == rang or autre.branche_entree != branche.nom:
+                continue
+            autre_abscisse = -self.__ecart_a_l_axe(autre.position, branche)
+            # À égalité, le premier arrivé au registre est devant.
+            if autre_abscisse > abscisse or (autre_abscisse == abscisse and autre_rang < rang):
+                distances.append(autre_abscisse - abscisse)
         return distances
 
     def __devant_sur_l_anneau(self, rang: int, vehicules: list[Usager], passages_occupes: set[str]) -> list[float]:

@@ -236,7 +236,33 @@ def test_vehicule_deja_passe_ne_voit_plus_le_pieton(rond_point: RondPoint, regis
     assert voir(rond_point, registre)["voiture_1"].distance is None
 
 
-def test_pieton_et_usager_sans_position_n_ont_pas_de_vue(rond_point: RondPoint, registre: Registre, placer) -> None:
+def test_usager_sans_position_n_a_pas_de_vue(rond_point: RondPoint, registre: Registre, placer) -> None:
     placer(Pieton("pieton_1", NATIONS_NORD, NATIONS_NORD), 1.0)
     registre.ajouter(Voiture("voiture_1", NATIONS_NORD, NATIONS_SUD))
-    assert voir(rond_point, registre) == {}
+    assert voir(rond_point, registre) == {"pieton_1": Vue(None, False)}
+
+
+# ---------- Piétons à la file ----------
+
+def test_pieton_voit_celui_qui_le_precede(rond_point: RondPoint, registre: Registre, placer) -> None:
+    placer(Pieton("pieton_1", NATIONS_NORD, NATIONS_NORD), 6.0)
+    placer(Pieton("pieton_2", NATIONS_NORD, NATIONS_NORD), 4.0)
+    vues = voir(rond_point, registre)
+    assert vues["pieton_2"].distance == pytest.approx(2.0)
+    assert vues["pieton_1"] == Vue(None, False)
+
+
+def test_pietons_partis_ensemble_le_premier_inscrit_passe_devant(
+    rond_point: RondPoint, registre: Registre, placer
+) -> None:
+    placer(Pieton("pieton_1", NATIONS_NORD, NATIONS_NORD), 0.0)
+    placer(Pieton("pieton_2", NATIONS_NORD, NATIONS_NORD), 0.0)
+    vues = voir(rond_point, registre)
+    assert vues["pieton_2"].distance == pytest.approx(0.0)
+    assert vues["pieton_1"].distance is None
+
+
+def test_pieton_d_une_autre_branche_ignore(rond_point: RondPoint, registre: Registre, placer) -> None:
+    placer(Pieton("pieton_1", NATIONS_NORD, NATIONS_NORD), 6.0)
+    placer(Pieton("pieton_2", NATIONS_SUD, NATIONS_SUD), 4.0)
+    assert voir(rond_point, registre)["pieton_2"].distance is None

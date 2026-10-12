@@ -7,7 +7,6 @@ import pytest
 from geometrie import rond_point_bel_air
 from simulation import Simulation
 
-from cherrypie.client.deplacement import DISTANCE_SECURITE
 from cherrypie.commun.protocole import CodeNotification
 from cherrypie.modele.trajectoire import Etape
 from cherrypie.modele.usager import Moto, Pieton, Trottinette, VehiculePrioritaire, Voiture
@@ -35,7 +34,7 @@ def test_usagers_arretes_font_la_file_sans_s_empiler(simulation: Simulation) -> 
     avancements = [deplacement.avancement for deplacement in deplacements]
     assert avancements[0] == pytest.approx(deplacements[0].trajectoire.longueur_approche)
     for devant, derriere in zip(avancements, avancements[1:]):
-        assert devant - derriere >= DISTANCE_SECURITE - 1e-6
+        assert devant - derriere >= Voiture.DISTANCE_SECURITE - 1e-6
     assert all(voiture.vitesse == 0.0 for voiture in voitures)
 
 
@@ -47,6 +46,18 @@ def test_la_file_repart_quand_l_attente_est_levee(simulation: Simulation) -> Non
     simulation.avancer_jusqu_a(lambda: False, duree_max=15.0)
     for voiture in voitures:
         voiture.reagir(CodeNotification.OK_PASSER)
+    assert simulation.avancer_jusqu_a(lambda: not simulation.en_route, duree_max=60.0)
+
+
+# ---------- Piétons ----------
+
+def test_pietons_lances_ensemble_traversent_a_la_file(simulation: Simulation) -> None:
+    pietons = [Pieton(f"pieton_{numero}", "nations_nord", "nations_nord") for numero in range(1, 5)]
+    deplacements = [simulation.ajouter(pieton) for pieton in pietons]
+    simulation.avancer_jusqu_a(lambda: False, duree_max=6.0)
+    avancements = sorted((deplacement.avancement for deplacement in deplacements), reverse=True)
+    for devant, derriere in zip(avancements, avancements[1:]):
+        assert devant - derriere >= Pieton.DISTANCE_SECURITE - 1e-6
     assert simulation.avancer_jusqu_a(lambda: not simulation.en_route, duree_max=60.0)
 
 
