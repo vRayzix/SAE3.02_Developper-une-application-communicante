@@ -91,7 +91,7 @@ POURCENT = 100
 # des aiguilles d'une montre : on retire ce quart de tour.
 QUART_DE_TOUR = 90.0
 # Côté minimal de la vue, en pixels, pour que les usagers restent visibles.
-TAILLE_MIN_VUE = 400
+TAILLE_MIN_VUE = 300
 
 
 class MarqueurUsager(QGraphicsPathItem):

@@ -52,22 +52,24 @@ python scripts/lancer_supervision.py                  # lit config.ini à la rac
 python scripts/lancer_supervision.py autre_config.ini
 ```
 
-La fenêtre s'ouvre en plein écran et peut être lancée avant le serveur : elle s'y connecte dès qu'il répond, et s'y reconnecte s'il redémarre. Elle montre :
+La fenêtre s'ouvre en plein écran et peut être lancée avant le serveur : elle s'y connecte dès qu'il répond, et s'y reconnecte s'il redémarre. Elle ne descend pas sous 1000 × 640 pixels, et tout y reste visible à cette taille, par exemple sur l'écran d'un MacBook. À gauche, elle montre :
 
-- le rond-point en 2D, dessiné d'après `config.ini` : les deux chaussées de chaque branche et leur terre-plein, les deux voies de l'anneau, les passages piétons et le nom de chaque rue. La scène suit la taille de la fenêtre, et un séparateur permet de l'élargir ;
+- le rond-point en 2D, dessiné d'après `config.ini` : les deux chaussées de chaque branche et leur terre-plein, les deux voies de l'anneau, les passages piétons et le nom de chaque rue. La scène suit la taille de la fenêtre ;
 - chaque usager à son gabarit, tourné dans son sens de marche, coloré selon sa catégorie et cerclé selon la consigne qu'il suit ; le véhicule prioritaire a un halo. Avec DEGAGEZ, on voit un usager passer de la voie intérieure à la voie extérieure ; avec CHANGEZ_VOIE, il se range sur le bord de sa chaussée ;
 - en orange, la voie intérieure des segments réservés au véhicule prioritaire, et une barre rouge sur la ligne de chaque entrée temporisée, avec un feu à côté. Une barre rouge ferme aussi la demi-chaussée qu'un piéton est en train de traverser, et elle seule ;
 - la densité de chaque branche, écrite en pourcentage sous le nom de la rue et rendue par la couleur de la bande le long de la chaussée d'entrée : vert pour faible, jaune pour moyenne, rouge pour forte ;
-- l'état de la connexion, la régulation en vigueur sur le serveur et la présence d'un véhicule prioritaire ;
-- l'interrupteur « Régulation active », qui active ou coupe la régulation sur le serveur ;
-- le panneau de création : on choisit le type d'usager, la rue d'entrée, la rue de sortie (imposée pour un piéton) et le nombre, puis « Lancer » démarre un client par usager, qui se connecte au serveur comme n'importe quel autre ;
-- les dernières consignes reçues par ces usagers.
+- la légende de tout cela, sous la scène.
 
-Fermer la fenêtre, ou faire Ctrl+C dans la console, arrête les clients lancés depuis la fenêtre et la connexion au serveur.
+À droite, un séparateur que l'on peut déplacer laisse la place à un panneau qui défile si la fenêtre manque de hauteur. On y trouve l'état de la connexion, la régulation en vigueur sur le serveur, la présence d'un véhicule prioritaire et l'interrupteur « Régulation active », qui active ou coupe la régulation sur le serveur. Viennent ensuite deux onglets.
+
+- **Scénario** : on compose la suite des lancements. Pour chaque ligne, on choisit le type d'usager, la rue d'entrée, la rue de sortie (imposée pour un piéton), le nombre d'usagers et le délai de départ, compté en secondes depuis la ligne précédente, puis « Ajouter au scénario ». Les lignes se suppriment, se montent ou se descendent avec les boutons ou par glisser-déposer, et « Vider » efface tout. « Lancer le scénario » envoie les lignes dans l'ordre, chacune à son délai, avec un client par usager, qui se connecte au serveur comme n'importe quel autre. « Arrêter tout » annule les lignes pas encore parties et arrête les clients lancés. « Enregistrer… » et « Charger… » gardent un scénario dans un fichier JSON, pour rejouer la même démonstration.
+- **Suivi** : les clients en route, avec leur trajet, l'état de leur connexion et la consigne qu'ils suivent, puis les dernières consignes reçues.
+
+Fermer la fenêtre, ou faire Ctrl+C dans la console, annule le scénario en cours, arrête les clients lancés depuis la fenêtre et coupe la connexion au serveur.
 
 ### Captures
 
-Les trois captures montrent le même trafic : trois voitures en file sur le boulevard des Nations côté sud, deux rue Jean de la Bruyère, une moto rue Albert Camus, une trottinette et un piéton sur le boulevard des Nations côté nord. Le véhicule prioritaire traverse ensuite le boulevard, du sud vers le nord, et les deux dernières captures sont prises 8 s après son départ.
+Les captures montrent le même scénario : trois voitures en file sur le boulevard des Nations côté sud, deux rue Jean de la Bruyère, une moto rue Albert Camus, une trottinette et un piéton sur le boulevard des Nations côté nord, tous lancés ensemble. Le véhicule prioritaire part 3,5 s plus tard et traverse le boulevard, du sud vers le nord ; les deux captures suivantes sont prises 8 s après son départ.
 
 Avant l'arrivée du véhicule prioritaire :
 
@@ -77,9 +79,15 @@ Avec régulation, les voitures déjà sur l'anneau passent sur la voie extérieu
 
 ![Véhicule prioritaire avec régulation](docs/captures/vp_avec_regulation.png)
 
-Sans régulation, il attend encore sur sa branche d'entrée, derrière la file :
+Sans régulation, il vient seulement d'atteindre l'anneau : il a attendu derrière la file, puis cédé le passage aux voitures déjà engagées :
 
 ![Véhicule prioritaire sans régulation](docs/captures/vp_sans_regulation.png)
+
+La section « Suivi », peu après le passage du véhicule prioritaire :
+
+![Section Suivi](docs/captures/suivi.png)
+
+La même fenêtre en 1024 × 640, 1280 × 720 et 1440 × 800 : [1024 × 640](docs/captures/fenetre_1024x640.png), [1280 × 720](docs/captures/fenetre_1280x720.png), [1440 × 800](docs/captures/fenetre_1440x800.png).
 
 `python scripts/generer_captures.py` refait ces images : il lance un serveur et la fenêtre dans le même processus, sans rien afficher à l'écran.
 
