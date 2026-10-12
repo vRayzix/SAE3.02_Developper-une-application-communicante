@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from enum import Enum
 
 from cherrypie.modele.position import Position
 from cherrypie.modele.rond_point import Branche, RondPoint
@@ -29,6 +30,13 @@ ECART_MEME_VOIE = 1.0
 # d'entrée. Ces marges empêchent l'anneau de se remplir au point de se bloquer en boucle.
 LIBRE_AMONT = 15.0
 LIBRE_AVAL = 10.0
+
+
+class Chaussee(Enum):
+    """Moitié d'une branche, de part et d'autre du terre-plein."""
+
+    ENTREE = "entree"
+    SORTIE = "sortie"
 
 
 @dataclass(frozen=True)
@@ -77,37 +85,63 @@ class Circulation:
         vehicules = [
             usager for usager in registre.usagers if not isinstance(usager, Pieton) and usager.position is not None
         ]
-        passages_occupes = {
-            usager.branche_entree
-            for usager in registre.usagers
-            if isinstance(usager, Pieton) and usager.etape is Etape.TRAVERSEE
-        }
+        passages_fermes = self.passages_fermes(registre)
         pietons = [
             usager for usager in registre.usagers if isinstance(usager, Pieton) and usager.position is not None
         ]
         vues = {
-            vehicule.identifiant: self.__vue(rang, vehicules, passages_occupes)
+            vehicule.identifiant: self.__vue(rang, vehicules, passages_fermes)
             for rang, vehicule in enumerate(vehicules)
         }
         for rang, pieton in enumerate(pietons):
             vues[pieton.identifiant] = Vue(self.__plus_proche(self.__devant_sur_le_passage(rang, pietons)), False)
         return vues
 
-    def __vue(self, rang: int, vehicules: list[Usager], passages_occupes: set[str]) -> Vue:
+    def passages_fermes(self, registre: Registre) -> set[tuple[str, Chaussee]]:
+        """Liste les demi-chaussées fermées par un piéton qui les traverse.
+
+        Un piéton ne ferme que la chaussée sur laquelle il marche : arrivé sur le refuge du
+        terre-plein, il libère la chaussée d'entrée, et ne ferme la chaussée de sortie qu'en
+        y posant le pied. Cela vaut que la régulation soit active ou non.
+
+        Args:
+            registre (Registre): usagers connectés, avec leur dernière position et leur étape.
+
+        Returns:
+            set[tuple[str, Chaussee]]: branche et chaussée de chaque passage fermé.
+        """
+        fermes = set()
+        for usager in registre.usagers:
+            if not isinstance(usager, Pieton) or usager.etape is not Etape.TRAVERSEE:
+                continue
+            branche = self.__rond_point.branche(usager.branche_entree)
+            ecart = self.__ecart_a_l_axe(usager.position, branche)
+            if ecart >= branche.terre_plein / 2:
+                fermes.add((branche.nom, Chaussee.ENTREE))
+            elif ecart <= -branche.terre_plein / 2:
+                fermes.add((branche.nom, Chaussee.SORTIE))
+        return fermes
+
+    def __vue(self, rang: int, vehicules: list[Usager], passages_fermes: set[tuple[str, Chaussee]]) -> Vue:
         """Calcule la vue du véhicule de rang donné."""
         usager = vehicules[rang]
         if usager.etape is Etape.APPROCHE:
             branche = self.__rond_point.branche(usager.branche_entree)
-            distances = self.__devant_sur_la_branche(rang, vehicules, branche, Etape.APPROCHE, passages_occupes)
+            distances = self.__devant_sur_la_branche(rang, vehicules, branche, Etape.APPROCHE, passages_fermes)
             return Vue(self.__plus_proche(distances), not self.__anneau_libre(branche, vehicules))
         if usager.etape is Etape.ANNEAU:
-            return Vue(self.__plus_proche(self.__devant_sur_l_anneau(rang, vehicules, passages_occupes)), False)
+            return Vue(self.__plus_proche(self.__devant_sur_l_anneau(rang, vehicules, passages_fermes)), False)
         branche = self.__rond_point.branche(usager.branche_sortie)
-        distances = self.__devant_sur_la_branche(rang, vehicules, branche, Etape.SORTIE, passages_occupes)
+        distances = self.__devant_sur_la_branche(rang, vehicules, branche, Etape.SORTIE, passages_fermes)
         return Vue(self.__plus_proche(distances), False)
 
     def __devant_sur_la_branche(
-        self, rang: int, vehicules: list[Usager], branche: Branche, etape: Etape, passages_occupes: set[str]
+        self,
+        rang: int,
+        vehicules: list[Usager],
+        branche: Branche,
+        etape: Etape,
+        passages_fermes: set[tuple[str, Chaussee]],
     ) -> list[float]:
         """Distances aux obstacles devant un véhicule sur la chaussée d'entrée ou de sortie d'une branche."""
         usager = vehicules[rang]
@@ -126,7 +160,8 @@ class Circulation:
             if autre_abscisse > abscisse or (autre_abscisse == abscisse and autre_rang < rang):
                 distances.append(autre_abscisse - abscisse)
         passage = sens * (self.__rond_point.rayon_bord + branche.passage_pieton)
-        if branche.nom in passages_occupes and passage > abscisse:
+        chaussee = Chaussee.ENTREE if etape is Etape.APPROCHE else Chaussee.SORTIE
+        if (branche.nom, chaussee) in passages_fermes and passage > abscisse:
             distances.append(passage - abscisse)
         return distances
 
@@ -149,7 +184,9 @@ class Circulation:
                 distances.append(autre_abscisse - abscisse)
         return distances
 
-    def __devant_sur_l_anneau(self, rang: int, vehicules: list[Usager], passages_occupes: set[str]) -> list[float]:
+    def __devant_sur_l_anneau(
+        self, rang: int, vehicules: list[Usager], passages_fermes: set[tuple[str, Chaussee]]
+    ) -> list[float]:
         """Distances aux obstacles devant un véhicule sur l'anneau, jusqu'au bout de sa branche de sortie.
 
         Les distances sur l'anneau sont mesurées à la distance au centre du véhicule, celle de sa voie.
@@ -171,7 +208,7 @@ class Circulation:
                     distances.append(devant)
             elif autre.etape is Etape.SORTIE and autre.branche_sortie == sortie.nom and not self.__range(autre, sortie):
                 distances.append(reste_anneau + self.__le_long(autre.position, sortie) - self.__rond_point.rayon_bord)
-        if sortie.nom in passages_occupes:
+        if (sortie.nom, Chaussee.SORTIE) in passages_fermes:
             distances.append(reste_anneau + sortie.passage_pieton)
         return distances
 

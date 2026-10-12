@@ -284,6 +284,7 @@ def test_etat_sans_usager(logique: LogiqueServeur) -> None:
         "vp_actif": False,
         "segments_reserves": [],
         "entrees_bloquees": [],
+        "passages_fermes": [],
         "regulation": True,
     }
 
@@ -436,6 +437,19 @@ def test_cadence_envoie_devant_a_chaque_vehicule_positionne(logique: LogiqueServ
         devant: {"distance": None, "ceder": False},
         derriere: {"distance": pytest.approx(15.0), "ceder": False},
     }
+
+
+def test_state_signale_le_passage_ferme_par_un_pieton(logique: LogiqueServeur) -> None:
+    pieton = logique.ouvrir_session(0.0)
+    inscription = hello("pieton_1", categorie="pieton", entree="nations_nord", sortie="nations_nord")
+    logique.traiter_tcp(pieton, inscription, 0.5)
+    nord = logique.rond_point.branche("nations_nord")
+    sur_la_sortie = nord.point(logique.rond_point.rayon_bord + nord.passage_pieton, -nord.decalage_voie)
+    logique.traiter_udp(
+        pos("pieton_1", x=sur_la_sortie.x, y=sur_la_sortie.y, vitesse=1.0, segment=None, etape="traversee"), 1.0
+    )
+    fermes = logique.construire_etat().donnees["passages_fermes"]
+    assert fermes == [{"branche": "nations_nord", "chaussee": "sortie"}]
 
 
 def test_devant_pour_un_pieton_mais_pas_pour_une_supervision(logique: LogiqueServeur) -> None:

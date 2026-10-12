@@ -327,6 +327,12 @@ class LogiqueServeur:
             "vp_actif": self.vp_actif,
             "segments_reserves": self.segments_reserves,
             "entrees_bloquees": self.__regulateur.entrees_bloquees,
+            "passages_fermes": [
+                {"branche": branche, "chaussee": chaussee.value}
+                for branche, chaussee in sorted(
+                    self.__circulation.passages_fermes(self.__registre), key=lambda ferme: (ferme[0], ferme[1].value)
+                )
+            ],
             "regulation": self.__regulateur.active,
         }
         return Message(TypeMessage.STATE, IDENTIFIANT_SERVEUR, donnees)

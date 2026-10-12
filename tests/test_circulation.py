@@ -10,7 +10,7 @@ from cherrypie.commun.protocole import CodeNotification
 from cherrypie.modele.rond_point import RondPoint
 from cherrypie.modele.trajectoire import LONGUEUR_TROTTOIR, Trajectoire
 from cherrypie.modele.usager import Pieton, Usager, Voiture
-from cherrypie.serveur.circulation import Circulation, Vue
+from cherrypie.serveur.circulation import Chaussee, Circulation, Vue
 from cherrypie.serveur.registre import Registre
 
 LONGUEUR_BRANCHE = rond_point_bel_air().longueur_branche
@@ -207,21 +207,59 @@ def test_entree_retenue_si_l_anneau_est_occupe_pres_du_point_d_entree(
 
 # ---------- Passage piéton ----------
 
-def test_pieton_qui_traverse_bloque_la_branche_avant_le_passage(
+def avancement_du_pieton(rond_point: RondPoint, chaussee: str) -> float:
+    """Avancement d'un piéton du boulevard des Nations (nord) au milieu d'une partie du passage."""
+    nord = rond_point.branche(NATIONS_NORD)
+    milieux = {
+        "entree": LONGUEUR_TROTTOIR + nord.largeur_chaussee / 2,
+        "refuge": LONGUEUR_TROTTOIR + nord.largeur_chaussee + nord.terre_plein / 2,
+        "sortie": LONGUEUR_TROTTOIR + 1.5 * nord.largeur_chaussee + nord.terre_plein,
+    }
+    return milieux[chaussee]
+
+
+def vues_avec_un_pieton(rond_point: RondPoint, registre: Registre, placer, chaussee: str) -> dict[str, Vue]:
+    """Vues d'une voiture en approche et d'une voiture en sortie, avec un piéton sur le passage du nord."""
+    placer(Pieton("pieton_1", NATIONS_NORD, NATIONS_NORD), avancement_du_pieton(rond_point, chaussee))
+    placer(Voiture("voiture_entrante", NATIONS_NORD, NATIONS_SUD), 10.0)
+    sortante = Voiture("voiture_sortante", NATIONS_SUD, NATIONS_NORD)
+    placer(sortante, debut_de_sortie(rond_point, sortante) + 2.0)
+    return voir(rond_point, registre)
+
+
+def test_pieton_sur_la_chaussee_d_entree_ne_bloque_que_l_entree(
     rond_point: RondPoint, registre: Registre, placer
 ) -> None:
-    placer(Pieton("pieton_1", NATIONS_NORD, NATIONS_NORD), LONGUEUR_TROTTOIR + 2.0)
-    placer(Voiture("voiture_1", NATIONS_NORD, NATIONS_SUD), 10.0)
+    vues = vues_avec_un_pieton(rond_point, registre, placer, "entree")
     distance_au_passage = LONGUEUR_BRANCHE - 10.0 - rond_point.branche(NATIONS_NORD).passage_pieton
-    assert voir(rond_point, registre)["voiture_1"].distance == pytest.approx(distance_au_passage)
+    assert vues["voiture_entrante"].distance == pytest.approx(distance_au_passage)
+    assert vues["voiture_sortante"].distance is None
 
 
-def test_pieton_qui_traverse_bloque_aussi_la_sortie(rond_point: RondPoint, registre: Registre, placer) -> None:
-    placer(Pieton("pieton_1", NATIONS_NORD, NATIONS_NORD), LONGUEUR_TROTTOIR + 2.0)
-    sortante = Voiture("voiture_1", NATIONS_SUD, NATIONS_NORD)
-    placer(sortante, debut_de_sortie(rond_point, sortante) + 2.0)
+def test_pieton_sur_la_chaussee_de_sortie_ne_bloque_que_la_sortie(
+    rond_point: RondPoint, registre: Registre, placer
+) -> None:
+    vues = vues_avec_un_pieton(rond_point, registre, placer, "sortie")
+    assert vues["voiture_entrante"].distance is None
     distance_au_passage = rond_point.branche(NATIONS_NORD).passage_pieton - 2.0
-    assert voir(rond_point, registre)["voiture_1"].distance == pytest.approx(distance_au_passage)
+    assert vues["voiture_sortante"].distance == pytest.approx(distance_au_passage)
+
+
+def test_pieton_sur_le_refuge_ne_bloque_personne(rond_point: RondPoint, registre: Registre, placer) -> None:
+    vues = vues_avec_un_pieton(rond_point, registre, placer, "refuge")
+    assert vues["voiture_entrante"].distance is None
+    assert vues["voiture_sortante"].distance is None
+
+
+@pytest.mark.parametrize(
+    ("chaussee", "fermes"),
+    [("entree", {(NATIONS_NORD, Chaussee.ENTREE)}), ("refuge", set()), ("sortie", {(NATIONS_NORD, Chaussee.SORTIE)})],
+)
+def test_passages_fermes_selon_la_chaussee_traversee(
+    rond_point: RondPoint, registre: Registre, placer, chaussee: str, fermes: set
+) -> None:
+    placer(Pieton("pieton_1", NATIONS_NORD, NATIONS_NORD), avancement_du_pieton(rond_point, chaussee))
+    assert Circulation(rond_point).passages_fermes(registre) == fermes
 
 
 def test_pieton_qui_attend_ne_bloque_pas(rond_point: RondPoint, registre: Registre, placer) -> None:
