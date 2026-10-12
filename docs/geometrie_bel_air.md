@@ -120,7 +120,7 @@ Le tram n'est pas modélisé. Une section par branche permettra d'y ajouter plus
 - Un usager qui sort à la première sortie roule sur la voie extérieure. Les autres roulent sur la voie intérieure et se rabattent sur la voie extérieure au début du segment qui mène à leur sortie.
 - Le véhicule prioritaire roule sur la voie intérieure de bout en bout.
 - DEGAGEZ : un usager sur la voie intérieure, devant le VP, passe sur la voie extérieure, puis ralentit. Il garde son allure le temps de se décaler, pour ne pas boucher plus longtemps la voie qu'il libère. Le changement de voie se voit sur la scène.
-- CHANGEZ_VOIE : dans la file d'entrée du VP, l'usager se range sur la droite de sa chaussée d'entrée pour laisser passer le VP à sa gauche.
+- CHANGEZ_VOIE : devant le VP, sur sa chaussée d'entrée, l'usager se range sur la droite et s'arrête ; le VP, qui roule sur la gauche de sa chaussée, le double.
 - Deux usagers ne se gênent que s'ils sont sur la même voie, comme aujourd'hui avec la règle « même voie ». Un usager qui entre sur l'anneau traverse la voie extérieure : il cède le passage aux usagers des deux voies.
 - Un piéton traverse toute la branche sur son passage piéton : chaussée d'entrée, terre-plein, chaussée de sortie. Pendant sa traversée, il bloque les deux chaussées de la branche, comme aujourd'hui.
 

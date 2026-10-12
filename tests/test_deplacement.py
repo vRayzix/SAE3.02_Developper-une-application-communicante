@@ -9,7 +9,7 @@ from cherrypie.client.deplacement import VITESSE_LATERALE, Deplacement
 from cherrypie.commun.protocole import CodeNotification
 from cherrypie.modele.rond_point import RondPoint
 from cherrypie.modele.trajectoire import Etape
-from cherrypie.modele.usager import FACTEUR_RALENTISSEMENT, Pieton, Voiture
+from cherrypie.modele.usager import FACTEUR_RALENTISSEMENT, Pieton, VehiculePrioritaire, Voiture
 
 PAS = 0.2
 # La ligne d'entrée est au bout de l'approche, au bord de l'anneau.
@@ -178,15 +178,39 @@ def test_changement_de_voie_progressif(deplacement: Deplacement, voiture: Voitur
     assert deplacement.decalage == pytest.approx(VITESSE_LATERALE * PAS)
 
 
-def test_changez_voie_range_au_bord_de_la_chaussee_sans_ralentir(deplacement: Deplacement, voiture: Voiture) -> None:
+def test_changez_voie_range_au_bord_de_la_chaussee_puis_arrete(deplacement: Deplacement, voiture: Voiture) -> None:
+    amener_a(deplacement, 10.0)
     voiture.reagir(CodeNotification.CHANGEZ_VOIE)
+    deplacement.avancer(PAS)
+    # Tant qu'elle se décale, elle garde son allure.
+    assert voiture.vitesse == pytest.approx(Voiture.VITESSE_MAX)
     for _ in range(10):
         deplacement.avancer(PAS)
-    assert deplacement.avancement == pytest.approx(Voiture.VITESSE_MAX * PAS * 10)
     place = deplacement.trajectoire.place_a_droite_a(deplacement.avancement)
     assert deplacement.decalage == pytest.approx(place)
     attendue = deplacement.trajectoire.position_a(deplacement.avancement, place)
     assert (voiture.position.x, voiture.position.y) == pytest.approx((attendue.x, attendue.y))
+    arretee = deplacement.avancement
+    deplacement.avancer(PAS)
+    assert voiture.vitesse == 0.0
+    assert deplacement.avancement == arretee
+
+
+def test_changez_voie_range_sur_place_un_usager_arrete(deplacement: Deplacement, voiture: Voiture) -> None:
+    voiture.reagir(CodeNotification.CHANGEZ_VOIE)
+    for _ in range(10):
+        deplacement.avancer(PAS)
+    assert deplacement.avancement == 0.0
+    assert deplacement.decalage == pytest.approx(deplacement.trajectoire.place_a_droite_a(0.0))
+
+
+def test_changez_voie_ne_franchit_pas_la_ligne(deplacement: Deplacement, voiture: Voiture) -> None:
+    amener_a(deplacement, LIGNE - 2.0)
+    voiture.reagir(CodeNotification.CHANGEZ_VOIE)
+    for _ in range(10):
+        deplacement.avancer(PAS)
+    assert deplacement.avancement == pytest.approx(deplacement.trajectoire.longueur_approche)
+    assert voiture.etape is Etape.APPROCHE
 
 
 def test_ok_passer_ramene_au_milieu_de_la_voie(deplacement: Deplacement, voiture: Voiture) -> None:
@@ -196,6 +220,17 @@ def test_ok_passer_ramene_au_milieu_de_la_voie(deplacement: Deplacement, voiture
     voiture.reagir(CodeNotification.OK_PASSER)
     for _ in range(10):
         deplacement.avancer(PAS)
+    assert deplacement.decalage == 0.0
+
+
+def test_vp_serre_la_gauche_en_approche_puis_reprend_le_milieu(rond_point: RondPoint) -> None:
+    vp = VehiculePrioritaire("vp_1", "nations_sud", "nations_nord")
+    deplacement = Deplacement(vp, vp.calculer_trajectoire(rond_point))
+    for _ in range(10):
+        deplacement.avancer(PAS)
+    assert deplacement.decalage == pytest.approx(VehiculePrioritaire.ECART_EN_APPROCHE)
+    deplacement.avancer((SUR_LA_VOIE_INTERIEURE - deplacement.avancement) / VehiculePrioritaire.VITESSE_MAX)
+    assert vp.etape is Etape.ANNEAU
     assert deplacement.decalage == 0.0
 
 

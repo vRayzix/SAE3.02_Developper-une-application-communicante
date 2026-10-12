@@ -30,9 +30,10 @@ PART_MAX_TRANSITION = 0.3
 # Une transition est découpée en morceaux d'au plus cet angle, en degrés : l'usager y
 # avance alors à vitesse presque constante, alors que sa distance au centre change.
 ANGLE_MAX_TRANSITION = 3.0
-# Un usager rangé sur sa chaussée garde cette distance entre son milieu et le bord :
-# sa demi-largeur et un peu de marge, en mètres.
-MARGE_BORD_CHAUSSEE = 1.0
+# Un usager rangé sur sa chaussée garde cette distance entre son milieu et le bord, en
+# mètres. Elle est un peu plus courte que la demi-largeur d'une voiture : il serre le bord
+# jusqu'à y poser les roues, et le VP le double avec un espace qu'on voit à l'écran.
+MARGE_BORD_CHAUSSEE = 0.6
 
 
 def cap_de_la_direction(dx: float, dy: float) -> float:

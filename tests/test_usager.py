@@ -89,10 +89,24 @@ def test_degagez_ralentit_et_range(voiture: Voiture) -> None:
     assert voiture.se_range()
 
 
-def test_changez_voie_range_sans_ralentir(voiture: Voiture) -> None:
+def test_changez_voie_range_puis_immobilise(voiture: Voiture) -> None:
     assert voiture.reagir(CodeNotification.CHANGEZ_VOIE)
-    assert voiture.vitesse_autorisee() == pytest.approx(Voiture.VITESSE_MAX)
+    assert voiture.vitesse_autorisee() == 0.0
     assert voiture.se_range()
+
+
+@pytest.mark.parametrize(
+    ("code", "retenu"),
+    [
+        (CodeNotification.ATTENDEZ, True),
+        (CodeNotification.CHANGEZ_VOIE, True),
+        (CodeNotification.DEGAGEZ, False),
+        (CodeNotification.OK_PASSER, False),
+    ],
+)
+def test_retenu_avant_la_ligne_selon_la_consigne(voiture: Voiture, code: CodeNotification, retenu: bool) -> None:
+    voiture.reagir(code)
+    assert voiture.retenu_avant_la_ligne() is retenu
 
 
 def test_attendez_ne_ralentit_pas_avant_la_ligne(voiture: Voiture) -> None:

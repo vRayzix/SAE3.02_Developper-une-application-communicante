@@ -4,10 +4,11 @@ Quand un véhicule prioritaire (VP) traverse, ses segments réservés devant lui
 rester libres :
 
 1. un usager sur l'anneau qui est, ou va passer, sur un de ces segments se range : DEGAGEZ ;
-2. un usager en file sur la branche d'entrée d'un VP encore en approche serre à droite
-   pour le laisser passer : CHANGEZ_VOIE ;
+2. un usager qui roule devant un VP en approche, sur la même chaussée d'entrée, se range
+   à droite et s'arrête jusqu'à ce que le VP l'ait dépassé : CHANGEZ_VOIE ;
 3. un usager en approche dont le trajet passe par un segment réservé attend avant
-   d'entrer, jusqu'à ce que le VP ait quitté l'anneau : ATTENDEZ ;
+   d'entrer, jusqu'à ce que le VP ait quitté l'anneau : ATTENDEZ. C'est le cas de ceux
+   qui roulent derrière le VP sur sa branche, et de ceux qu'il vient de dépasser ;
 4. un piéton qui attend devant le passage de la branche d'entrée ou de sortie d'un VP
    attend pour traverser : ATTENDEZ.
 
@@ -26,6 +27,8 @@ n'envoie plus rien : c'est la référence pour mesurer ce qu'apporte la régulat
 
 from __future__ import annotations
 
+import math
+
 from cherrypie.commun.protocole import CodeNotification
 from cherrypie.modele.rond_point import RondPoint
 from cherrypie.modele.trajectoire import Etape
@@ -42,6 +45,10 @@ from cherrypie.serveur.notifications import (
 )
 from cherrypie.serveur.passages import PassageEnCours
 from cherrypie.serveur.registre import Registre
+
+# Le VP a dépassé un usager rangé quand son avant le devance de cette distance, en mètres :
+# la longueur du VP et une marge. Avant, l'usager qui reprendrait sa voie viendrait contre son flanc.
+DISTANCE_DEPASSEMENT = 8.0
 
 
 class Regulateur:
@@ -166,7 +173,7 @@ class Regulateur:
         if usager.etape is Etape.ANNEAU and chemin_restant & devant_les_vps:
             return CodeNotification.DEGAGEZ, TEXTE_DEGAGEZ
         if usager.etape is Etape.APPROCHE:
-            if any(vp.etape is Etape.APPROCHE and usager.branche_entree == vp.branche_entree for vp, _ in vps):
+            if any(self.__devant_le_vp(usager, vp) for vp, _ in vps):
                 return CodeNotification.CHANGEZ_VOIE, TEXTE_CHANGEZ_VOIE
             if chemin_restant & reserves:
                 return CodeNotification.ATTENDEZ, TEXTE_ATTENDEZ_VP
@@ -222,6 +229,21 @@ class Regulateur:
         if usager.etape is Etape.ANNEAU and usager.segment in segments:
             return segments[segments.index(usager.segment):]
         return []
+
+    @staticmethod
+    def __devant_le_vp(usager: Usager, vp: Usager) -> bool:
+        """Indique si un usager en approche est devant un VP en approche, ou à côté de lui, sur la même chaussée.
+
+        Sur une chaussée d'approche, qui va droit vers l'anneau, celui qui est devant est le
+        plus proche du centre. L'usager reste devant tant que le VP ne l'a pas dépassé de
+        DISTANCE_DEPASSEMENT.
+        """
+        if vp.etape is not Etape.APPROCHE or usager.branche_entree != vp.branche_entree:
+            return False
+        if usager.position is None or vp.position is None:
+            return False
+        distance_usager = math.hypot(usager.position.x, usager.position.y)
+        return distance_usager < math.hypot(vp.position.x, vp.position.y) + DISTANCE_DEPASSEMENT
 
     @staticmethod
     def __segments_devant(vp: Usager, passage: PassageEnCours) -> set[str]:

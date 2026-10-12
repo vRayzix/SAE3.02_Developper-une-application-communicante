@@ -2,12 +2,15 @@
 
 import math
 import random
+from dataclasses import dataclass
 
 import pytest
 from geometrie import rond_point_bel_air
 from simulation import Simulation
 
+from cherrypie.client.deplacement import TOLERANCE_RANGEMENT, Deplacement
 from cherrypie.commun.protocole import CodeNotification
+from cherrypie.ihm.style import GABARITS_CATEGORIE
 from cherrypie.modele.trajectoire import LONGUEUR_INSERTION, Etape
 from cherrypie.modele.usager import Moto, Pieton, Trottinette, VehiculePrioritaire, Voiture
 from cherrypie.serveur.passages import PassageVp
@@ -153,6 +156,123 @@ def test_vp_regule_ne_cede_pas_aux_vehicules_de_l_anneau(sortie_du_vp: str) -> N
     assert charge.duree <= a_vide.duree * (1 + ECART_TOLERE_A_VIDE)
 
 
+# ---------- Civils sur la branche du VP ----------
+
+# Délai entre deux départs sur la même branche, en secondes, comme dans un scénario lancé d'un bloc.
+DELAI_ENTRE_DEPARTS = 1.0
+# Espace minimal entre le VP et une voiture rangée qu'il double, en mètres, pour qu'on les distingue à l'écran.
+ESPACE_VISIBLE = 0.3
+
+
+def cote_a_cote(vp: Deplacement, voiture: Deplacement) -> bool:
+    """Indique si deux usagers de la même chaussée se chevauchent dans le sens de la marche."""
+    longueur_vp = GABARITS_CATEGORIE[VehiculePrioritaire.CATEGORIE][0]
+    longueur_voiture = GABARITS_CATEGORIE[Voiture.CATEGORIE][0]
+    return voiture.avancement - longueur_voiture < vp.avancement < voiture.avancement + longueur_vp
+
+
+def espace_lateral(vp: Deplacement, voiture: Deplacement) -> float:
+    """Espace entre les flancs de deux usagers côte à côte sur la même chaussée, tels que les dessine la scène."""
+    demi_largeurs = (GABARITS_CATEGORIE[VehiculePrioritaire.CATEGORIE][1] + GABARITS_CATEGORIE[Voiture.CATEGORIE][1]) / 2
+    return abs(voiture.decalage - vp.decalage) - demi_largeurs
+
+
+@dataclass
+class Civil:
+    """Ce qu'a fait une voiture partie de la même branche que le VP, pendant sa traversée."""
+
+    deplacement: Deplacement
+    s_est_rangee: bool = False
+    espace_avec_le_vp: float = math.inf
+    consigne_a_la_sortie_du_vp: CodeNotification | None = None
+    decalage_a_la_sortie_du_vp: float = 0.0
+
+
+def vp_parti_avec_des_civils(sortie_du_vp: str, civils: bool) -> tuple[PassageVp, float, list[Civil], list[Civil]]:
+    """Lance trois voitures, puis un VP et une dernière voiture, du boulevard des Nations (sud).
+
+    Les départs sont espacés de DELAI_ENTRE_DEPARTS, régulation active. Pendant la
+    traversée du VP, vérifie qu'aucune voiture n'entre sur l'anneau et qu'une voiture
+    rangée devant lui ne roule plus tant qu'il ne l'a pas dépassée. Renvoie la mesure du
+    VP, le temps qu'il a passé arrêté avant l'anneau, les voitures parties devant lui et
+    celle partie derrière.
+    """
+    simulation = Simulation(rond_point_bel_air())
+    devant: list[Civil] = []
+    derriere: list[Civil] = []
+    vp: Deplacement | None = None
+    arret = 0.0
+
+    def observer() -> None:
+        nonlocal arret
+        if vp is None or simulation.logique.passages:
+            return
+        if vp.usager.etape is Etape.APPROCHE and vp.usager.vitesse == 0.0:
+            arret += PAS_DE_SIMULATION
+        for civil in devant + derriere:
+            voiture = civil.deplacement
+            assert voiture.usager.etape is Etape.APPROCHE, f"{voiture.usager.identifiant} entre avant la sortie du VP"
+            rangee = voiture.decalage >= voiture.trajectoire.place_a_droite_a(voiture.avancement) - TOLERANCE_RANGEMENT
+            depassee = vp.usager.etape is not Etape.APPROCHE or vp.avancement > voiture.avancement
+            # Le pas où elle finit de se ranger, elle roule encore : on regarde les pas suivants.
+            if civil in devant and civil.s_est_rangee and rangee and not depassee:
+                assert voiture.usager.vitesse == 0.0, f"{voiture.usager.identifiant} rangée mais roule encore"
+            civil.s_est_rangee = civil.s_est_rangee or rangee
+            if civil in devant and vp.usager.etape is Etape.APPROCHE and cote_a_cote(vp, voiture):
+                civil.espace_avec_le_vp = min(civil.espace_avec_le_vp, espace_lateral(vp, voiture))
+            civil.consigne_a_la_sortie_du_vp = voiture.usager.consigne
+            civil.decalage_a_la_sortie_du_vp = voiture.decalage
+
+    def partir(usager: Voiture | VehiculePrioritaire) -> Deplacement:
+        depart = simulation.ajouter(usager)
+        fin = simulation.instant + DELAI_ENTRE_DEPARTS
+
+        def delai_ecoule() -> bool:
+            observer()
+            return simulation.instant >= fin - 1e-9
+
+        assert simulation.avancer_jusqu_a(delai_ecoule, duree_max=60.0)
+        return depart
+
+    if civils:
+        devant = [Civil(partir(Voiture(f"voiture_{rang}", "nations_sud", "albert_camus"))) for rang in range(3)]
+    vp = partir(VehiculePrioritaire("vp_1", "nations_sud", sortie_du_vp))
+    if civils:
+        derriere = [Civil(partir(Voiture("voiture_3", "nations_sud", "albert_camus")))]
+
+    def suivre() -> bool:
+        observer()
+        return bool(simulation.logique.passages)
+
+    assert simulation.avancer_jusqu_a(suivre, duree_max=60.0)
+    return simulation.logique.passages[0], arret, devant, derriere
+
+
+@pytest.mark.parametrize("sortie_du_vp", ["nations_nord", "nations_sud"], ids=["trajet-normal", "demi-tour"])
+def test_civils_devant_le_vp_se_rangent_et_s_arretent(sortie_du_vp: str) -> None:
+    _, _, devant, derriere = vp_parti_avec_des_civils(sortie_du_vp, civils=True)
+    assert all(civil.s_est_rangee for civil in devant)
+    assert not any(civil.s_est_rangee for civil in derriere)
+    # Le VP double chaque voiture rangée sans la toucher, avec un espace qu'on voit à l'écran.
+    assert all(ESPACE_VISIBLE <= civil.espace_avec_le_vp < math.inf for civil in devant)
+
+
+@pytest.mark.parametrize("sortie_du_vp", ["nations_nord", "nations_sud"], ids=["trajet-normal", "demi-tour"])
+def test_vp_double_les_civils_ranges_sans_attendre(sortie_du_vp: str) -> None:
+    seul, _, _, _ = vp_parti_avec_des_civils(sortie_du_vp, civils=False)
+    double, arret, _, _ = vp_parti_avec_des_civils(sortie_du_vp, civils=True)
+    assert arret <= PAS_DE_SIMULATION
+    assert double.duree <= seul.duree * (1 + ECART_TOLERE_A_VIDE)
+
+
+@pytest.mark.parametrize("sortie_du_vp", ["nations_nord", "nations_sud"], ids=["trajet-normal", "demi-tour"])
+def test_civils_doubles_reprennent_leur_voie_et_attendent_la_sortie_du_vp(sortie_du_vp: str) -> None:
+    _, _, devant, derriere = vp_parti_avec_des_civils(sortie_du_vp, civils=True)
+    for civil in devant + derriere:
+        assert civil.consigne_a_la_sortie_du_vp is CodeNotification.ATTENDEZ
+        assert civil.decalage_a_la_sortie_du_vp == pytest.approx(0.0)
+
+
 # ---------- Entrées pendant et après le passage du VP ----------
 
 def deux_voitures_en_attente(regulation: bool = True) -> tuple[Simulation, list]:
@@ -246,3 +366,5 @@ def test_vp_plus_rapide_avec_regulation(graine: int) -> None:
 
 def test_meme_scenario_meme_resultat() -> None:
     assert traversee_du_vp(1, regulation=False).duree == traversee_du_vp(1, regulation=False).duree
+
+

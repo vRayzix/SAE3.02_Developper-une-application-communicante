@@ -31,6 +31,8 @@ class Usager:
     # Écart gardé avec l'obstacle de devant, en mètres. Il couvre aussi le retard de la
     # position vue par le serveur, qui peut dater d'un pas.
     DISTANCE_SECURITE = 6.0
+    # Écart latéral habituel sur la chaussée d'approche, en mètres, positif vers la droite.
+    ECART_EN_APPROCHE = 0.0
 
     def __init__(self, identifiant: str, branche_entree: str, branche_sortie: str) -> None:
         """Crée un usager à l'arrêt, dont la position n'est pas encore connue.
@@ -250,13 +252,16 @@ class Usager:
         """Donne la vitesse maximale permise par la consigne en cours.
 
         ATTENDEZ ne ralentit pas l'usager : il avance jusqu'à la ligne d'entrée et
-        s'y arrête, ce qui dépend de sa trajectoire et non de sa vitesse.
+        s'y arrête, ce qui dépend de sa trajectoire et non de sa vitesse. Pendant un
+        CHANGEZ_VOIE, l'usager rangé reste immobile jusqu'à ce que le VP l'ait dépassé.
 
         Returns:
-            float: vitesse en m/s, réduite pendant un DEGAGEZ.
+            float: vitesse en m/s, réduite pendant un DEGAGEZ, nulle pendant un CHANGEZ_VOIE.
         """
         if self.__consigne is CodeNotification.DEGAGEZ:
             return self.VITESSE_MAX * FACTEUR_RALENTISSEMENT
+        if self.__consigne is CodeNotification.CHANGEZ_VOIE:
+            return 0.0
         return self.VITESSE_MAX
 
     def se_range(self) -> bool:
@@ -269,6 +274,14 @@ class Usager:
             bool: True pendant un DEGAGEZ ou un CHANGEZ_VOIE.
         """
         return self.__consigne in (CodeNotification.DEGAGEZ, CodeNotification.CHANGEZ_VOIE)
+
+    def retenu_avant_la_ligne(self) -> bool:
+        """Indique si la consigne en cours interdit à l'usager de franchir sa ligne d'entrée.
+
+        Returns:
+            bool: True pendant un ATTENDEZ, et pendant un CHANGEZ_VOIE où il reste rangé.
+        """
+        return self.__consigne in (CodeNotification.ATTENDEZ, CodeNotification.CHANGEZ_VOIE)
 
     def calculer_trajectoire(self, rond_point: RondPoint) -> Trajectoire:
         """Calcule le chemin de l'usager : approche, anneau, puis sortie.
@@ -382,6 +395,10 @@ class VehiculePrioritaire(Usager):
     CATEGORIE = "vp"
     VITESSE_MAX = 40 * KMH
     CONSIGNES_SUIVIES = frozenset()
+    # Il roule sur la gauche de sa chaussée, côté terre-plein, d'où il double les usagers
+    # rangés à droite. L'écart reste sous celui qui sépare deux files (1 m) : il voit
+    # toujours devant lui ceux qui roulent au milieu.
+    ECART_EN_APPROCHE = -0.8
 
     def calculer_trajectoire(self, rond_point: RondPoint) -> Trajectoire:
         """Calcule le chemin du VP, qui reste sur la voie intérieure de l'anneau de bout en bout.
