@@ -47,6 +47,8 @@ SCENARIO = [
 # régulé roule sur l'anneau, l'autre attend encore derrière la file.
 DELAI_CAPTURE_REPOS = 3.0
 DELAI_CAPTURE_VP = 8.0
+# Avec régulation, le VP double les voitures rangées de sa branche à peu près à ce délai après son départ.
+DELAI_CAPTURE_DEPASSEMENT = 2.4
 # Taille des captures principales, puis tailles d'écran de portable vérifiées.
 TAILLE_CAPTURE = (1280, 720)
 TAILLES_ECRAN = [(1024, 640), (1280, 720), (1440, 800)]
@@ -119,7 +121,11 @@ def jouer(regulation: bool, dossier: Path) -> None:
     patienter(DELAI_CAPTURE_REPOS)
     if regulation:
         enregistrer(fenetre, dossier / "repos.png")
-    patienter(DELAI_AVANT_VP - DELAI_CAPTURE_REPOS + DELAI_CAPTURE_VP)
+        patienter(DELAI_AVANT_VP - DELAI_CAPTURE_REPOS + DELAI_CAPTURE_DEPASSEMENT)
+        enregistrer(fenetre, dossier / "vp_double.png")
+        patienter(DELAI_CAPTURE_VP - DELAI_CAPTURE_DEPASSEMENT)
+    else:
+        patienter(DELAI_AVANT_VP - DELAI_CAPTURE_REPOS + DELAI_CAPTURE_VP)
     enregistrer(fenetre, dossier / f"vp_{'avec' if regulation else 'sans'}_regulation.png")
     if regulation:
         capturer_les_tailles(fenetre, dossier)
@@ -148,7 +154,7 @@ def enregistrer(fenetre: FenetreSupervision, chemin: Path) -> None:
 
 
 def main() -> int:
-    """Génère les captures : repos, VP avec et sans régulation, tailles d'écran et section « Suivi ».
+    """Génère les captures : repos, VP qui double, VP avec et sans régulation, tailles d'écran et « Suivi ».
 
     Returns:
         int: code de sortie du programme, 0 si tout s'est bien passé.
