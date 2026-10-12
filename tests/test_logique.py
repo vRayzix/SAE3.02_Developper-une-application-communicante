@@ -284,6 +284,7 @@ def test_etat_sans_usager(logique: LogiqueServeur) -> None:
         "vp_actif": False,
         "segments_reserves": [],
         "entrees_bloquees": [],
+        "passages_fermes": [],
         "regulation": True,
     }
 
@@ -428,24 +429,41 @@ def test_cadence_envoie_devant_a_chaque_vehicule_positionne(logique: LogiqueServ
     devant = session_inscrite(logique, "voiture_1")
     derriere = session_inscrite(logique, "voiture_2")
     nord = logique.rond_point.branche("nations_nord")
-    for identifiant, distance in (("voiture_1", 40.0), ("voiture_2", 55.0)):
+    # La première, près de sa ligne, reçoit son tour d'entrée ; la seconde la suit à 15 m.
+    for identifiant, distance in (("voiture_1", 30.0), ("voiture_2", 45.0)):
         point = nord.point(distance)
         logique.traiter_udp(pos(identifiant, x=point.x, y=point.y, segment=None, etape="approche"), 1.0)
     vues = {numero: message.donnees for numero, message in logique.cadencer() if message.type is TypeMessage.DEVANT}
     assert vues == {
         devant: {"distance": None, "ceder": False},
-        derriere: {"distance": pytest.approx(15.0), "ceder": False},
+        derriere: {"distance": pytest.approx(15.0), "ceder": True},
     }
 
 
-def test_pas_de_devant_pour_un_pieton_ni_une_supervision(logique: LogiqueServeur) -> None:
+def test_state_signale_le_passage_ferme_par_un_pieton(logique: LogiqueServeur) -> None:
+    pieton = logique.ouvrir_session(0.0)
+    inscription = hello("pieton_1", categorie="pieton", entree="nations_nord", sortie="nations_nord")
+    logique.traiter_tcp(pieton, inscription, 0.5)
+    nord = logique.rond_point.branche("nations_nord")
+    sur_la_sortie = nord.point(logique.rond_point.rayon_bord + nord.passage_pieton, -nord.decalage_voie)
+    logique.traiter_udp(
+        pos("pieton_1", x=sur_la_sortie.x, y=sur_la_sortie.y, vitesse=1.0, segment=None, etape="traversee"), 1.0
+    )
+    fermes = logique.construire_etat().donnees["passages_fermes"]
+    assert fermes == [{"branche": "nations_nord", "chaussee": "sortie"}]
+
+
+def test_devant_pour_un_pieton_mais_pas_pour_une_supervision(logique: LogiqueServeur) -> None:
     pieton = logique.ouvrir_session(0.0)
     inscription = hello("pieton_1", categorie="pieton", entree="nations_nord", sortie="nations_nord")
     logique.traiter_tcp(pieton, inscription, 0.5)
     logique.traiter_udp(pos("pieton_1", x=-7.5, y=28.0, vitesse=1.0, segment=None, etape="approche"), 1.0)
     supervision = logique.ouvrir_session(0.0)
     logique.traiter_tcp(supervision, Message(TypeMessage.ABONNEMENT, "supervision"), 0.5)
-    assert [message.type for _, message in logique.cadencer()] == [TypeMessage.STATE]
+    envois = logique.cadencer()
+    assert [(numero, message.type) for numero, message in envois] == [
+        (supervision, TypeMessage.STATE), (pieton, TypeMessage.DEVANT)
+    ]
 
 
 # ---------- Régulation ----------
@@ -468,6 +486,16 @@ def test_cadence_envoie_la_consigne_a_la_session_du_destinataire(logique: Logiqu
     logique.traiter_tcp(vp, alerte(), 1.0)
     assert notifications(logique.cadencer()) == {voiture: "ATTENDEZ"}
     assert logique.construire_etat().donnees["entrees_bloquees"] == ["jean_de_la_bruyere"]
+
+
+def test_consigne_en_cours_visible_dans_le_state(logique: LogiqueServeur) -> None:
+    voiture_en_approche(logique, "voiture_1", "jean_de_la_bruyere", "albert_camus")
+    vp = vp_inscrit(logique)
+    logique.traiter_tcp(vp, alerte(), 1.0)
+    logique.cadencer()
+    usagers = {usager["id"]: usager for usager in logique.construire_etat().donnees["usagers"]}
+    assert usagers["voiture_1"]["consigne"] == "ATTENDEZ"
+    assert usagers["vp_1"]["consigne"] is None
 
 
 def test_consigne_renvoyee_apres_une_reconnexion(logique: LogiqueServeur) -> None:

@@ -117,6 +117,25 @@ def test_identifiants_uniques_par_categorie(lancer_serveur: Callable[..., Serveu
     attendre(lambda: len(serveur.logique.registre.usagers) == 6)
 
 
+def test_plusieurs_pietons_lances_ensemble_ne_se_superposent_pas(
+    lancer_serveur: Callable[..., Serveur], fabrique_panneau: Callable
+) -> None:
+    serveur = lancer_serveur(intervalle_position="0.05")
+    panneau = fabrique_panneau(serveur.config)
+    choisir(panneau, Pieton.CATEGORIE, "nations_nord")
+    panneau.choix_nombre.setValue(3)
+    panneau.lancer()
+    registre = serveur.logique.registre
+
+    def espaces() -> bool:
+        positions = [usager.position for usager in registre.usagers if usager.position is not None]
+        return len(positions) == 3 and min(
+            a.distance(b) for rang, a in enumerate(positions) for b in positions[rang + 1:]
+        ) >= Pieton.DISTANCE_SECURITE / 2
+
+    attendre(espaces, delai=3 * DELAI)
+
+
 def test_pieton_lance(lancer_serveur: Callable[..., Serveur], fabrique_panneau: Callable) -> None:
     serveur = lancer_serveur()
     panneau = fabrique_panneau(serveur.config)

@@ -6,8 +6,8 @@ rester libres :
 1. un usager sur l'anneau qui est, ou va passer, sur un de ces segments se range : DEGAGEZ ;
 2. un usager en file sur la branche d'entrée d'un VP encore en approche serre à droite
    pour le laisser passer : CHANGEZ_VOIE ;
-3. un usager en approche dont le trajet passe par un de ces segments attend avant
-   d'entrer : ATTENDEZ ;
+3. un usager en approche dont le trajet passe par un segment réservé attend avant
+   d'entrer, jusqu'à ce que le VP ait quitté l'anneau : ATTENDEZ ;
 4. un piéton qui attend devant le passage de la branche d'entrée ou de sortie d'un VP
    attend pour traverser : ATTENDEZ.
 
@@ -106,10 +106,13 @@ class Regulateur:
             return self.__tout_liberer()
         vps = [(registre.obtenir(passage.identifiant), passage) for passage in passages]
         devant_les_vps = set().union(*(self.__segments_devant(vp, passage) for vp, passage in vps))
+        # Une entrée en conflit reste fermée jusqu'à la sortie du VP, même sur un segment qu'il a
+        # déjà quitté : un usager qui entrerait derrière lui pourrait encore croiser sa route.
+        reserves = set().union(*(passage.segments_reserves for _, passage in vps))
         branche_temporisee = None if vps else self.__branche_a_temporiser(densites)
         notifications = []
         for usager in registre.usagers:
-            voulue = self.__consigne_voulue(usager, vps, devant_les_vps, branche_temporisee)
+            voulue = self.__consigne_voulue(usager, vps, devant_les_vps, reserves, branche_temporisee)
             notification = self.__changement(usager.identifiant, voulue)
             if notification is not None:
                 notifications.append(notification)
@@ -146,6 +149,7 @@ class Regulateur:
         usager: Usager,
         vps: list[tuple[Usager, PassageEnCours]],
         devant_les_vps: set[str],
+        reserves: set[str],
         branche_temporisee: str | None,
     ) -> tuple[CodeNotification, str] | None:
         """Applique les règles, dans l'ordre, à un usager ; None s'il circule librement."""
@@ -158,13 +162,13 @@ class Regulateur:
             if usager.etape is Etape.APPROCHE and usager.branche_entree in branches_des_vps:
                 return CodeNotification.ATTENDEZ, TEXTE_ATTENDEZ_PIETON
             return None
-        sur_le_chemin_d_un_vp = bool(set(self.__chemin_restant(usager)) & devant_les_vps)
-        if usager.etape is Etape.ANNEAU and sur_le_chemin_d_un_vp:
+        chemin_restant = set(self.__chemin_restant(usager))
+        if usager.etape is Etape.ANNEAU and chemin_restant & devant_les_vps:
             return CodeNotification.DEGAGEZ, TEXTE_DEGAGEZ
         if usager.etape is Etape.APPROCHE:
             if any(vp.etape is Etape.APPROCHE and usager.branche_entree == vp.branche_entree for vp, _ in vps):
                 return CodeNotification.CHANGEZ_VOIE, TEXTE_CHANGEZ_VOIE
-            if sur_le_chemin_d_un_vp:
+            if chemin_restant & reserves:
                 return CodeNotification.ATTENDEZ, TEXTE_ATTENDEZ_VP
         return None
 

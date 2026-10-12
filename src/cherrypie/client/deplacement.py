@@ -8,9 +8,6 @@ from cherrypie.commun.protocole import CodeNotification
 from cherrypie.modele.trajectoire import Trajectoire
 from cherrypie.modele.usager import Usager
 
-# Écart gardé avec l'obstacle de devant, en mètres. Il couvre aussi le retard de la
-# position vue par le serveur, qui peut dater d'un pas.
-DISTANCE_SECURITE = 6.0
 # Vitesse à laquelle un usager se décale sur le côté pour se ranger ou changer de voie, en m/s :
 # le mouvement reste visible à l'écran au lieu de se faire d'un coup.
 VITESSE_LATERALE = 2.0
@@ -94,7 +91,10 @@ class Deplacement:
         """
         if distance is not None and (not math.isfinite(distance) or distance < 0):
             raise ValueError(f"distance invalide : {distance}")
-        self.__limite = None if distance is None else self.__avancement + max(0.0, distance - DISTANCE_SECURITE)
+        if distance is None:
+            self.__limite = None
+        else:
+            self.__limite = self.__avancement + max(0.0, distance - self.__usager.DISTANCE_SECURITE)
         self.__ceder = ceder
 
     def avancer(self, duree: float) -> None:

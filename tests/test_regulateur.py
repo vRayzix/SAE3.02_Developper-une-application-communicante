@@ -161,9 +161,10 @@ def test_pieton_attend_pour_traverser(
 
 # ---------- VP sur l'anneau ----------
 
-def test_segment_deja_quitte_par_le_vp_libere(
+def test_segment_deja_quitte_par_le_vp_libere_l_anneau_mais_pas_les_entrees(
     rond_point: RondPoint, regulateur: Regulateur, registre: Registre, placer
 ) -> None:
+    # Sur l'anneau, derrière le VP, on circule librement ; en approche, on attend sa sortie.
     vp = VehiculePrioritaire("vp_1", "nations_sud", "nations_nord")
     placer(vp, debut_du_segment(vp.calculer_trajectoire(rond_point), "jean_de_la_bruyere-nations_nord") + 5.0)
     segments = ["nations_sud-jean_de_la_bruyere", "jean_de_la_bruyere-nations_nord"]
@@ -172,7 +173,7 @@ def test_segment_deja_quitte_par_le_vp_libere(
     placer(Voiture("voiture_2", "nations_sud", "albert_camus"), 20.0)
     placer(Voiture("voiture_3", "nations_sud", "jean_de_la_bruyere"), 20.0)
     assert vp.segment == "jean_de_la_bruyere-nations_nord"
-    assert consignes(regulateur, registre, [passage]) == {"voiture_2": ATTENDEZ}
+    assert consignes(regulateur, registre, [passage]) == {"voiture_2": ATTENDEZ, "voiture_3": ATTENDEZ}
 
 
 # ---------- Mémoire des consignes ----------

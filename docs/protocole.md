@@ -53,7 +53,7 @@ Dans le code, `Message` porte `type`, `id` et `donnees` ; `Enveloppe` y ajoute `
 | VP_ALERT | client VP → serveur | TCP | `{"entree": "nations_sud", "sortie": "nations_nord", "eta": 4.5}`, `eta` en secondes avant l'anneau |
 | VP_FIN | client VP → serveur | TCP | `{}` |
 | NOTIF | serveur → client | TCP | `{"code": "DEGAGEZ", "message": "..."}`, code parmi `DEGAGEZ`, `CHANGEZ_VOIE`, `ATTENDEZ`, `OK_PASSER` |
-| STATE | serveur → supervision | TCP | `{"usagers": [...], "densite": {"nations_nord": 0.25, ...}, "vp_actif": true, "segments_reserves": ["jean_de_la_bruyere-nations_nord", "nations_sud-jean_de_la_bruyere"], "entrees_bloquees": [], "regulation": true}`, voir plus bas |
+| STATE | serveur → supervision | TCP | `{"usagers": [...], "densite": {"nations_nord": 0.25, ...}, "vp_actif": true, "segments_reserves": ["jean_de_la_bruyere-nations_nord", "nations_sud-jean_de_la_bruyere"], "entrees_bloquees": [], "passages_fermes": [{"branche": "nations_nord", "chaussee": "sortie"}], "regulation": true}`, voir plus bas |
 | ABONNEMENT | supervision → serveur | TCP | `{}` : la connexion reçoit ensuite les STATE |
 | REGLAGE | supervision → serveur | TCP | `{"regulation": false}`, voir « Régulation » |
 | PING | client → serveur | TCP | `{}` |
@@ -75,16 +75,21 @@ Chaque élément de la liste `usagers` d'un STATE décrit un usager connecté :
 - `vp_actif` : `true` si au moins un VP annoncé n'a pas fini sa traversée.
 - `segments_reserves` : segments de l'anneau réservés aux VP en cours de traversée, triés par nom, pour que la supervision puisse les afficher. Ils sont envoyés que la régulation soit active ou non.
 - `entrees_bloquees` : branches où au moins un usager attend sur ordre du régulateur (ATTENDEZ), triées par nom.
+- `passages_fermes` : demi-chaussées fermées par un piéton qui les traverse, avec leur branche et leur chaussée (`entree` ou `sortie`). Elles sont fermées que la régulation soit active ou non.
+- `consigne` de chaque usager : la dernière consigne que le serveur lui a envoyée, `null` s'il circule librement.
 - `regulation` : `true` si la régulation est active.
 
 ## Ce que voit un conducteur (DEVANT)
 
-Chaque client roule sans voir les autres : sans aide, deux voitures pourraient se traverser, et un VP ne serait jamais gêné par le trafic. Le serveur, qui connaît toutes les positions, simule donc ce qu'un conducteur verrait par son pare-brise. **DEVANT n'est pas une consigne de régulation** : il part à chaque cadence vers chaque véhicule, que la régulation soit active ou non. Les piétons n'en reçoivent pas.
+Chaque client roule sans voir les autres : sans aide, deux voitures pourraient se traverser, et un VP ne serait jamais gêné par le trafic. Le serveur, qui connaît toutes les positions, simule donc ce qu'un conducteur verrait par son pare-brise. **DEVANT n'est pas une consigne de régulation** : il part à chaque cadence vers chaque usager, que la régulation soit active ou non.
 
 - `distance` : distance, en mètres, jusqu'à l'obstacle le plus proche devant le véhicule sur sa voie, ou `null` si rien ne gêne dans les 50 m. Un obstacle est un autre véhicule sur la même voie, ou un piéton en train de traverser le passage piéton de la branche. Sur une chaussée de branche, deux véhicules sont sur la même file si leurs écarts à l'axe diffèrent de moins de 1 m : un véhicule rangé sur le bord (CHANGEZ_VOIE) ne gêne pas ceux qui roulent au milieu. Sur l'anneau, deux véhicules sont sur la même voie si leurs distances au centre diffèrent de moins d'une demi-largeur de voie ; l'obstacle compte jusqu'à la sortie du véhicule, chaussée de sortie comprise. Les distances sur l'anneau sont mesurées à la distance au centre du véhicule, ce qui compte un peu court dans les raccords : c'est le côté prudent.
-- `ceder` : `true` si le véhicule doit attendre sur sa ligne d'entrée, au bord de l'anneau, parce que l'anneau n'est pas libre sur 15 m avant et 10 m après son point d'entrée (cédez-le-passage). Pour rejoindre sa voie, un véhicule qui entre traverse la voie extérieure : il cède le passage aux véhicules des deux voies.
+- Un piéton ne ferme que la demi-chaussée sur laquelle il marche : la chaussée d'entrée bloque les véhicules en approche, la chaussée de sortie ceux qui quittent l'anneau par cette branche. Sur le refuge du terre-plein, il ne bloque personne.
+- `ceder` : `true` si le véhicule doit s'arrêter sur sa ligne d'entrée, au bord de l'anneau. Les entrées se font une par une : le serveur donne son tour à un seul véhicule, à moins de 12 m de sa ligne, sans obstacle devant lui ni consigne ATTENDEZ, l'anneau libre sur 15 m avant et 10 m après son point d'entrée. Pour rejoindre sa voie, un véhicule qui entre traverse la voie extérieure : l'anneau doit être libre sur les deux voies. Le véhicule garde son tour jusqu'à avoir parcouru 10 m sur l'anneau ; s'il le perd avant sa ligne, personne ne le reçoit à cette cadence, car il a pu franchir la ligne avec l'autorisation précédente. Tous les autres véhicules en approche reçoivent `true`.
+- Régulation active, un VP annoncé ne cède jamais le passage : les autres dégagent sa voie. Sur l'anneau, il ne voit que les obstacles de la voie intérieure, la sienne, même pendant qu'il la rejoint.
+- Un piéton reçoit la distance au piéton qui le précède sur le même passage, et `ceder` à `false`.
 
-Le client garde une distance de sécurité de 6 m avec l'obstacle signalé, qui couvre aussi le retard d'un pas de la position vue par le serveur. Il ne recule jamais, et s'arrête sur sa ligne d'entrée tant que `ceder` vaut `true`. Les usagers arrêtés forment ainsi une vraie file au lieu de s'empiler au même point.
+Le client garde une distance de sécurité avec l'obstacle signalé, 6 m pour un véhicule et 1,5 m pour un piéton, qui couvre aussi le retard d'un pas de la position vue par le serveur. Il ne recule jamais, et s'arrête sur sa ligne d'entrée tant que `ceder` vaut `true`. Les usagers arrêtés forment ainsi une vraie file au lieu de s'empiler au même point.
 
 Les marges du cédez-le-passage empêchent l'anneau de se remplir au point de se bloquer en boucle : pour qu'un véhicule entre, il faut 25 m libres autour de son point d'entrée, ce qui interdit d'aligner sur tout l'anneau des véhicules espacés seulement de la distance de sécurité.
 
@@ -100,7 +105,7 @@ Les marges du cédez-le-passage empêchent l'anneau de se remplir au point de se
 
 1. un usager sur l'anneau qui est, ou va passer, sur un de ces segments reçoit DEGAGEZ : il passe sur la voie extérieure, puis ralentit. Le VP roule sur la voie intérieure, qui se libère ; un usager déjà sur la voie extérieure ne fait que ralentir ;
 2. un usager en file sur la branche d'entrée d'un VP encore en approche reçoit CHANGEZ_VOIE : il se range sur le bord droit de sa chaussée pour laisser passer le VP à sa gauche ;
-3. un usager en approche dont le trajet passe par un de ces segments reçoit ATTENDEZ (il s'arrête sur sa ligne d'entrée) ;
+3. un usager en approche dont le trajet passe par un segment réservé reçoit ATTENDEZ (il s'arrête sur sa ligne d'entrée) et le garde jusqu'au VP_FIN, même si le VP a déjà quitté ce segment ;
 4. un piéton qui attend devant le passage de la branche d'entrée ou de sortie d'un VP reçoit ATTENDEZ (« attendez pour traverser »).
 
 Sans VP, le régulateur dose les entrées : si une branche est en densité forte, la moins chargée des autres entrées occupées, si elle n'est pas elle-même en densité forte, reçoit ATTENDEZ. Dans tous les autres cas, l'usager circule librement : s'il avait une consigne, il reçoit OK_PASSER. Le VP ne reçoit jamais de consigne.

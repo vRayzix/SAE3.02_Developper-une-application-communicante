@@ -28,6 +28,9 @@ class Usager:
     CATEGORIE = ""
     VITESSE_MAX = 0.0
     CONSIGNES_SUIVIES = frozenset(CodeNotification)
+    # Écart gardé avec l'obstacle de devant, en mètres. Il couvre aussi le retard de la
+    # position vue par le serveur, qui peut dater d'un pas.
+    DISTANCE_SECURITE = 6.0
 
     def __init__(self, identifiant: str, branche_entree: str, branche_sortie: str) -> None:
         """Crée un usager à l'arrêt, dont la position n'est pas encore connue.
@@ -334,6 +337,8 @@ class Pieton(Usager):
     CATEGORIE = "pieton"
     VITESSE_MAX = 5 * KMH
     CONSIGNES_SUIVIES = frozenset({CodeNotification.ATTENDEZ, CodeNotification.OK_PASSER})
+    # Un piéton suit celui qui le précède sur le passage à un pas et demi.
+    DISTANCE_SECURITE = 1.5
 
     def __init__(self, identifiant: str, branche_entree: str, branche_sortie: str) -> None:
         """Crée un piéton.

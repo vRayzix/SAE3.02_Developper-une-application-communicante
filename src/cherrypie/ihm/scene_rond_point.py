@@ -50,6 +50,7 @@ from cherrypie.ihm.style import (
     COULEURS_CONSIGNE,
     COULEURS_DENSITE,
     DISTANCE_FLECHE,
+    ECART_BARRIERE_PASSAGE,
     ECART_ETIQUETTE,
     ECART_FEU_ENTREE,
     EPAISSEUR_BARRE_ENTREE,
@@ -192,6 +193,7 @@ class SceneRondPoint(QGraphicsScene):
         self.__textes_densite: dict[str, QGraphicsTextItem] = {}
         self.__arcs_reserves: dict[str, QGraphicsPathItem] = {}
         self.__entrees_temporisees: dict[str, QGraphicsItemGroup] = {}
+        self.__passages_fermes: dict[tuple[str, str], QGraphicsLineItem] = {}
         self.__marqueurs: dict[str, MarqueurUsager] = {}
         self.setBackgroundBrush(QBrush(COULEUR_FOND))
         for branche in rond_point.branches:
@@ -202,6 +204,7 @@ class SceneRondPoint(QGraphicsScene):
             self.__dessiner_marquages(branche)
             self.__dessiner_densite(branche)
             self.__poser_entree_temporisee(branche)
+            self.__poser_barrieres_du_passage(branche)
         for segment in rond_point.segments:
             self.__poser_voie_reservee(segment)
         # Le cadre se calcule avant les étiquettes : leur taille est en pixels, pas en mètres.
@@ -235,6 +238,14 @@ class SceneRondPoint(QGraphicsScene):
         return dict(self.__entrees_temporisees)
 
     @property
+    def passages_fermes(self) -> dict[tuple[str, str], QGraphicsLineItem]:
+        """dict[tuple[str, str], QGraphicsLineItem]: barrière de chaque chaussée, visible si un piéton la traverse (copie).
+
+        Les clés sont (branche, "entree") et (branche, "sortie").
+        """
+        return dict(self.__passages_fermes)
+
+    @property
     def marqueurs(self) -> dict[str, MarqueurUsager]:
         """dict[str, MarqueurUsager]: silhouette de chaque usager affiché, par identifiant (copie)."""
         return dict(self.__marqueurs)
@@ -265,6 +276,9 @@ class SceneRondPoint(QGraphicsScene):
             arc.setVisible(nom in etat["segments_reserves"])
         for nom, marque in self.__entrees_temporisees.items():
             marque.setVisible(nom in etat["entrees_bloquees"])
+        fermes = {(ferme["branche"], ferme["chaussee"]) for ferme in etat["passages_fermes"]}
+        for cle, barriere in self.__passages_fermes.items():
+            barriere.setVisible(cle in fermes)
         for nom, densite in etat["densite"].items():
             if nom in self.__bandes_densite:
                 self.__afficher_densite(nom, densite)
@@ -386,6 +400,20 @@ class SceneRondPoint(QGraphicsScene):
         groupe.setZValue(PLAN_MARQUE)
         groupe.setVisible(False)
         self.__entrees_temporisees[branche.nom] = groupe
+
+    def __poser_barrieres_du_passage(self, branche: Branche) -> None:
+        """Pose, cachées, les barrières des deux chaussées, du côté où arrivent les véhicules."""
+        passage = self.__rond_point.rayon_bord + branche.passage_pieton
+        recul = LARGEUR_PASSAGE_PIETON / 2 + ECART_BARRIERE_PASSAGE
+        crayon = QPen(COULEUR_FEU_ENTREE, EPAISSEUR_BARRE_ENTREE)
+        crayon.setCapStyle(Qt.PenCapStyle.FlatCap)
+        interieur, exterieur = branche.terre_plein / 2, branche.demi_largeur
+        # On arrive sur la chaussée d'entrée par le bout de la branche, sur celle de sortie par l'anneau.
+        for chaussee, distance, cote in (("entree", passage + recul, 1), ("sortie", passage - recul, -1)):
+            barriere = self.__ajouter_ligne(branche, (distance, cote * interieur), (distance, cote * exterieur), crayon)
+            barriere.setZValue(PLAN_MARQUE)
+            barriere.setVisible(False)
+            self.__passages_fermes[(branche.nom, chaussee)] = barriere
 
     def __poser_voie_reservee(self, segment: Segment) -> None:
         """Pose, caché, le surlignage de la voie intérieure d'un segment, celle que suit le VP."""

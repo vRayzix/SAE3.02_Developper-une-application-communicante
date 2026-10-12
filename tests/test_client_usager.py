@@ -12,7 +12,6 @@ import pytest
 from outils import DELAI, attendre
 
 from cherrypie.client.client_usager import ClientUsager, EtatConnexion
-from cherrypie.client.deplacement import DISTANCE_SECURITE
 from cherrypie.commun.config import Configuration
 from cherrypie.commun.protocole import CodeNotification, Enveloppe, Message, TypeMessage
 from cherrypie.commun.securite import Signataire
@@ -470,4 +469,4 @@ def test_deux_voitures_sur_la_meme_branche_gardent_leurs_distances(
     attendre(lambda: devant_client.deplacement.avancement > 15.0)
     ecart = devant_client.deplacement.avancement - derriere_client.deplacement.avancement
     pas_maximal = Voiture.VITESSE_MAX * float(DELAIS_RAPIDES["intervalle_position"])
-    assert ecart >= DISTANCE_SECURITE - pas_maximal
+    assert ecart >= Voiture.DISTANCE_SECURITE - pas_maximal

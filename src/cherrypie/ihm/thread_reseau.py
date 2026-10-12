@@ -25,7 +25,9 @@ from cherrypie.commun.trame import DecoupeurTrames
 IDENTIFIANT_SUPERVISION = "supervision"
 # Attente maximale de la boucle : un réglage demandé par l'IHM, ou l'arrêt, part dans ce délai.
 ATTENTE_MAX = 0.1
-CLES_ETAT = frozenset({"usagers", "densite", "vp_actif", "segments_reserves", "entrees_bloquees", "regulation"})
+CLES_ETAT = frozenset(
+    {"usagers", "densite", "vp_actif", "segments_reserves", "entrees_bloquees", "passages_fermes", "regulation"}
+)
 
 journal = logging.getLogger(__name__)
 

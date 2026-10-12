@@ -7,9 +7,8 @@ import pytest
 from geometrie import rond_point_bel_air
 from simulation import Simulation
 
-from cherrypie.client.deplacement import DISTANCE_SECURITE
 from cherrypie.commun.protocole import CodeNotification
-from cherrypie.modele.trajectoire import Etape
+from cherrypie.modele.trajectoire import LONGUEUR_INSERTION, Etape
 from cherrypie.modele.usager import Moto, Pieton, Trottinette, VehiculePrioritaire, Voiture
 from cherrypie.serveur.passages import PassageVp
 
@@ -35,7 +34,7 @@ def test_usagers_arretes_font_la_file_sans_s_empiler(simulation: Simulation) -> 
     avancements = [deplacement.avancement for deplacement in deplacements]
     assert avancements[0] == pytest.approx(deplacements[0].trajectoire.longueur_approche)
     for devant, derriere in zip(avancements, avancements[1:]):
-        assert devant - derriere >= DISTANCE_SECURITE - 1e-6
+        assert devant - derriere >= Voiture.DISTANCE_SECURITE - 1e-6
     assert all(voiture.vitesse == 0.0 for voiture in voitures)
 
 
@@ -47,6 +46,18 @@ def test_la_file_repart_quand_l_attente_est_levee(simulation: Simulation) -> Non
     simulation.avancer_jusqu_a(lambda: False, duree_max=15.0)
     for voiture in voitures:
         voiture.reagir(CodeNotification.OK_PASSER)
+    assert simulation.avancer_jusqu_a(lambda: not simulation.en_route, duree_max=60.0)
+
+
+# ---------- Piétons ----------
+
+def test_pietons_lances_ensemble_traversent_a_la_file(simulation: Simulation) -> None:
+    pietons = [Pieton(f"pieton_{numero}", "nations_nord", "nations_nord") for numero in range(1, 5)]
+    deplacements = [simulation.ajouter(pieton) for pieton in pietons]
+    simulation.avancer_jusqu_a(lambda: False, duree_max=6.0)
+    avancements = sorted((deplacement.avancement for deplacement in deplacements), reverse=True)
+    for devant, derriere in zip(avancements, avancements[1:]):
+        assert devant - derriere >= Pieton.DISTANCE_SECURITE - 1e-6
     assert simulation.avancer_jusqu_a(lambda: not simulation.en_route, duree_max=60.0)
 
 
@@ -94,6 +105,112 @@ def test_anneau_charge_ne_se_bloque_pas(simulation: Simulation) -> None:
 
     assert simulation.avancer_jusqu_a(tous_sortis, duree_max=300.0), "l'anneau s'est bloqué"
     assert ecart_minimal >= ECART_SANS_CHEVAUCHEMENT
+
+
+# ---------- Priorité du VP ----------
+
+# Pas de la simulation, et écart toléré entre la traversée du VP dans un anneau chargé et à vide.
+PAS_DE_SIMULATION = 0.2
+ECART_TOLERE_A_VIDE = 0.1
+
+
+def traversee_dans_un_anneau_charge(sortie_du_vp: str, charge: bool) -> tuple[PassageVp, float, int]:
+    """Fait arriver un VP du boulevard des Nations (sud), régulation active.
+
+    Avec charge, deux véhicules par branche font le tour de l'anneau au moment où le VP
+    approche. Renvoie la mesure du VP, le temps qu'il a passé arrêté avant l'anneau et le
+    nombre d'autres véhicules sur l'anneau quand il y est entré.
+    """
+    simulation = Simulation(rond_point_bel_air())
+    if charge:
+        for entree in BRANCHES:
+            for rang, avancement in enumerate((LONGUEUR_BRANCHE + 3.0, LONGUEUR_BRANCHE + 20.0)):
+                simulation.ajouter(Voiture(f"voiture_{entree}{rang}", entree, entree), avancement=avancement)
+    vp = simulation.ajouter(VehiculePrioritaire("vp_1", "nations_sud", sortie_du_vp))
+    arret = 0.0
+    sur_l_anneau_a_l_entree: int | None = None
+
+    def suivre() -> bool:
+        nonlocal arret, sur_l_anneau_a_l_entree
+        usager = vp.usager
+        if usager.etape is Etape.APPROCHE and simulation.instant > 0 and usager.vitesse == 0.0:
+            arret += PAS_DE_SIMULATION
+        if usager.etape is Etape.ANNEAU and sur_l_anneau_a_l_entree is None:
+            autres = [deplacement for deplacement in simulation.en_route if deplacement is not vp]
+            sur_l_anneau_a_l_entree = sum(deplacement.usager.etape is Etape.ANNEAU for deplacement in autres)
+        return bool(simulation.logique.passages)
+
+    assert simulation.avancer_jusqu_a(suivre, duree_max=60.0)
+    return simulation.logique.passages[0], arret, sur_l_anneau_a_l_entree or 0
+
+
+@pytest.mark.parametrize("sortie_du_vp", ["nations_nord", "nations_sud"], ids=["trajet-normal", "demi-tour"])
+def test_vp_regule_ne_cede_pas_aux_vehicules_de_l_anneau(sortie_du_vp: str) -> None:
+    a_vide, _, _ = traversee_dans_un_anneau_charge(sortie_du_vp, charge=False)
+    charge, arret, sur_l_anneau = traversee_dans_un_anneau_charge(sortie_du_vp, charge=True)
+    assert sur_l_anneau >= 8
+    assert arret <= PAS_DE_SIMULATION
+    assert charge.duree <= a_vide.duree * (1 + ECART_TOLERE_A_VIDE)
+
+
+# ---------- Entrées pendant et après le passage du VP ----------
+
+def deux_voitures_en_attente(regulation: bool = True) -> tuple[Simulation, list]:
+    """Deux voitures à l'arrêt sur deux branches, dont le trajet croise celui d'un VP qui arrive du sud."""
+    simulation = Simulation(rond_point_bel_air())
+    simulation.regler(regulation)
+    # À 10 m de leur ligne, elles y arrivent après la première cadence du serveur.
+    avancement = LONGUEUR_BRANCHE - 10.0
+    voitures = [
+        simulation.ajouter(Voiture("voiture_a", "jean_de_la_bruyere", "nations_nord"), avancement=avancement),
+        simulation.ajouter(Voiture("voiture_b", "albert_camus", "jean_de_la_bruyere"), avancement=avancement),
+    ]
+    simulation.ajouter(VehiculePrioritaire("vp_1", "nations_sud", "nations_nord"))
+    return simulation, voitures
+
+
+def test_aucune_voiture_en_conflit_n_entre_pendant_le_passage_du_vp() -> None:
+    simulation, voitures = deux_voitures_en_attente()
+
+    def vp_sorti() -> bool:
+        assert all(voiture.usager.etape is Etape.APPROCHE for voiture in voitures), "une voiture est entrée"
+        return bool(simulation.logique.passages)
+
+    assert simulation.avancer_jusqu_a(vp_sorti, duree_max=60.0)
+
+
+def entrees_simultanees(simulation: Simulation, voitures: list, duree_max: float) -> int:
+    """Plus grand nombre de voitures en train de rejoindre l'anneau au même moment."""
+    plus_grand = 0
+
+    def toutes_entrees() -> bool:
+        nonlocal plus_grand
+        en_insertion = [
+            voiture for voiture in voitures
+            if voiture.usager.etape is Etape.ANNEAU
+            and voiture.avancement - voiture.trajectoire.longueur_approche < LONGUEUR_INSERTION
+        ]
+        plus_grand = max(plus_grand, len(en_insertion))
+        return all(voiture.usager.etape is not Etape.APPROCHE for voiture in voitures)
+
+    assert simulation.avancer_jusqu_a(toutes_entrees, duree_max=duree_max)
+    return plus_grand
+
+
+def test_deux_voitures_en_attente_entrent_une_a_la_fois() -> None:
+    simulation = Simulation(rond_point_bel_air())
+    avancement = LONGUEUR_BRANCHE - 10.0
+    voitures = [
+        simulation.ajouter(Voiture("voiture_a", "jean_de_la_bruyere", "nations_nord"), avancement=avancement),
+        simulation.ajouter(Voiture("voiture_b", "albert_camus", "jean_de_la_bruyere"), avancement=avancement),
+    ]
+    assert entrees_simultanees(simulation, voitures, duree_max=30.0) == 1
+
+
+def test_apres_le_vp_les_voitures_en_attente_entrent_une_a_la_fois() -> None:
+    simulation, voitures = deux_voitures_en_attente()
+    assert simulation.avancer_jusqu_a(lambda: bool(simulation.logique.passages), duree_max=60.0)
+    assert entrees_simultanees(simulation, voitures, duree_max=90.0) == 1
 
 
 # ---------- Régulation ----------

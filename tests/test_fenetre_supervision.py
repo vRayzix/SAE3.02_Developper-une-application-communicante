@@ -46,6 +46,7 @@ def etat(regulation: bool = True, vp_actif: bool = False) -> dict:
         "vp_actif": vp_actif,
         "segments_reserves": ["nations_sud-jean_de_la_bruyere"] if vp_actif else [],
         "entrees_bloquees": [],
+        "passages_fermes": [],
         "regulation": regulation,
     }
 

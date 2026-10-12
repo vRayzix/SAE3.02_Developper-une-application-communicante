@@ -293,13 +293,19 @@ class LogiqueServeur:
             passage.noter_densite(densite_moyenne)
         numeros = {session.identifiant: session.numero for session in self.__sessions.values() if session.identifiant}
         notifications = self.__regulateur.decider(self.__registre, self.passages_en_cours, densites)
+        # Le registre garde la consigne de chaque usager, comme le client qui la reçoit :
+        # le STATE la montre, et la circulation en tient compte.
+        for notification in notifications:
+            self.__registre.obtenir(notification.destinataire).reagir(notification.code)
         envois = [
             (numeros[notification.destinataire], notification.vers_message(IDENTIFIANT_SERVEUR))
             for notification in notifications
         ]
         etat = self.__etat(densites)
         envois += [(numero, etat) for numero in self.superviseurs()]
-        vues = self.__circulation.voir(self.__registre)
+        # Régulation active, les VP annoncés ne cèdent plus le passage : les autres dégagent leur voie.
+        prioritaires = frozenset(self.__passages_en_cours) if self.__regulateur.active else frozenset()
+        vues = self.__circulation.voir(self.__registre, prioritaires)
         for session in self.__sessions.values():
             vue = vues.get(session.identifiant)
             if vue is not None:
@@ -323,6 +329,12 @@ class LogiqueServeur:
             "vp_actif": self.vp_actif,
             "segments_reserves": self.segments_reserves,
             "entrees_bloquees": self.__regulateur.entrees_bloquees,
+            "passages_fermes": [
+                {"branche": branche, "chaussee": chaussee.value}
+                for branche, chaussee in sorted(
+                    self.__circulation.passages_fermes(self.__registre), key=lambda ferme: (ferme[0], ferme[1].value)
+                )
+            ],
             "regulation": self.__regulateur.active,
         }
         return Message(TypeMessage.STATE, IDENTIFIANT_SERVEUR, donnees)
