@@ -9,7 +9,7 @@ from cherrypie.client.deplacement import Deplacement
 from cherrypie.commun.protocole import CodeNotification
 from cherrypie.modele.rond_point import RondPoint
 from cherrypie.modele.trajectoire import LONGUEUR_TROTTOIR, Trajectoire
-from cherrypie.modele.usager import Pieton, Usager, Voiture
+from cherrypie.modele.usager import Pieton, Usager, VehiculePrioritaire, Voiture
 from cherrypie.serveur.circulation import Chaussee, Circulation, Vue
 from cherrypie.serveur.registre import Registre
 
@@ -80,8 +80,9 @@ def avancement_a_l_angle(trajectoire: Trajectoire, angle: float) -> float:
 # ---------- File sur une branche ----------
 
 def test_voie_libre_sans_personne_devant(rond_point: RondPoint, registre: Registre, placer) -> None:
+    # Loin de sa ligne, il n'a pas encore son tour d'entrée : il s'arrêterait sur la ligne.
     placer(Voiture("voiture_1", NATIONS_NORD, NATIONS_SUD), 10.0)
-    assert voir(rond_point, registre) == {"voiture_1": Vue(None, False)}
+    assert voir(rond_point, registre) == {"voiture_1": Vue(None, True)}
 
 
 def test_vehicule_voit_celui_qui_le_precede(rond_point: RondPoint, registre: Registre, placer) -> None:
@@ -195,11 +196,11 @@ def test_entree_retenue_si_l_anneau_est_occupe_pres_du_point_d_entree(
     doit_ceder: bool,
     consigne: CodeNotification | None,
 ) -> None:
-    # La voiture 1 vient de la rue Jean de la Bruyère et passe devant l'entrée du boulevard, côté nord.
+    # La voiture 1 vient du boulevard, côté sud, et passe devant l'entrée du boulevard, côté nord.
     nord = rond_point.branche(NATIONS_NORD)
     point_d_entree = nord.angle + rond_point.ecart_raccord(nord)
     angle = point_d_entree + math.degrees(ecart_au_point_d_entree / rond_point.rayon)
-    passante = Voiture("voiture_1", JEAN_DE_LA_BRUYERE, NATIONS_SUD)
+    passante = Voiture("voiture_1", NATIONS_SUD, ALBERT_CAMUS)
     placer(passante, avancement_a_l_angle(passante.calculer_trajectoire(rond_point), angle), consigne)
     placer(Voiture("voiture_2", NATIONS_NORD, NATIONS_SUD), 40.0)
     assert voir(rond_point, registre)["voiture_2"].ceder is doit_ceder
@@ -304,3 +305,50 @@ def test_pieton_d_une_autre_branche_ignore(rond_point: RondPoint, registre: Regi
     placer(Pieton("pieton_1", NATIONS_NORD, NATIONS_NORD), 6.0)
     placer(Pieton("pieton_2", NATIONS_SUD, NATIONS_SUD), 4.0)
     assert voir(rond_point, registre)["pieton_2"].distance is None
+
+
+# ---------- Tour d'entrée ----------
+
+def en_attente_pres_de_la_ligne(rond_point: RondPoint, placer, identifiant: str, entree: str) -> Usager:
+    """Place une voiture à 5 m de sa ligne d'entrée."""
+    return placer(Voiture(identifiant, entree, ALBERT_CAMUS), rond_point.longueur_branche - 5.0)
+
+
+def test_une_seule_entree_accordee_a_la_fois(rond_point: RondPoint, registre: Registre, placer) -> None:
+    en_attente_pres_de_la_ligne(rond_point, placer, "voiture_1", JEAN_DE_LA_BRUYERE)
+    en_attente_pres_de_la_ligne(rond_point, placer, "voiture_2", NATIONS_SUD)
+    vues = voir(rond_point, registre)
+    assert sorted(vue.ceder for vue in vues.values()) == [False, True]
+
+
+def test_le_tour_reste_a_celui_qui_l_a_recu(rond_point: RondPoint, registre: Registre, placer) -> None:
+    en_attente_pres_de_la_ligne(rond_point, placer, "voiture_1", JEAN_DE_LA_BRUYERE)
+    en_attente_pres_de_la_ligne(rond_point, placer, "voiture_2", NATIONS_SUD)
+    circulation = Circulation(rond_point)
+    premier = circulation.voir(registre)
+    titulaire = circulation.tour_d_entree
+    assert premier[titulaire].ceder is False
+    assert circulation.voir(registre)[titulaire].ceder is False
+
+
+def test_vehicule_qui_rejoint_l_anneau_bloque_les_autres_entrees(
+    rond_point: RondPoint, registre: Registre, placer
+) -> None:
+    placer(Voiture("voiture_1", JEAN_DE_LA_BRUYERE, ALBERT_CAMUS), rond_point.longueur_branche + 3.0)
+    en_attente_pres_de_la_ligne(rond_point, placer, "voiture_2", NATIONS_SUD)
+    assert voir(rond_point, registre)["voiture_2"].ceder is True
+
+
+def test_pas_de_tour_pour_un_vehicule_qui_doit_attendre(rond_point: RondPoint, registre: Registre, placer) -> None:
+    attente = Voiture("voiture_1", JEAN_DE_LA_BRUYERE, ALBERT_CAMUS)
+    placer(attente, rond_point.longueur_branche - 5.0, CodeNotification.ATTENDEZ)
+    en_attente_pres_de_la_ligne(rond_point, placer, "voiture_2", NATIONS_SUD)
+    vues = voir(rond_point, registre)
+    assert (vues["voiture_1"].ceder, vues["voiture_2"].ceder) == (True, False)
+
+
+def test_vp_prioritaire_entre_sans_prendre_le_tour(rond_point: RondPoint, registre: Registre, placer) -> None:
+    placer(VehiculePrioritaire("vp_1", NATIONS_SUD, NATIONS_NORD), rond_point.longueur_branche - 5.0)
+    en_attente_pres_de_la_ligne(rond_point, placer, "voiture_2", JEAN_DE_LA_BRUYERE)
+    vues = Circulation(rond_point).voir(registre, prioritaires=frozenset({"vp_1"}))
+    assert (vues["vp_1"].ceder, vues["voiture_2"].ceder) == (False, False)

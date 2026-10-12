@@ -2,7 +2,8 @@
 
 Chaque client roule sans voir les autres. Le serveur, qui connaît toutes les
 positions, calcule pour chaque véhicule la distance jusqu'à l'obstacle le plus proche
-devant lui sur sa voie, et s'il doit céder le passage avant d'entrer sur l'anneau.
+devant lui sur sa voie, et s'il doit céder le passage avant d'entrer sur l'anneau. Les
+entrées se font une par une : le serveur donne son tour à un seul véhicule à la fois.
 Ce n'est pas une consigne de régulation : c'est ce qu'un conducteur verrait par son
 pare-brise, et cela vaut que la régulation soit active ou non.
 """
@@ -13,6 +14,7 @@ import math
 from dataclasses import dataclass
 from enum import Enum
 
+from cherrypie.commun.protocole import CodeNotification
 from cherrypie.modele.position import Position
 from cherrypie.modele.rond_point import Branche, RondPoint
 from cherrypie.modele.trajectoire import Etape
@@ -30,6 +32,11 @@ ECART_MEME_VOIE = 1.0
 # d'entrée. Ces marges empêchent l'anneau de se remplir au point de se bloquer en boucle.
 LIBRE_AMONT = 15.0
 LIBRE_AVAL = 10.0
+# Un véhicule peut recevoir son tour d'entrée à cette distance de sa ligne, assez tôt pour
+# ne pas s'y arrêter quand la voie est libre. Il le garde jusqu'à avoir parcouru cette
+# distance sur l'anneau, mesurée sur son axe depuis son point d'entrée.
+DISTANCE_ENGAGEMENT = 12.0
+ZONE_ENTREE = 10.0
 
 
 class Chaussee(Enum):
@@ -46,7 +53,8 @@ class Vue:
     Attributes:
         distance (float | None): distance jusqu'à l'obstacle le plus proche devant lui sur sa
             voie, en mètres ; None si la voie est libre.
-        ceder (bool): True s'il doit attendre sur la ligne d'entrée que l'anneau se libère.
+        ceder (bool): True s'il doit s'arrêter sur la ligne d'entrée : l'anneau n'est pas
+            libre devant lui, ou ce n'est pas encore son tour d'entrer.
     """
 
     distance: float | None
@@ -54,7 +62,10 @@ class Vue:
 
 
 class Circulation:
-    """Calcule ce que voit chaque véhicule, à partir des dernières positions reçues."""
+    """Calcule ce que voit chaque véhicule, à partir des dernières positions reçues.
+
+    Elle retient d'une cadence à l'autre le véhicule qui a reçu son tour d'entrée.
+    """
 
     def __init__(self, rond_point: RondPoint) -> None:
         """Crée le calcul pour un rond-point.
@@ -63,11 +74,17 @@ class Circulation:
             rond_point (RondPoint): rond-point parcouru par les usagers.
         """
         self.__rond_point = rond_point
+        self.__tour_d_entree: str | None = None
 
     @property
     def rond_point(self) -> RondPoint:
         """RondPoint: rond-point parcouru par les usagers."""
         return self.__rond_point
+
+    @property
+    def tour_d_entree(self) -> str | None:
+        """str | None: véhicule qui a son tour pour entrer sur l'anneau, None si personne."""
+        return self.__tour_d_entree
 
     def voir(self, registre: Registre, prioritaires: frozenset[str] = frozenset()) -> dict[str, Vue]:
         """Calcule ce que voit chaque usager dont la position est connue.
@@ -94,10 +111,19 @@ class Circulation:
         pietons = [
             usager for usager in registre.usagers if isinstance(usager, Pieton) and usager.position is not None
         ]
-        vues = {
-            vehicule.identifiant: self.__vue(rang, vehicules, passages_fermes, vehicule.identifiant in prioritaires)
+        distances = {
+            vehicule.identifiant: self.__plus_proche(
+                self.__devant(rang, vehicules, passages_fermes, vehicule.identifiant in prioritaires)
+            )
             for rang, vehicule in enumerate(vehicules)
         }
+        tour = self.__donner_le_tour(vehicules, distances, prioritaires)
+        vues = {}
+        for vehicule in vehicules:
+            # Un VP prioritaire passe sans attendre son tour ; les autres attendent le leur.
+            en_approche = vehicule.etape is Etape.APPROCHE
+            ceder = en_approche and vehicule.identifiant not in prioritaires and vehicule.identifiant != tour
+            vues[vehicule.identifiant] = Vue(distances[vehicule.identifiant], ceder)
         for rang, pieton in enumerate(pietons):
             vues[pieton.identifiant] = Vue(self.__plus_proche(self.__devant_sur_le_passage(rang, pietons)), False)
         return vues
@@ -127,22 +153,75 @@ class Circulation:
                 fermes.add((branche.nom, Chaussee.SORTIE))
         return fermes
 
-    def __vue(
+    def __devant(
         self, rang: int, vehicules: list[Usager], passages_fermes: set[tuple[str, Chaussee]], prioritaire: bool
-    ) -> Vue:
-        """Calcule la vue du véhicule de rang donné."""
+    ) -> list[float]:
+        """Distances aux obstacles devant le véhicule de rang donné, là où il se trouve."""
         usager = vehicules[rang]
         if usager.etape is Etape.APPROCHE:
             branche = self.__rond_point.branche(usager.branche_entree)
-            distances = self.__devant_sur_la_branche(rang, vehicules, branche, Etape.APPROCHE, passages_fermes)
-            ceder = not prioritaire and not self.__anneau_libre(branche, vehicules)
-            return Vue(self.__plus_proche(distances), ceder)
+            return self.__devant_sur_la_branche(rang, vehicules, branche, Etape.APPROCHE, passages_fermes)
         if usager.etape is Etape.ANNEAU:
-            distances = self.__devant_sur_l_anneau(rang, vehicules, passages_fermes, prioritaire)
-            return Vue(self.__plus_proche(distances), False)
+            return self.__devant_sur_l_anneau(rang, vehicules, passages_fermes, prioritaire)
         branche = self.__rond_point.branche(usager.branche_sortie)
-        distances = self.__devant_sur_la_branche(rang, vehicules, branche, Etape.SORTIE, passages_fermes)
-        return Vue(self.__plus_proche(distances), False)
+        return self.__devant_sur_la_branche(rang, vehicules, branche, Etape.SORTIE, passages_fermes)
+
+    def __donner_le_tour(
+        self, vehicules: list[Usager], distances: dict[str, float | None], prioritaires: frozenset[str]
+    ) -> str | None:
+        """Désigne le seul véhicule qui peut entrer sur l'anneau à cette cadence.
+
+        Le véhicule qui a son tour le garde tant qu'il peut entrer, puis pendant qu'il rejoint
+        l'anneau. S'il le perd avant d'avoir franchi sa ligne, personne ne le reçoit à cette
+        cadence : il a pu franchir la ligne entre-temps, avec l'autorisation précédente.
+        Sinon, quand aucune zone d'entrée n'est occupée, le tour revient au plus proche de
+        sa ligne parmi ceux qui peuvent entrer.
+        """
+        par_identifiant = {vehicule.identifiant: vehicule for vehicule in vehicules}
+        titulaire = par_identifiant.get(self.__tour_d_entree)
+        if titulaire is not None:
+            if titulaire.etape is Etape.ANNEAU and self.__dans_sa_zone_d_entree(titulaire):
+                return self.__tour_d_entree
+            if titulaire.etape is Etape.APPROCHE:
+                if not self.__peut_entrer(titulaire, distances[titulaire.identifiant], vehicules):
+                    self.__tour_d_entree = None
+                return self.__tour_d_entree
+        self.__tour_d_entree = None
+        if any(vehicule.etape is Etape.ANNEAU and self.__dans_sa_zone_d_entree(vehicule) for vehicule in vehicules):
+            return None
+        candidats = [
+            vehicule for vehicule in vehicules
+            if vehicule.identifiant not in prioritaires
+            and self.__peut_entrer(vehicule, distances[vehicule.identifiant], vehicules)
+        ]
+        if candidats:
+            self.__tour_d_entree = min(candidats, key=self.__reste_avant_la_ligne).identifiant
+        return self.__tour_d_entree
+
+    def __peut_entrer(self, vehicule: Usager, distance: float | None, vehicules: list[Usager]) -> bool:
+        """Indique si un véhicule en approche, près de sa ligne, peut recevoir le tour d'entrée.
+
+        Il ne doit pas attendre sur ordre du régulateur, ni avoir d'obstacle avant sa ligne,
+        et l'anneau doit être libre autour de son point d'entrée.
+        """
+        if vehicule.etape is not Etape.APPROCHE or vehicule.consigne is CodeNotification.ATTENDEZ:
+            return False
+        reste = self.__reste_avant_la_ligne(vehicule)
+        if reste > DISTANCE_ENGAGEMENT or (distance is not None and distance <= reste):
+            return False
+        return self.__anneau_libre(self.__rond_point.branche(vehicule.branche_entree), vehicules)
+
+    def __reste_avant_la_ligne(self, vehicule: Usager) -> float:
+        """Distance d'un véhicule en approche jusqu'à sa ligne d'entrée, au bord de l'anneau."""
+        branche = self.__rond_point.branche(vehicule.branche_entree)
+        return self.__le_long(vehicule.position, branche) - self.__rond_point.rayon_bord
+
+    def __dans_sa_zone_d_entree(self, vehicule: Usager) -> bool:
+        """Indique si un véhicule de l'anneau est encore en train de le rejoindre, près de son point d'entrée."""
+        branche = self.__rond_point.branche(vehicule.branche_entree)
+        point = math.radians(branche.angle + self.__rond_point.ecart_raccord(branche))
+        parcouru = self.__rond_point.rayon * ((self.__angle(vehicule.position) - point) % math.tau)
+        return parcouru < ZONE_ENTREE
 
     def __devant_sur_la_branche(
         self,

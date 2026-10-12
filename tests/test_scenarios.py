@@ -8,7 +8,7 @@ from geometrie import rond_point_bel_air
 from simulation import Simulation
 
 from cherrypie.commun.protocole import CodeNotification
-from cherrypie.modele.trajectoire import Etape
+from cherrypie.modele.trajectoire import LONGUEUR_INSERTION, Etape
 from cherrypie.modele.usager import Moto, Pieton, Trottinette, VehiculePrioritaire, Voiture
 from cherrypie.serveur.passages import PassageVp
 
@@ -177,6 +177,40 @@ def test_aucune_voiture_en_conflit_n_entre_pendant_le_passage_du_vp() -> None:
         return bool(simulation.logique.passages)
 
     assert simulation.avancer_jusqu_a(vp_sorti, duree_max=60.0)
+
+
+def entrees_simultanees(simulation: Simulation, voitures: list, duree_max: float) -> int:
+    """Plus grand nombre de voitures en train de rejoindre l'anneau au même moment."""
+    plus_grand = 0
+
+    def toutes_entrees() -> bool:
+        nonlocal plus_grand
+        en_insertion = [
+            voiture for voiture in voitures
+            if voiture.usager.etape is Etape.ANNEAU
+            and voiture.avancement - voiture.trajectoire.longueur_approche < LONGUEUR_INSERTION
+        ]
+        plus_grand = max(plus_grand, len(en_insertion))
+        return all(voiture.usager.etape is not Etape.APPROCHE for voiture in voitures)
+
+    assert simulation.avancer_jusqu_a(toutes_entrees, duree_max=duree_max)
+    return plus_grand
+
+
+def test_deux_voitures_en_attente_entrent_une_a_la_fois() -> None:
+    simulation = Simulation(rond_point_bel_air())
+    avancement = LONGUEUR_BRANCHE - 10.0
+    voitures = [
+        simulation.ajouter(Voiture("voiture_a", "jean_de_la_bruyere", "nations_nord"), avancement=avancement),
+        simulation.ajouter(Voiture("voiture_b", "albert_camus", "jean_de_la_bruyere"), avancement=avancement),
+    ]
+    assert entrees_simultanees(simulation, voitures, duree_max=30.0) == 1
+
+
+def test_apres_le_vp_les_voitures_en_attente_entrent_une_a_la_fois() -> None:
+    simulation, voitures = deux_voitures_en_attente()
+    assert simulation.avancer_jusqu_a(lambda: bool(simulation.logique.passages), duree_max=60.0)
+    assert entrees_simultanees(simulation, voitures, duree_max=90.0) == 1
 
 
 # ---------- Régulation ----------

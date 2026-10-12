@@ -429,13 +429,14 @@ def test_cadence_envoie_devant_a_chaque_vehicule_positionne(logique: LogiqueServ
     devant = session_inscrite(logique, "voiture_1")
     derriere = session_inscrite(logique, "voiture_2")
     nord = logique.rond_point.branche("nations_nord")
-    for identifiant, distance in (("voiture_1", 40.0), ("voiture_2", 55.0)):
+    # La première, près de sa ligne, reçoit son tour d'entrée ; la seconde la suit à 15 m.
+    for identifiant, distance in (("voiture_1", 30.0), ("voiture_2", 45.0)):
         point = nord.point(distance)
         logique.traiter_udp(pos(identifiant, x=point.x, y=point.y, segment=None, etape="approche"), 1.0)
     vues = {numero: message.donnees for numero, message in logique.cadencer() if message.type is TypeMessage.DEVANT}
     assert vues == {
         devant: {"distance": None, "ceder": False},
-        derriere: {"distance": pytest.approx(15.0), "ceder": False},
+        derriere: {"distance": pytest.approx(15.0), "ceder": True},
     }
 
 
