@@ -91,8 +91,11 @@ class Legende(QGroupBox):
         entree = QWidget()
         disposition = QHBoxLayout(entree)
         disposition.setContentsMargins(0, 0, 0, 0)
+        texte = QLabel(libelle)
+        # Une entrée longue passe à la ligne plutôt que d'être coupée quand la scène est étroite.
+        texte.setWordWrap(True)
         disposition.addWidget(image)
-        disposition.addWidget(QLabel(libelle), 1)
+        disposition.addWidget(texte, 1)
         return entree
 
     @staticmethod
