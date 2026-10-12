@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from cherrypie.commun.protocole import CodeNotification, Message, TypeMessage
 
 TEXTE_DEGAGEZ = "Véhicule prioritaire derrière vous : ralentissez et serrez à droite."
-TEXTE_CHANGEZ_VOIE = "Véhicule prioritaire derrière vous : serrez à droite pour le laisser passer."
+TEXTE_CHANGEZ_VOIE = "Véhicule prioritaire derrière vous : rangez-vous à droite et arrêtez-vous pour le laisser passer."
 TEXTE_ATTENDEZ_VP = "Véhicule prioritaire en approche : attendez avant d'entrer."
 TEXTE_ATTENDEZ_PIETON = "Véhicule prioritaire en approche : attendez pour traverser."
 TEXTE_ATTENDEZ_DOSAGE = "Entrée temporisée pour fluidifier le rond-point."
