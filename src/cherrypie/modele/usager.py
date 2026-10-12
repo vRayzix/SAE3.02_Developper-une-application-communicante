@@ -398,7 +398,7 @@ class VehiculePrioritaire(Usager):
     # Il roule sur la gauche de sa chaussée, côté terre-plein, d'où il double les usagers
     # rangés à droite. L'écart reste sous celui qui sépare deux files (1 m) : il voit
     # toujours devant lui ceux qui roulent au milieu.
-    ECART_EN_APPROCHE = -0.6
+    ECART_EN_APPROCHE = -0.8
 
     def calculer_trajectoire(self, rond_point: RondPoint) -> Trajectoire:
         """Calcule le chemin du VP, qui reste sur la voie intérieure de l'anneau de bout en bout.
