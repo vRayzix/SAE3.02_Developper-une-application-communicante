@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import QApplication
 
 from cherrypie.client.client_usager import EtatConnexion
 from cherrypie.commun.config import Configuration
-from cherrypie.ihm.fenetre_supervision import NOMBRE_MAX_CONSIGNES, TITRE, FenetreSupervision
+from cherrypie.ihm.fenetre_supervision import TITRE, FenetreSupervision
 from cherrypie.modele.position import Position
 from cherrypie.modele.usager import VehiculePrioritaire, Voiture
 from cherrypie.serveur.serveur import Serveur
@@ -110,21 +110,18 @@ def test_deconnexion_desactive_la_case(fenetre: FenetreSupervision) -> None:
     assert fenetre.etat_connexion.toolTip() == "connexion perdue"
 
 
-# ---------- Dernières consignes ----------
+# ---------- Sections ----------
 
 
-def test_consigne_ajoutee_en_haut(fenetre: FenetreSupervision) -> None:
-    fenetre.panneau_creation.notification_recue.emit("voiture_1", "ATTENDEZ", "attendez", True)
-    fenetre.panneau_creation.notification_recue.emit("moto_1", "DEGAGEZ", "dégagez", False)
-    assert fenetre.consignes.item(0).text().endswith("moto_1 : DEGAGEZ (ignorée)")
-    assert fenetre.consignes.item(1).toolTip() == "attendez"
+def test_sections_scenario_et_suivi(fenetre: FenetreSupervision) -> None:
+    assert [fenetre.sections.tabText(rang) for rang in range(fenetre.sections.count())] == ["Scénario", "Suivi"]
+    assert fenetre.sections.widget(0) is fenetre.panneau_scenario
+    assert fenetre.sections.widget(1) is fenetre.panneau_suivi
 
 
-def test_consignes_les_plus_anciennes_oubliees(fenetre: FenetreSupervision) -> None:
-    for numero in range(NOMBRE_MAX_CONSIGNES + 5):
-        fenetre.panneau_creation.notification_recue.emit(f"voiture_{numero}", "ATTENDEZ", "", True)
-    assert fenetre.consignes.count() == NOMBRE_MAX_CONSIGNES
-    assert f"voiture_{NOMBRE_MAX_CONSIGNES + 4} " in fenetre.consignes.item(0).text()
+def test_consigne_du_lanceur_affichee_dans_le_suivi(fenetre: FenetreSupervision) -> None:
+    fenetre.lanceur.notification_recue.emit("voiture_1", "ATTENDEZ", "attendez", True)
+    assert fenetre.panneau_suivi.consignes.item(0).text().endswith("voiture_1 : ATTENDEZ")
 
 
 # ---------- Avec un vrai serveur ----------
@@ -147,14 +144,19 @@ def test_fermeture_arrete_tous_les_threads(lancer_serveur: Callable[..., Serveur
     fenetre = fabrique_fenetre(serveur.config)
     fenetre.show()
     fenetre.demarrer()
-    panneau = fenetre.panneau_creation
+    panneau = fenetre.panneau_scenario
     panneau.choix_nombre.setValue(3)
-    panneau.lancer()
+    panneau.ajouter()
     panneau.choix_categorie.setCurrentIndex(panneau.choix_categorie.findData(VehiculePrioritaire.CATEGORIE))
     panneau.choix_nombre.setValue(1)
+    panneau.ajouter()
+    # Une ligne lancée bien plus tard : la fermeture doit aussi l'annuler.
+    panneau.choix_delai.setValue(60.0)
+    panneau.ajouter()
     panneau.lancer()
     attendre_qt(lambda: bool(fenetre.scene.marqueurs))
     fenetre.close()
     assert fenetre.fil.isFinished()
+    assert not panneau.en_cours
     assert threads_clients() == []
     attendre(lambda: serveur.logique.registre.usagers == [] and serveur.logique.superviseurs() == [])
