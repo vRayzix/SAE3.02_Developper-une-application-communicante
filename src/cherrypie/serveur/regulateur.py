@@ -46,6 +46,10 @@ from cherrypie.serveur.notifications import (
 from cherrypie.serveur.passages import PassageEnCours
 from cherrypie.serveur.registre import Registre
 
+# Le VP a dépassé un usager rangé quand son avant le devance de cette distance, en mètres :
+# la longueur du VP et une marge. Avant, l'usager qui reprendrait sa voie viendrait contre son flanc.
+DISTANCE_DEPASSEMENT = 8.0
+
 
 class Regulateur:
     """Décide, à chaque cadence, des consignes à envoyer aux usagers."""
@@ -228,16 +232,18 @@ class Regulateur:
 
     @staticmethod
     def __devant_le_vp(usager: Usager, vp: Usager) -> bool:
-        """Indique si un usager en approche roule devant un VP en approche, sur la même chaussée d'entrée.
+        """Indique si un usager en approche est devant un VP en approche, ou à côté de lui, sur la même chaussée.
 
         Sur une chaussée d'approche, qui va droit vers l'anneau, celui qui est devant est le
-        plus proche du centre.
+        plus proche du centre. L'usager reste devant tant que le VP ne l'a pas dépassé de
+        DISTANCE_DEPASSEMENT.
         """
         if vp.etape is not Etape.APPROCHE or usager.branche_entree != vp.branche_entree:
             return False
         if usager.position is None or vp.position is None:
             return False
-        return math.hypot(usager.position.x, usager.position.y) < math.hypot(vp.position.x, vp.position.y)
+        distance_usager = math.hypot(usager.position.x, usager.position.y)
+        return distance_usager < math.hypot(vp.position.x, vp.position.y) + DISTANCE_DEPASSEMENT
 
     @staticmethod
     def __segments_devant(vp: Usager, passage: PassageEnCours) -> set[str]:
