@@ -250,13 +250,16 @@ class Usager:
         """Donne la vitesse maximale permise par la consigne en cours.
 
         ATTENDEZ ne ralentit pas l'usager : il avance jusqu'à la ligne d'entrée et
-        s'y arrête, ce qui dépend de sa trajectoire et non de sa vitesse.
+        s'y arrête, ce qui dépend de sa trajectoire et non de sa vitesse. Pendant un
+        CHANGEZ_VOIE, l'usager rangé reste immobile jusqu'à ce que le VP l'ait dépassé.
 
         Returns:
-            float: vitesse en m/s, réduite pendant un DEGAGEZ.
+            float: vitesse en m/s, réduite pendant un DEGAGEZ, nulle pendant un CHANGEZ_VOIE.
         """
         if self.__consigne is CodeNotification.DEGAGEZ:
             return self.VITESSE_MAX * FACTEUR_RALENTISSEMENT
+        if self.__consigne is CodeNotification.CHANGEZ_VOIE:
+            return 0.0
         return self.VITESSE_MAX
 
     def se_range(self) -> bool:

@@ -13,6 +13,8 @@ from cherrypie.modele.usager import Usager
 VITESSE_LATERALE = 2.0
 # Écart latéral, en mètres, en deçà duquel un usager qui se décale est considéré comme rangé.
 TOLERANCE_RANGEMENT = 0.05
+# Consignes qui retiennent un usager avant la ligne d'entrée, s'il ne l'a pas encore franchie.
+CONSIGNES_D_ARRET = (CodeNotification.ATTENDEZ, CodeNotification.CHANGEZ_VOIE)
 
 
 class Deplacement:
@@ -20,9 +22,10 @@ class Deplacement:
 
     À chaque pas, l'usager parcourt la distance que sa consigne permet : il ralentit
     pendant un DEGAGEZ, se range sur sa droite pendant un DEGAGEZ ou un CHANGEZ_VOIE (le
-    bord de sa chaussée sur une branche, la voie extérieure sur l'anneau), et s'arrête
-    sur la ligne d'entrée pendant un ATTENDEZ s'il ne l'a pas encore franchie. Il se
-    décale progressivement, à VITESSE_LATERALE.
+    bord de sa chaussée sur une branche, la voie extérieure sur l'anneau) et s'immobilise
+    une fois rangé pendant un CHANGEZ_VOIE. Il s'arrête sur la ligne d'entrée pendant un
+    ATTENDEZ ou un CHANGEZ_VOIE s'il ne l'a pas encore franchie. Il se décale
+    progressivement, à VITESSE_LATERALE.
     Il tient aussi compte de ce que voit le conducteur (message DEVANT) : il garde une
     distance de sécurité avec l'obstacle de devant, et attend sur la ligne d'entrée quand
     il doit céder le passage. La position, la vitesse, le segment et l'étape de l'usager
@@ -123,17 +126,21 @@ class Deplacement:
         self.__placer_usager(min(vitesse, parcouru / duree) if duree > 0 else 0.0)
 
     def __doit_s_arreter_a_la_ligne(self) -> bool:
-        """ATTENDEZ ou un cédez-le-passage n'arrêtent un usager que s'il n'a pas encore franchi la ligne."""
-        doit_attendre = self.__usager.consigne is CodeNotification.ATTENDEZ or self.__ceder
+        """ATTENDEZ, CHANGEZ_VOIE ou un cédez-le-passage n'arrêtent un usager que s'il n'a pas encore franchi la ligne."""
+        doit_attendre = self.__usager.consigne in CONSIGNES_D_ARRET or self.__ceder
         return doit_attendre and self.__avancement <= self.__trajectoire.longueur_approche
 
     def __vitesse_permise(self) -> float:
-        """Vitesse que permet la consigne ; un usager qui dégage la voie ne ralentit qu'une fois rangé.
+        """Vitesse que permet la consigne ; un usager qui se range ne ralentit qu'une fois rangé.
 
         Tant qu'il se décale, il garde son allure : ralentir sur la voie qu'il quitte la
-        boucherait plus longtemps pour le VP qui arrive derrière.
+        boucherait plus longtemps pour le VP qui arrive derrière. Pendant un DEGAGEZ, il
+        roule à sa vitesse maximale ; pendant un CHANGEZ_VOIE, il n'accélère pas, puisqu'il
+        va s'arrêter : un usager déjà arrêté se range sur place.
         """
         if self.__usager.se_range() and abs(self.__decalage_voulu() - self.__decalage) > TOLERANCE_RANGEMENT:
+            if self.__usager.consigne is CodeNotification.CHANGEZ_VOIE:
+                return self.__usager.vitesse
             return self.__usager.VITESSE_MAX
         return self.__usager.vitesse_autorisee()
 

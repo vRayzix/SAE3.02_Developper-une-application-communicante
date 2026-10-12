@@ -17,6 +17,8 @@ LONGUEUR_BRANCHE = rond_point_bel_air().longueur_branche
 # Pas utilisé pour chercher sur une trajectoire l'avancement d'un point donné, en mètres.
 PAS_DE_RECHERCHE = 0.05
 PART_MIN_DU_CHEMIN = 0.9
+# Durée laissée à un usager arrêté pour se ranger au bord de sa chaussée, en secondes.
+DUREE_POUR_SE_RANGER = 2.0
 
 
 @pytest.fixture
@@ -34,11 +36,18 @@ def placer(rond_point: RondPoint, registre: Registre):
     """Place un usager à un avancement donné de sa trajectoire et l'inscrit au registre."""
 
     def placer_usager(usager: Usager, avancement: float, consigne: CodeNotification | None = None) -> Usager:
-        if consigne is not None:
-            usager.reagir(consigne)
         deplacement = Deplacement(usager, usager.calculer_trajectoire(rond_point))
-        # En un seul pas, l'usager n'est pas encore rangé au départ : il roule à sa vitesse maximale.
-        deplacement.avancer(avancement / usager.VITESSE_MAX)
+        if consigne is CodeNotification.CHANGEZ_VOIE:
+            # Pendant un CHANGEZ_VOIE l'usager s'arrête : on l'amène à sa place, il s'y range sans avancer.
+            deplacement.avancer(avancement / usager.VITESSE_MAX)
+            usager.vitesse = 0.0
+            usager.reagir(consigne)
+            deplacement.avancer(DUREE_POUR_SE_RANGER)
+        else:
+            if consigne is not None:
+                usager.reagir(consigne)
+            # En un seul pas, l'usager n'est pas encore rangé au départ : il roule à sa vitesse maximale.
+            deplacement.avancer(avancement / usager.VITESSE_MAX)
         registre.ajouter(usager)
         return usager
 

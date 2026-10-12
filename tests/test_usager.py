@@ -89,9 +89,9 @@ def test_degagez_ralentit_et_range(voiture: Voiture) -> None:
     assert voiture.se_range()
 
 
-def test_changez_voie_range_sans_ralentir(voiture: Voiture) -> None:
+def test_changez_voie_range_puis_immobilise(voiture: Voiture) -> None:
     assert voiture.reagir(CodeNotification.CHANGEZ_VOIE)
-    assert voiture.vitesse_autorisee() == pytest.approx(Voiture.VITESSE_MAX)
+    assert voiture.vitesse_autorisee() == 0.0
     assert voiture.se_range()
 
 
