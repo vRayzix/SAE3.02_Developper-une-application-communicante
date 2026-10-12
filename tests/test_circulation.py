@@ -110,10 +110,27 @@ def test_au_meme_point_le_premier_arrive_passe_devant(rond_point: RondPoint, reg
     assert vues["voiture_1"].distance is None
 
 
-def test_vehicule_range_sur_le_cote_ne_gene_pas(rond_point: RondPoint, registre: Registre, placer) -> None:
+@pytest.mark.parametrize(
+    ("derriere", "prioritaires", "distance"),
+    [
+        (Voiture("voiture_2", NATIONS_NORD, NATIONS_SUD), frozenset(), 10.0),
+        (VehiculePrioritaire("vp_1", NATIONS_NORD, NATIONS_SUD), frozenset(), 10.0),
+        (VehiculePrioritaire("vp_1", NATIONS_NORD, NATIONS_SUD), frozenset({"vp_1"}), None),
+    ],
+    ids=["civil", "vp-sans-regulation", "vp-prioritaire"],
+)
+def test_seul_le_vp_prioritaire_double_un_vehicule_range(
+    rond_point: RondPoint,
+    registre: Registre,
+    placer,
+    derriere: Usager,
+    prioritaires: frozenset[str],
+    distance: float | None,
+) -> None:
     placer(Voiture("voiture_1", NATIONS_NORD, NATIONS_SUD), 30.0, CodeNotification.CHANGEZ_VOIE)
-    placer(Voiture("voiture_2", NATIONS_NORD, NATIONS_SUD), 20.0)
-    assert voir(rond_point, registre)["voiture_2"].distance is None
+    placer(derriere, 20.0)
+    vue = Circulation(rond_point).voir(registre, prioritaires)[derriere.identifiant]
+    assert vue.distance == (None if distance is None else pytest.approx(distance))
 
 
 def test_vehicules_ranges_font_la_file_entre_eux(rond_point: RondPoint, registre: Registre, placer) -> None:
@@ -348,9 +365,15 @@ def test_vehicule_qui_rejoint_l_anneau_bloque_les_autres_entrees(
     assert voir(rond_point, registre)["voiture_2"].ceder is True
 
 
-def test_pas_de_tour_pour_un_vehicule_qui_doit_attendre(rond_point: RondPoint, registre: Registre, placer) -> None:
+@pytest.mark.parametrize(
+    "consigne", [CodeNotification.ATTENDEZ, CodeNotification.CHANGEZ_VOIE], ids=["attendez", "changez-voie"]
+)
+def test_pas_de_tour_pour_un_vehicule_qui_doit_attendre(
+    rond_point: RondPoint, registre: Registre, placer, consigne: CodeNotification
+) -> None:
     attente = Voiture("voiture_1", JEAN_DE_LA_BRUYERE, ALBERT_CAMUS)
-    placer(attente, rond_point.longueur_branche - 5.0, CodeNotification.ATTENDEZ)
+    # Plus près de sa ligne que l'autre voiture : sans sa consigne, c'est elle qui aurait le tour.
+    placer(attente, rond_point.longueur_branche - 3.0, consigne)
     en_attente_pres_de_la_ligne(rond_point, placer, "voiture_2", NATIONS_SUD)
     vues = voir(rond_point, registre)
     assert (vues["voiture_1"].ceder, vues["voiture_2"].ceder) == (True, False)
