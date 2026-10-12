@@ -12,9 +12,11 @@ from PyQt6.QtWidgets import QApplication
 
 from cherrypie.commun.config import Configuration
 from cherrypie.commun.erreurs import ScenarioInvalideError
+from cherrypie.commun.protocole import CodeNotification
 from cherrypie.ihm.lanceur_clients import LanceurClients
 from cherrypie.ihm.panneau_scenario import PanneauScenario
 from cherrypie.ihm.scenario import LigneScenario
+from cherrypie.modele.trajectoire import Etape
 from cherrypie.modele.usager import Pieton, VehiculePrioritaire
 from cherrypie.serveur.serveur import Serveur
 
@@ -153,6 +155,40 @@ def test_arreter_tout_annule_les_lignes_a_venir(
     assert threads_clients() == []
     assert not panneau.en_cours
     attendre(lambda: serveur.logique.registre.usagers == [])
+
+
+# ---------- VP et civils de la même branche ----------
+
+# Délai entre les voitures et le VP dans le scénario, en secondes, et durée maximale de la traversée.
+DELAI_AVANT_LE_VP = 1.0
+DUREE_MAX_TRAVERSEE = 30.0
+
+
+@pytest.mark.lent
+@pytest.mark.parametrize("sortie_du_vp", ["nations_nord", "nations_sud"], ids=["trajet-normal", "demi-tour"])
+def test_vp_lance_juste_apres_des_civils_de_sa_branche(
+    lancer_serveur: Callable[..., Serveur], fabrique_panneau: Callable, sortie_du_vp: str
+) -> None:
+    serveur = lancer_serveur()
+    panneau = fabrique_panneau(serveur.config)
+    composer(panneau, "voiture", "nations_sud", "albert_camus", nombre=3)
+    composer(panneau, VehiculePrioritaire.CATEGORIE, "nations_sud", sortie_du_vp, delai=DELAI_AVANT_LE_VP)
+    panneau.boutons["lancer"].click()
+    arretees: set[str] = set()
+
+    def vp_sorti() -> bool:
+        if serveur.logique.passages:
+            return True
+        for usager in serveur.logique.registre.usagers:
+            if usager.CATEGORIE != "voiture":
+                continue
+            assert usager.etape is Etape.APPROCHE, f"{usager.identifiant} entre avant la sortie du VP"
+            if usager.consigne is CodeNotification.CHANGEZ_VOIE and usager.vitesse == 0.0:
+                arretees.add(usager.identifiant)
+        return False
+
+    attendre_qt(vp_sorti, delai=DUREE_MAX_TRAVERSEE)
+    assert arretees == {"voiture_1", "voiture_2", "voiture_3"}
 
 
 # ---------- Enregistrement ----------
