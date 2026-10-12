@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QFormLayout,
     QGridLayout,
     QGroupBox,
+    QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
@@ -37,6 +38,8 @@ MILLISECONDES_PAR_SECONDE = 1000
 # Attente maximale de l'arrêt de chaque client, en secondes, quand on arrête tout.
 DELAI_ARRET = 2.0
 FILTRE_FICHIERS = "Scénarios (*.json)"
+BOUTONS_EDITION = ("monter", "descendre", "supprimer", "vider", "enregistrer", "charger")
+COLONNES_EDITION = 3
 
 journal = logging.getLogger(__name__)
 
@@ -302,19 +305,24 @@ class PanneauScenario(QWidget):
 
     def __disposer(self) -> None:
         """Place le formulaire, la liste et ses boutons, puis les boutons de lancement."""
+        # Le nombre et le délai partagent une ligne, et les boutons d'édition tiennent sur deux
+        # rangées : la section entre en hauteur dans une fenêtre de portable.
+        nombre_et_delai = QHBoxLayout()
+        nombre_et_delai.addWidget(self.__choix_nombre, 1)
+        nombre_et_delai.addWidget(QLabel("Délai"))
+        nombre_et_delai.addWidget(self.__choix_delai, 1)
         formulaire = QFormLayout()
         formulaire.addRow("Type", self.__choix_categorie)
         formulaire.addRow("Entrée", self.__choix_entree)
         formulaire.addRow("Sortie", self.__choix_sortie)
-        formulaire.addRow("Nombre", self.__choix_nombre)
-        formulaire.addRow("Délai", self.__choix_delai)
+        formulaire.addRow("Nombre", nombre_et_delai)
         composition = QGroupBox("Nouvelle ligne")
         disposition_composition = QVBoxLayout(composition)
         disposition_composition.addLayout(formulaire)
         disposition_composition.addWidget(self.__boutons["ajouter"])
         edition = QGridLayout()
-        for rang, nom in enumerate(("monter", "descendre", "supprimer", "vider", "enregistrer", "charger")):
-            edition.addWidget(self.__boutons[nom], rang // 2, rang % 2)
+        for rang, nom in enumerate(BOUTONS_EDITION):
+            edition.addWidget(self.__boutons[nom], rang // COLONNES_EDITION, rang % COLONNES_EDITION)
         lignes = QGroupBox("Scénario")
         disposition_lignes = QVBoxLayout(lignes)
         disposition_lignes.addWidget(self.__liste, 1)
