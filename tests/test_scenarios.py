@@ -107,6 +107,52 @@ def test_anneau_charge_ne_se_bloque_pas(simulation: Simulation) -> None:
     assert ecart_minimal >= ECART_SANS_CHEVAUCHEMENT
 
 
+# ---------- Priorité du VP ----------
+
+# Pas de la simulation, et écart toléré entre la traversée du VP dans un anneau chargé et à vide.
+PAS_DE_SIMULATION = 0.2
+ECART_TOLERE_A_VIDE = 0.1
+
+
+def traversee_dans_un_anneau_charge(sortie_du_vp: str, charge: bool) -> tuple[PassageVp, float, int]:
+    """Fait arriver un VP du boulevard des Nations (sud), régulation active.
+
+    Avec charge, deux véhicules par branche font le tour de l'anneau au moment où le VP
+    approche. Renvoie la mesure du VP, le temps qu'il a passé arrêté avant l'anneau et le
+    nombre d'autres véhicules sur l'anneau quand il y est entré.
+    """
+    simulation = Simulation(rond_point_bel_air())
+    if charge:
+        for entree in BRANCHES:
+            for rang, avancement in enumerate((LONGUEUR_BRANCHE + 3.0, LONGUEUR_BRANCHE + 20.0)):
+                simulation.ajouter(Voiture(f"voiture_{entree}{rang}", entree, entree), avancement=avancement)
+    vp = simulation.ajouter(VehiculePrioritaire("vp_1", "nations_sud", sortie_du_vp))
+    arret = 0.0
+    sur_l_anneau_a_l_entree: int | None = None
+
+    def suivre() -> bool:
+        nonlocal arret, sur_l_anneau_a_l_entree
+        usager = vp.usager
+        if usager.etape is Etape.APPROCHE and simulation.instant > 0 and usager.vitesse == 0.0:
+            arret += PAS_DE_SIMULATION
+        if usager.etape is Etape.ANNEAU and sur_l_anneau_a_l_entree is None:
+            autres = [deplacement for deplacement in simulation.en_route if deplacement is not vp]
+            sur_l_anneau_a_l_entree = sum(deplacement.usager.etape is Etape.ANNEAU for deplacement in autres)
+        return bool(simulation.logique.passages)
+
+    assert simulation.avancer_jusqu_a(suivre, duree_max=60.0)
+    return simulation.logique.passages[0], arret, sur_l_anneau_a_l_entree or 0
+
+
+@pytest.mark.parametrize("sortie_du_vp", ["nations_nord", "nations_sud"], ids=["trajet-normal", "demi-tour"])
+def test_vp_regule_ne_cede_pas_aux_vehicules_de_l_anneau(sortie_du_vp: str) -> None:
+    a_vide, _, _ = traversee_dans_un_anneau_charge(sortie_du_vp, charge=False)
+    charge, arret, sur_l_anneau = traversee_dans_un_anneau_charge(sortie_du_vp, charge=True)
+    assert sur_l_anneau >= 8
+    assert arret <= PAS_DE_SIMULATION
+    assert charge.duree <= a_vide.duree * (1 + ECART_TOLERE_A_VIDE)
+
+
 # ---------- Régulation ----------
 
 def traversee_du_vp(graine: int, regulation: bool) -> PassageVp:

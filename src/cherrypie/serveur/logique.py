@@ -303,7 +303,9 @@ class LogiqueServeur:
         ]
         etat = self.__etat(densites)
         envois += [(numero, etat) for numero in self.superviseurs()]
-        vues = self.__circulation.voir(self.__registre)
+        # Régulation active, les VP annoncés ne cèdent plus le passage : les autres dégagent leur voie.
+        prioritaires = frozenset(self.__passages_en_cours) if self.__regulateur.active else frozenset()
+        vues = self.__circulation.voir(self.__registre, prioritaires)
         for session in self.__sessions.values():
             vue = vues.get(session.identifiant)
             if vue is not None:

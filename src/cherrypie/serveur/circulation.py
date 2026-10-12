@@ -69,18 +69,23 @@ class Circulation:
         """RondPoint: rond-point parcouru par les usagers."""
         return self.__rond_point
 
-    def voir(self, registre: Registre) -> dict[str, Vue]:
+    def voir(self, registre: Registre, prioritaires: frozenset[str] = frozenset()) -> dict[str, Vue]:
         """Calcule ce que voit chaque usager dont la position est connue.
 
         Un piéton voit le piéton qui le précède sur le même passage : sans cela, des piétons
         partis ensemble marcheraient l'un sur l'autre. Un piéton en train de traverser
         bloque aussi les véhicules avant son passage piéton.
 
+        Un VP prioritaire (régulation active) ne cède pas le passage à l'entrée : les autres
+        dégagent sa voie. Sur l'anneau, il ne voit que les obstacles de sa propre voie, la
+        voie intérieure, même pendant qu'il la rejoint.
+
         Args:
             registre (Registre): usagers connectés, avec leur dernière position et leur étape.
+            prioritaires (frozenset[str]): identifiants des VP prioritaires.
 
         Returns:
-            dict[str, Vue]: la vue de chaque véhicule, par identifiant.
+            dict[str, Vue]: la vue de chaque usager, par identifiant.
         """
         vehicules = [
             usager for usager in registre.usagers if not isinstance(usager, Pieton) and usager.position is not None
@@ -90,7 +95,7 @@ class Circulation:
             usager for usager in registre.usagers if isinstance(usager, Pieton) and usager.position is not None
         ]
         vues = {
-            vehicule.identifiant: self.__vue(rang, vehicules, passages_fermes)
+            vehicule.identifiant: self.__vue(rang, vehicules, passages_fermes, vehicule.identifiant in prioritaires)
             for rang, vehicule in enumerate(vehicules)
         }
         for rang, pieton in enumerate(pietons):
@@ -122,15 +127,19 @@ class Circulation:
                 fermes.add((branche.nom, Chaussee.SORTIE))
         return fermes
 
-    def __vue(self, rang: int, vehicules: list[Usager], passages_fermes: set[tuple[str, Chaussee]]) -> Vue:
+    def __vue(
+        self, rang: int, vehicules: list[Usager], passages_fermes: set[tuple[str, Chaussee]], prioritaire: bool
+    ) -> Vue:
         """Calcule la vue du véhicule de rang donné."""
         usager = vehicules[rang]
         if usager.etape is Etape.APPROCHE:
             branche = self.__rond_point.branche(usager.branche_entree)
             distances = self.__devant_sur_la_branche(rang, vehicules, branche, Etape.APPROCHE, passages_fermes)
-            return Vue(self.__plus_proche(distances), not self.__anneau_libre(branche, vehicules))
+            ceder = not prioritaire and not self.__anneau_libre(branche, vehicules)
+            return Vue(self.__plus_proche(distances), ceder)
         if usager.etape is Etape.ANNEAU:
-            return Vue(self.__plus_proche(self.__devant_sur_l_anneau(rang, vehicules, passages_fermes)), False)
+            distances = self.__devant_sur_l_anneau(rang, vehicules, passages_fermes, prioritaire)
+            return Vue(self.__plus_proche(distances), False)
         branche = self.__rond_point.branche(usager.branche_sortie)
         distances = self.__devant_sur_la_branche(rang, vehicules, branche, Etape.SORTIE, passages_fermes)
         return Vue(self.__plus_proche(distances), False)
@@ -185,7 +194,7 @@ class Circulation:
         return distances
 
     def __devant_sur_l_anneau(
-        self, rang: int, vehicules: list[Usager], passages_fermes: set[tuple[str, Chaussee]]
+        self, rang: int, vehicules: list[Usager], passages_fermes: set[tuple[str, Chaussee]], prioritaire: bool
     ) -> list[float]:
         """Distances aux obstacles devant un véhicule sur l'anneau, jusqu'au bout de sa branche de sortie.
 
@@ -193,6 +202,8 @@ class Circulation:
         """
         usager = vehicules[rang]
         rayon = math.hypot(usager.position.x, usager.position.y)
+        # Un VP prioritaire ne regarde que la voie intérieure, la sienne, même en la rejoignant.
+        voie = self.__rond_point.rayon_voie_interieure if prioritaire else rayon
         angle = self.__angle(usager.position)
         sortie = self.__rond_point.branche(usager.branche_sortie)
         point_de_sortie = math.radians(sortie.angle - self.__rond_point.ecart_raccord(sortie))
@@ -202,7 +213,7 @@ class Circulation:
         for autre_rang, autre in enumerate(vehicules):
             if autre_rang == rang:
                 continue
-            if autre.etape is Etape.ANNEAU and self.__meme_voie_de_l_anneau(usager, autre):
+            if autre.etape is Etape.ANNEAU and self.__sur_la_voie(voie, autre):
                 devant = rayon * ((self.__angle(autre.position) - angle) % math.tau)
                 if devant <= reste_anneau and (devant > 0 or autre_rang < rang):
                     distances.append(devant)
@@ -230,9 +241,9 @@ class Circulation:
                 return False
         return True
 
-    def __meme_voie_de_l_anneau(self, usager: Usager, autre: Usager) -> bool:
-        """Indique si deux véhicules de l'anneau roulent sur la même voie, d'après leur distance au centre."""
-        ecart = math.hypot(usager.position.x, usager.position.y) - math.hypot(autre.position.x, autre.position.y)
+    def __sur_la_voie(self, rayon_de_voie: float, autre: Usager) -> bool:
+        """Indique si un véhicule de l'anneau roule sur la voie de rayon donné, d'après sa distance au centre."""
+        ecart = rayon_de_voie - math.hypot(autre.position.x, autre.position.y)
         return abs(ecart) < self.__rond_point.largeur_voie_anneau / 2
 
     def __range(self, usager: Usager, sortie: Branche) -> bool:
