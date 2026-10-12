@@ -31,6 +31,8 @@ class Usager:
     # Écart gardé avec l'obstacle de devant, en mètres. Il couvre aussi le retard de la
     # position vue par le serveur, qui peut dater d'un pas.
     DISTANCE_SECURITE = 6.0
+    # Écart latéral habituel sur la chaussée d'approche, en mètres, positif vers la droite.
+    ECART_EN_APPROCHE = 0.0
 
     def __init__(self, identifiant: str, branche_entree: str, branche_sortie: str) -> None:
         """Crée un usager à l'arrêt, dont la position n'est pas encore connue.
@@ -393,6 +395,10 @@ class VehiculePrioritaire(Usager):
     CATEGORIE = "vp"
     VITESSE_MAX = 40 * KMH
     CONSIGNES_SUIVIES = frozenset()
+    # Il roule sur la gauche de sa chaussée, côté terre-plein, d'où il double les usagers
+    # rangés à droite. L'écart reste sous celui qui sépare deux files (1 m) : il voit
+    # toujours devant lui ceux qui roulent au milieu.
+    ECART_EN_APPROCHE = -0.6
 
     def calculer_trajectoire(self, rond_point: RondPoint) -> Trajectoire:
         """Calcule le chemin du VP, qui reste sur la voie intérieure de l'anneau de bout en bout.

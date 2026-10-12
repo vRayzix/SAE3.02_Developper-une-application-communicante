@@ -9,7 +9,7 @@ from cherrypie.client.deplacement import VITESSE_LATERALE, Deplacement
 from cherrypie.commun.protocole import CodeNotification
 from cherrypie.modele.rond_point import RondPoint
 from cherrypie.modele.trajectoire import Etape
-from cherrypie.modele.usager import FACTEUR_RALENTISSEMENT, Pieton, Voiture
+from cherrypie.modele.usager import FACTEUR_RALENTISSEMENT, Pieton, VehiculePrioritaire, Voiture
 
 PAS = 0.2
 # La ligne d'entrée est au bout de l'approche, au bord de l'anneau.
@@ -220,6 +220,17 @@ def test_ok_passer_ramene_au_milieu_de_la_voie(deplacement: Deplacement, voiture
     voiture.reagir(CodeNotification.OK_PASSER)
     for _ in range(10):
         deplacement.avancer(PAS)
+    assert deplacement.decalage == 0.0
+
+
+def test_vp_serre_la_gauche_en_approche_puis_reprend_le_milieu(rond_point: RondPoint) -> None:
+    vp = VehiculePrioritaire("vp_1", "nations_sud", "nations_nord")
+    deplacement = Deplacement(vp, vp.calculer_trajectoire(rond_point))
+    for _ in range(10):
+        deplacement.avancer(PAS)
+    assert deplacement.decalage == pytest.approx(VehiculePrioritaire.ECART_EN_APPROCHE)
+    deplacement.avancer((SUR_LA_VOIE_INTERIEURE - deplacement.avancement) / VehiculePrioritaire.VITESSE_MAX)
+    assert vp.etape is Etape.ANNEAU
     assert deplacement.decalage == 0.0
 
 

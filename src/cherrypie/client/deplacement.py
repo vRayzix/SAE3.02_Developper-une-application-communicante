@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 
 from cherrypie.commun.protocole import CodeNotification
-from cherrypie.modele.trajectoire import Trajectoire
+from cherrypie.modele.trajectoire import Etape, Trajectoire
 from cherrypie.modele.usager import Usager
 
 # Vitesse à laquelle un usager se décale sur le côté pour se ranger ou changer de voie, en m/s :
@@ -143,8 +143,12 @@ class Deplacement:
         return self.__usager.vitesse_autorisee()
 
     def __decalage_voulu(self) -> float:
-        """Écart latéral que demande la consigne à l'endroit où se trouve l'usager."""
-        return self.__trajectoire.place_a_droite_a(self.__avancement) if self.__usager.se_range() else 0.0
+        """Écart latéral que demande la consigne, ou l'habitude de l'usager, à l'endroit où il se trouve."""
+        if self.__usager.se_range():
+            return self.__trajectoire.place_a_droite_a(self.__avancement)
+        if self.__trajectoire.etape_a(self.__avancement) is Etape.APPROCHE:
+            return self.__usager.ECART_EN_APPROCHE
+        return 0.0
 
     def __decaler(self, duree: float) -> None:
         """Rapproche l'écart latéral de celui que demande la consigne, sans dépasser VITESSE_LATERALE."""
