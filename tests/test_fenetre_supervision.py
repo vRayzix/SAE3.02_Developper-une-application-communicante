@@ -5,11 +5,12 @@ from collections.abc import Callable, Iterator
 
 import pytest
 from outils import attendre, attendre_qt
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QPoint, QRect
+from PyQt6.QtWidgets import QApplication, QWidget
 
 from cherrypie.client.client_usager import EtatConnexion
 from cherrypie.commun.config import Configuration
-from cherrypie.ihm.fenetre_supervision import TITRE, FenetreSupervision
+from cherrypie.ihm.fenetre_supervision import HAUTEUR_MINIMALE, LARGEUR_MINIMALE, TITRE, FenetreSupervision
 from cherrypie.modele.position import Position
 from cherrypie.modele.usager import VehiculePrioritaire, Voiture
 from cherrypie.serveur.serveur import Serveur
@@ -51,6 +52,18 @@ def etat(regulation: bool = True, vp_actif: bool = False) -> dict:
     }
 
 
+def visible_sans_defiler(fenetre: FenetreSupervision, element: QWidget) -> bool:
+    """Indique si un élément du panneau latéral se voit en entier, sans faire défiler le panneau."""
+    zone = fenetre.panneau_lateral.viewport()
+    return zone.rect().contains(QRect(element.mapTo(zone, QPoint(0, 0)), element.size()))
+
+
+def montre_toute_la_scene(fenetre: FenetreSupervision) -> bool:
+    visible = fenetre.vue.mapToScene(fenetre.vue.viewport().rect()).boundingRect()
+    cadre = fenetre.scene.sceneRect()
+    return visible.width() >= cadre.width() - 1 and visible.height() >= cadre.height() - 1
+
+
 def threads_clients() -> list[threading.Thread]:
     return [fil for fil in threading.enumerate() if fil.name.startswith("client-")]
 
@@ -69,9 +82,38 @@ def test_fenetre_construite_et_affichee(fenetre: FenetreSupervision) -> None:
 def test_vue_montre_tout_le_rond_point(fenetre: FenetreSupervision) -> None:
     fenetre.show()
     attendre_qt(lambda: fenetre.vue.isVisible())
-    visible = fenetre.vue.mapToScene(fenetre.vue.viewport().rect()).boundingRect()
-    cadre = fenetre.scene.sceneRect()
-    assert visible.width() >= cadre.width() - 1 and visible.height() >= cadre.height() - 1
+    assert montre_toute_la_scene(fenetre)
+
+
+# ---------- Tailles d'écran ----------
+
+
+def test_taille_minimale_sans_taille_fixe(fenetre: FenetreSupervision) -> None:
+    assert (fenetre.minimumWidth(), fenetre.minimumHeight()) == (LARGEUR_MINIMALE, HAUTEUR_MINIMALE)
+    assert fenetre.maximumWidth() > LARGEUR_MINIMALE and fenetre.maximumHeight() > HAUTEUR_MINIMALE
+
+
+@pytest.mark.parametrize(("largeur", "hauteur"), [(1024, 640), (1280, 720), (1440, 800)])
+def test_tout_visible_sur_un_ecran_de_portable(fenetre: FenetreSupervision, largeur: int, hauteur: int) -> None:
+    fenetre.resize(largeur, hauteur)
+    fenetre.show()
+    attendre_qt(lambda: fenetre.vue.isVisible())
+    assert fenetre.size().width() == largeur and fenetre.size().height() == hauteur
+    boutons = fenetre.panneau_scenario.boutons
+    elements = [boutons["ajouter"], boutons["lancer"], boutons["arreter"], fenetre.case_regulation]
+    # Les dispositions se recalculent dans la boucle Qt : on la laisse tourner jusqu'à ce qu'elles soient posées.
+    attendre_qt(lambda: all(visible_sans_defiler(fenetre, element) for element in elements))
+    assert montre_toute_la_scene(fenetre)
+
+
+def test_scene_et_panneau_grandissent_ensemble(fenetre: FenetreSupervision) -> None:
+    fenetre.resize(LARGEUR_MINIMALE, HAUTEUR_MINIMALE)
+    fenetre.show()
+    attendre_qt(lambda: fenetre.vue.isVisible())
+    scene_avant, panneau_avant = fenetre.separateur.sizes()
+    fenetre.resize(2 * LARGEUR_MINIMALE, HAUTEUR_MINIMALE)
+    attendre_qt(lambda: fenetre.separateur.sizes()[0] > scene_avant)
+    assert fenetre.separateur.sizes()[1] > panneau_avant
 
 
 # ---------- STATE reçu ----------
