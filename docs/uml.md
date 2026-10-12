@@ -179,6 +179,7 @@ classDiagram
         +CATEGORIE : str$
         +VITESSE_MAX : float$
         +CONSIGNES_SUIVIES : frozenset[CodeNotification]$
+        +DISTANCE_SECURITE : float$
         -identifiant : str
         -branche_entree : str
         -branche_sortie : str
@@ -564,24 +565,41 @@ classDiagram
         +ceder : bool
     }
 
+    class Chaussee {
+        <<enumeration>>
+        ENTREE
+        SORTIE
+    }
+
     class Circulation {
         -rond_point : RondPoint
-        +voir(registre: Registre) dict[str, Vue]
-        -vue(rang: int, vehicules: list[Usager], passages_occupes: set[str]) Vue
+        -tour_d_entree : str | None
+        +voir(registre: Registre, prioritaires: frozenset[str]) dict[str, Vue]
+        +passages_fermes(registre: Registre) set[tuple[str, Chaussee]]
+        -devant(rang: int, vehicules: list[Usager], passages_fermes: set, prioritaire: bool) list[float]
         -devant_sur_la_branche(...) list[float]
         -devant_sur_l_anneau(...) list[float]
+        -devant_sur_le_passage(rang: int, pietons: list[Usager]) list[float]
+        -donner_le_tour(vehicules: list[Usager], distances: dict, prioritaires: frozenset[str]) str | None
+        -peut_entrer(vehicule: Usager, distance: float | None, vehicules: list[Usager]) bool
+        -reste_avant_la_ligne(vehicule: Usager) float
+        -dans_sa_zone_d_entree(vehicule: Usager) bool
         -anneau_libre(branche: Branche, vehicules: list[Usager]) bool
-        -meme_voie_de_l_anneau(usager: Usager, autre: Usager) bool
+        -sur_la_voie(rayon_de_voie: float, autre: Usager) bool
         -range(usager: Usager, sortie: Branche) bool
     }
 
     Circulation ..> Vue : produit
+    Circulation ..> Chaussee : ferme
     Circulation ..> Registre : lit
 ```
 
 - Chaque client roule sans voir les autres. `Circulation.voir()` calcule, pour chaque véhicule dont la position est connue, la distance jusqu'à l'obstacle le plus proche devant lui sur sa voie (autre véhicule ou piéton sur le passage) et s'il doit céder le passage. `cadencer()` l'envoie à chaque véhicule dans un message DEVANT, que la régulation soit active ou non : c'est la simulation de ce que voit un conducteur, pas une consigne.
 - Sur une chaussée de branche, deux véhicules sont sur la même file si leurs écarts à l'axe diffèrent de moins d'un mètre : un usager rangé sur le bord ne gêne pas ceux qui roulent au milieu. Sur l'anneau, deux véhicules sont sur la même voie si leurs distances au centre diffèrent de moins d'une demi-largeur de voie.
 - Le cédez-le-passage demande 15 m libres en amont et 10 m en aval du point d'entrée, sur les deux voies, puisque l'usager qui entre traverse la voie extérieure. Ces marges empêchent l'anneau de se bloquer en boucle.
+- Les entrées se font une par une. `donner_le_tour()` accorde l'entrée à un seul véhicule proche de sa ligne, qui la garde pendant qu'il rejoint l'anneau ; c'est le seul état que `Circulation` retient d'une cadence à l'autre (`tour_d_entree`).
+- `prioritaires` désigne les VP annoncés quand la régulation est active : ils entrent sans attendre leur tour et ne regardent que la voie intérieure.
+- `passages_fermes()` donne les demi-chaussées où marche un piéton : seules celles-là bloquent les véhicules, et le STATE les transmet à la supervision. Un piéton voit le piéton qui le précède sur le passage, pour ne pas lui marcher dessus.
 
 ### Régulation
 
@@ -696,7 +714,7 @@ classDiagram
 - `rouler()` enchaîne les connexions. Après une coupure, ou un refus provisoire (`InscriptionRefuseeError.reessayer`), il attend avec un délai qui double (1, 2, 4, 8 s, plafonné à 10 s). L'attente se fait sur un `threading.Event` : `arreter()` réveille le client sans attendre la fin du délai. Un refus définitif l'arrête.
 - `circuler()` fait avancer l'usager d'un pas à chaque intervalle de position, envoie le POS en UDP, envoie un PING toutes les `intervalle_ping` secondes et traite les messages reçus. Elle s'arrête si le serveur reste muet plus de `timeout_client` secondes, et dit au revoir (BYE) à la fin du trajet ou à l'arrêt.
 - Les messages lus attendent dans une file (`recus`) : une NOTIF arrivée dans la même lecture que le HELLO_ACK n'est pas perdue.
-- `Deplacement` contient les règles de mouvement, sans réseau, ce qui permet de les tester seules. À chaque pas, l'usager parcourt la distance que permet sa consigne et s'arrête sur la ligne d'entrée pendant un ATTENDEZ ou un cédez-le-passage s'il ne l'a pas encore franchie. Pour se ranger, il se décale progressivement (2 m/s) jusqu'à la place que donne sa trajectoire ; pendant un DEGAGEZ, il ne ralentit qu'une fois rangé, pour ne pas boucher la voie qu'il libère. Chaque pas met à jour sa position, son cap, sa vitesse, son segment et son étape. `noter_devant()` fixe l'avancement à ne pas dépasser pour garder 6 m avec l'obstacle de devant ; l'usager ne recule jamais.
+- `Deplacement` contient les règles de mouvement, sans réseau, ce qui permet de les tester seules. À chaque pas, l'usager parcourt la distance que permet sa consigne et s'arrête sur la ligne d'entrée pendant un ATTENDEZ ou un cédez-le-passage s'il ne l'a pas encore franchie. Pour se ranger, il se décale progressivement (2 m/s) jusqu'à la place que donne sa trajectoire ; pendant un DEGAGEZ, il ne ralentit qu'une fois rangé, pour ne pas boucher la voie qu'il libère. Chaque pas met à jour sa position, son cap, sa vitesse, son segment et son étape. `noter_devant()` fixe l'avancement à ne pas dépasser pour garder sa distance de sécurité avec l'obstacle de devant (`Usager.DISTANCE_SECURITE` : 6 m pour un véhicule, 1,5 m pour un piéton) ; l'usager ne recule jamais.
 - Un client de VP envoie VP_ALERT à chaque connexion tant que le VP n'a pas quitté l'anneau, avec son `eta` (le temps qu'il lui faut pour atteindre l'anneau), puis VP_FIN au pas où il passe en étape de sortie.
 
 Setters prévus : aucun.
@@ -748,6 +766,7 @@ classDiagram
         -textes_densite : dict[str, QGraphicsTextItem]
         -arcs_reserves : dict[str, QGraphicsPathItem]
         -entrees_temporisees : dict[str, QGraphicsItemGroup]
+        -passages_fermes : dict[tuple[str, str], QGraphicsLineItem]
         -marqueurs : dict[str, MarqueurUsager]
         +vers_scene(position: Position) QPointF$
         +afficher_etat(etat: dict) None
