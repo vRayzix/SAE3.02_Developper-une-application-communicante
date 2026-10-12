@@ -51,3 +51,7 @@ class InscriptionRefuseeError(CherryPieError):
     def reessayer(self) -> bool:
         """bool: True si un nouvel essai peut réussir, False si le refus est définitif."""
         return self.__reessayer
+
+
+class ScenarioInvalideError(CherryPieError):
+    """Un scénario de démonstration est incohérent ou ne convient pas à ce rond-point."""
