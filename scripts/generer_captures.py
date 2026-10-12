@@ -3,8 +3,10 @@
 Usage : python scripts/generer_captures.py [dossier]
 Sans argument, les images vont dans docs/captures/. Le script lance un serveur et la
 fenêtre de supervision dans ce processus, sur des ports libres et sans rien afficher
-(plateforme Qt offscreen). Il joue deux fois le même trafic, avec puis sans régulation,
-et prend chaque capture au même délai après le départ du véhicule prioritaire.
+(plateforme Qt offscreen). Il compose le même scénario dans la section « Scénario » et le
+joue deux fois, avec puis sans régulation, en prenant chaque capture au même délai après
+le départ du véhicule prioritaire. Pendant le passage régulé, il capture aussi la fenêtre
+à trois tailles d'écran et la section « Suivi ».
 """
 
 import configparser
@@ -30,19 +32,27 @@ from cherrypie.commun.config import Configuration
 from cherrypie.ihm.fenetre_supervision import FenetreSupervision
 from cherrypie.serveur.serveur import Serveur
 
-# Trafic joué avant l'arrivée du VP : (catégorie, entrée, sortie, nombre).
-TRAFIC = [
-    ("voiture", "nations_sud", "albert_camus", 3),
-    ("voiture", "jean_de_la_bruyere", "nations_sud", 2),
-    ("moto", "albert_camus", "nations_nord", 1),
-    ("trottinette", "nations_nord", "jean_de_la_bruyere", 1),
-    ("pieton", "nations_nord", "nations_nord", 1),
-]
-VP = ("vp", "nations_sud", "nations_nord", 1)
-# Délais en secondes : le temps que le trafic arrive au rond-point, puis celui laissé au VP.
-# Au bout de 8 s, le VP régulé roule sur l'anneau, l'autre attend encore derrière la file.
+# Lignes du scénario : (catégorie, entrée, sortie, nombre, délai depuis la ligne précédente).
+# Le trafic part d'un coup ; le VP part quand il est arrivé au rond-point.
 DELAI_AVANT_VP = 3.5
+SCENARIO = [
+    ("voiture", "nations_sud", "albert_camus", 3, 0.0),
+    ("voiture", "jean_de_la_bruyere", "nations_sud", 2, 0.0),
+    ("moto", "albert_camus", "nations_nord", 1, 0.0),
+    ("trottinette", "nations_nord", "jean_de_la_bruyere", 1, 0.0),
+    ("pieton", "nations_nord", "nations_nord", 1, 0.0),
+    ("vp", "nations_sud", "nations_nord", 1, DELAI_AVANT_VP),
+]
+# Délais en secondes : la capture au repos précède le départ du VP ; au bout de 8 s, le VP
+# régulé roule sur l'anneau, l'autre attend encore derrière la file.
+DELAI_CAPTURE_REPOS = 3.0
 DELAI_CAPTURE_VP = 8.0
+# Taille des captures principales, puis tailles d'écran de portable vérifiées.
+TAILLE_CAPTURE = (1280, 720)
+TAILLES_ECRAN = [(1024, 640), (1280, 720), (1440, 800)]
+# Temps laissé à la fenêtre pour se redisposer après un changement de taille ou d'onglet.
+DELAI_DISPOSITION = 0.3
+ONGLET_SUIVI = 1
 DELAI_CONNEXION = 5.0
 PAUSE_BOUCLE = 0.01
 
@@ -77,17 +87,19 @@ def patienter_jusqu_a(condition: Callable[[], bool], description: str) -> None:
         time.sleep(PAUSE_BOUCLE)
 
 
-def lancer(fenetre: FenetreSupervision, categorie: str, entree: str, sortie: str, nombre: int) -> None:
-    """Lance des usagers depuis le panneau de création, comme le ferait l'utilisateur."""
-    panneau = fenetre.panneau_creation
-    panneau.choix_categorie.setCurrentIndex(panneau.choix_categorie.findData(categorie))
-    panneau.choix_entree.setCurrentIndex(panneau.choix_entree.findData(entree))
-    panneau.choix_sortie.setCurrentIndex(panneau.choix_sortie.findData(sortie))
-    panneau.choix_nombre.setValue(nombre)
-    panneau.lancer()
+def composer(fenetre: FenetreSupervision) -> None:
+    """Compose le scénario dans la section « Scénario », comme le ferait l'utilisateur."""
+    panneau = fenetre.panneau_scenario
+    for categorie, entree, sortie, nombre, delai in SCENARIO:
+        panneau.choix_categorie.setCurrentIndex(panneau.choix_categorie.findData(categorie))
+        panneau.choix_entree.setCurrentIndex(panneau.choix_entree.findData(entree))
+        panneau.choix_sortie.setCurrentIndex(panneau.choix_sortie.findData(sortie))
+        panneau.choix_nombre.setValue(nombre)
+        panneau.choix_delai.setValue(delai)
+        panneau.ajouter()
 
 
-def jouer(regulation: bool, dossier: Path, capturer_repos: bool) -> None:
+def jouer(regulation: bool, dossier: Path) -> None:
     """Joue le scénario sur un serveur neuf et enregistre les captures."""
     config = configuration()
     serveur = Serveur(config)
@@ -95,23 +107,37 @@ def jouer(regulation: bool, dossier: Path, capturer_repos: bool) -> None:
     fil_serveur = threading.Thread(target=serveur.servir, daemon=True)
     fil_serveur.start()
     fenetre = FenetreSupervision(config)
+    fenetre.resize(*TAILLE_CAPTURE)
     fenetre.show()
     fenetre.demarrer()
     patienter_jusqu_a(lambda: fenetre.indicateur_regulation.text() == "active", "connexion de la supervision")
     if not regulation:
         fenetre.case_regulation.click()
         patienter_jusqu_a(lambda: fenetre.indicateur_regulation.text() == "inactive", "régulation coupée")
-    for usagers in TRAFIC:
-        lancer(fenetre, *usagers)
-    patienter(DELAI_AVANT_VP)
-    if capturer_repos:
+    composer(fenetre)
+    fenetre.panneau_scenario.lancer()
+    patienter(DELAI_CAPTURE_REPOS)
+    if regulation:
         enregistrer(fenetre, dossier / "repos.png")
-    lancer(fenetre, *VP)
-    patienter(DELAI_CAPTURE_VP)
+    patienter(DELAI_AVANT_VP - DELAI_CAPTURE_REPOS + DELAI_CAPTURE_VP)
     enregistrer(fenetre, dossier / f"vp_{'avec' if regulation else 'sans'}_regulation.png")
+    if regulation:
+        capturer_les_tailles(fenetre, dossier)
     fenetre.close()
     serveur.arreter()
     fil_serveur.join()
+
+
+def capturer_les_tailles(fenetre: FenetreSupervision, dossier: Path) -> None:
+    """Capture la fenêtre à chaque taille d'écran, puis la section « Suivi »."""
+    for largeur, hauteur in TAILLES_ECRAN:
+        fenetre.resize(largeur, hauteur)
+        patienter(DELAI_DISPOSITION)
+        enregistrer(fenetre, dossier / f"fenetre_{largeur}x{hauteur}.png")
+    fenetre.resize(*TAILLE_CAPTURE)
+    fenetre.sections.setCurrentIndex(ONGLET_SUIVI)
+    patienter(DELAI_DISPOSITION)
+    enregistrer(fenetre, dossier / "suivi.png")
 
 
 def enregistrer(fenetre: FenetreSupervision, chemin: Path) -> None:
@@ -122,7 +148,7 @@ def enregistrer(fenetre: FenetreSupervision, chemin: Path) -> None:
 
 
 def main() -> int:
-    """Génère les trois captures : rond-point au repos, VP avec régulation, VP sans régulation.
+    """Génère les captures : repos, VP avec et sans régulation, tailles d'écran et section « Suivi ».
 
     Returns:
         int: code de sortie du programme, 0 si tout s'est bien passé.
@@ -132,8 +158,8 @@ def main() -> int:
     dossier.mkdir(parents=True, exist_ok=True)
     application = QApplication(sys.argv)
     try:
-        jouer(regulation=True, dossier=dossier, capturer_repos=True)
-        jouer(regulation=False, dossier=dossier, capturer_repos=False)
+        jouer(regulation=True, dossier=dossier)
+        jouer(regulation=False, dossier=dossier)
     except (OSError, TimeoutError) as erreur:
         print(f"Captures interrompues : {erreur}", file=sys.stderr)
         return 1
