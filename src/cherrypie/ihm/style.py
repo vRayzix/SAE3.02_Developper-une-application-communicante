@@ -84,6 +84,8 @@ COULEUR_FEU_ENTREE = QColor("#d1495b")
 EPAISSEUR_BARRE_ENTREE = 0.8
 COTE_FEU_ENTREE = 2.5
 ECART_FEU_ENTREE = 0.8
+# Passage fermé par un piéton : même barre, posée juste avant les bandes du passage.
+ECART_BARRIERE_PASSAGE = 0.8
 
 COULEURS_DENSITE = {
     NiveauDensite.FAIBLE: QColor("#57a773"),

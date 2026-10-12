@@ -28,7 +28,7 @@ def test_legende_tous_les_niveaux_de_densite(legende: Legende) -> None:
 
 
 def test_legende_marques_de_regulation(legende: Legende) -> None:
-    assert {"Voie réservée au VP", "Entrée temporisée"} <= set(legende.libelles)
+    assert {"Voie réservée au VP", "Barrière : entrée temporisée ou piéton"} <= set(legende.libelles)
 
 
 def test_legende_rangee_sur_le_nombre_de_colonnes(legende: Legende) -> None:

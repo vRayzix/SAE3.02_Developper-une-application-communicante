@@ -92,6 +92,7 @@ def etat(
     densite: dict[str, float] | None = None,
     segments_reserves: list[str] | None = None,
     entrees_bloquees: list[str] | None = None,
+    passages_fermes: list[dict] | None = None,
 ) -> dict:
     """Données d'un STATE, vides par défaut."""
     return {
@@ -100,6 +101,7 @@ def etat(
         "vp_actif": False,
         "segments_reserves": segments_reserves or [],
         "entrees_bloquees": entrees_bloquees or [],
+        "passages_fermes": passages_fermes or [],
         "regulation": True,
     }
 
@@ -198,6 +200,14 @@ def test_entrees_bloquees_signalees_par_une_barre_et_un_feu(scene: SceneRondPoin
     visibles = {nom for nom, marque in scene.entrees_temporisees.items() if marque.isVisible()}
     assert visibles == {"jean_de_la_bruyere"}
     assert len(scene.entrees_temporisees["jean_de_la_bruyere"].childItems()) == 2
+
+
+def test_passage_ferme_par_une_barriere_sur_sa_seule_chaussee(scene: SceneRondPoint) -> None:
+    scene.afficher_etat(etat(passages_fermes=[{"branche": "nations_nord", "chaussee": "sortie"}]))
+    visibles = {cle for cle, barriere in scene.passages_fermes.items() if barriere.isVisible()}
+    assert visibles == {("nations_nord", "sortie")}
+    scene.afficher_etat(etat())
+    assert not any(barriere.isVisible() for barriere in scene.passages_fermes.values())
 
 
 def test_densite_forte_coloree_et_ecrite(scene: SceneRondPoint) -> None:

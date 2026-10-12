@@ -72,7 +72,7 @@ class Legende(QGroupBox):
             dessin = self.__silhouette(Voiture.CATEGORIE, couleur, EPAISSEUR_CONTOUR_CONSIGNE)
             entrees.append((dessin, f"Consigne {code}"))
         entrees.append((self.__bande(COULEUR_RESERVE, PROPORTION_BANDE * 2), "Voie réservée au VP"))
-        entrees.append((self.__bande(COULEUR_FEU_ENTREE, PROPORTION_BARRE), "Entrée temporisée"))
+        entrees.append((self.__bande(COULEUR_FEU_ENTREE, PROPORTION_BARRE), "Barrière : entrée temporisée ou piéton"))
         for niveau, couleur in COULEURS_DENSITE.items():
             entrees.append((self.__bande(couleur, PROPORTION_BANDE), f"Densité {niveau.value}"))
         return entrees
