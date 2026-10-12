@@ -273,6 +273,14 @@ class Usager:
         """
         return self.__consigne in (CodeNotification.DEGAGEZ, CodeNotification.CHANGEZ_VOIE)
 
+    def retenu_avant_la_ligne(self) -> bool:
+        """Indique si la consigne en cours interdit à l'usager de franchir sa ligne d'entrée.
+
+        Returns:
+            bool: True pendant un ATTENDEZ, et pendant un CHANGEZ_VOIE où il reste rangé.
+        """
+        return self.__consigne in (CodeNotification.ATTENDEZ, CodeNotification.CHANGEZ_VOIE)
+
     def calculer_trajectoire(self, rond_point: RondPoint) -> Trajectoire:
         """Calcule le chemin de l'usager : approche, anneau, puis sortie.
 
