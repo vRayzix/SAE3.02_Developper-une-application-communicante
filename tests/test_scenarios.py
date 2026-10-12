@@ -153,6 +153,32 @@ def test_vp_regule_ne_cede_pas_aux_vehicules_de_l_anneau(sortie_du_vp: str) -> N
     assert charge.duree <= a_vide.duree * (1 + ECART_TOLERE_A_VIDE)
 
 
+# ---------- Entrées pendant et après le passage du VP ----------
+
+def deux_voitures_en_attente(regulation: bool = True) -> tuple[Simulation, list]:
+    """Deux voitures à l'arrêt sur deux branches, dont le trajet croise celui d'un VP qui arrive du sud."""
+    simulation = Simulation(rond_point_bel_air())
+    simulation.regler(regulation)
+    # À 10 m de leur ligne, elles y arrivent après la première cadence du serveur.
+    avancement = LONGUEUR_BRANCHE - 10.0
+    voitures = [
+        simulation.ajouter(Voiture("voiture_a", "jean_de_la_bruyere", "nations_nord"), avancement=avancement),
+        simulation.ajouter(Voiture("voiture_b", "albert_camus", "jean_de_la_bruyere"), avancement=avancement),
+    ]
+    simulation.ajouter(VehiculePrioritaire("vp_1", "nations_sud", "nations_nord"))
+    return simulation, voitures
+
+
+def test_aucune_voiture_en_conflit_n_entre_pendant_le_passage_du_vp() -> None:
+    simulation, voitures = deux_voitures_en_attente()
+
+    def vp_sorti() -> bool:
+        assert all(voiture.usager.etape is Etape.APPROCHE for voiture in voitures), "une voiture est entrée"
+        return bool(simulation.logique.passages)
+
+    assert simulation.avancer_jusqu_a(vp_sorti, duree_max=60.0)
+
+
 # ---------- Régulation ----------
 
 def traversee_du_vp(graine: int, regulation: bool) -> PassageVp:
