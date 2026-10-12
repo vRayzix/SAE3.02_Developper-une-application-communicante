@@ -66,6 +66,16 @@ def patienter(duree: float) -> None:
 
 # ---------- Composition ----------
 
+def test_choix_d_apres_la_configuration(
+    fabrique_config: Callable[..., Configuration], fabrique_panneau: Callable
+) -> None:
+    panneau = fabrique_panneau(fabrique_config(branches=["a", "b", "c"]))
+    rangs = range(panneau.choix_entree.count())
+    assert [panneau.choix_entree.itemText(rang) for rang in rangs] == ["Rue a", "Rue b", "Rue c"]
+    assert [panneau.choix_entree.itemData(rang) for rang in rangs] == ["a", "b", "c"]
+    assert panneau.choix_categorie.count() == 5
+
+
 def test_ligne_ajoutee_d_apres_le_formulaire(panneau: PanneauScenario) -> None:
     composer(panneau, "voiture", "nations_sud", "albert_camus", nombre=3, delai=2.5)
     assert panneau.scenario.lignes == [LigneScenario("voiture", "nations_sud", "albert_camus", 3, 2.5)]
