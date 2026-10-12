@@ -293,6 +293,10 @@ class LogiqueServeur:
             passage.noter_densite(densite_moyenne)
         numeros = {session.identifiant: session.numero for session in self.__sessions.values() if session.identifiant}
         notifications = self.__regulateur.decider(self.__registre, self.passages_en_cours, densites)
+        # Le registre garde la consigne de chaque usager, comme le client qui la reçoit :
+        # le STATE la montre, et la circulation en tient compte.
+        for notification in notifications:
+            self.__registre.obtenir(notification.destinataire).reagir(notification.code)
         envois = [
             (numeros[notification.destinataire], notification.vers_message(IDENTIFIANT_SERVEUR))
             for notification in notifications

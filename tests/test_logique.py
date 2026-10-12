@@ -470,6 +470,16 @@ def test_cadence_envoie_la_consigne_a_la_session_du_destinataire(logique: Logiqu
     assert logique.construire_etat().donnees["entrees_bloquees"] == ["jean_de_la_bruyere"]
 
 
+def test_consigne_en_cours_visible_dans_le_state(logique: LogiqueServeur) -> None:
+    voiture_en_approche(logique, "voiture_1", "jean_de_la_bruyere", "albert_camus")
+    vp = vp_inscrit(logique)
+    logique.traiter_tcp(vp, alerte(), 1.0)
+    logique.cadencer()
+    usagers = {usager["id"]: usager for usager in logique.construire_etat().donnees["usagers"]}
+    assert usagers["voiture_1"]["consigne"] == "ATTENDEZ"
+    assert usagers["vp_1"]["consigne"] is None
+
+
 def test_consigne_renvoyee_apres_une_reconnexion(logique: LogiqueServeur) -> None:
     premiere = voiture_en_approche(logique, "voiture_1", "jean_de_la_bruyere", "albert_camus")
     vp = vp_inscrit(logique)
