@@ -182,6 +182,7 @@ classDiagram
         +VITESSE_MAX : float$
         +CONSIGNES_SUIVIES : frozenset[CodeNotification]$
         +DISTANCE_SECURITE : float$
+        +ECART_EN_APPROCHE : float$
         -identifiant : str
         -branche_entree : str
         -branche_sortie : str
@@ -194,6 +195,7 @@ classDiagram
         +reagir(code: CodeNotification) bool
         +vitesse_autorisee() float
         +se_range() bool
+        +retenu_avant_la_ligne() bool
         +verifier_cap(valeur: object) float$
         +calculer_trajectoire(rond_point: RondPoint) Trajectoire
         +vers_dict() dict
@@ -248,7 +250,7 @@ classDiagram
 | `Pieton` | `pieton` | 1,4 m/s (5 km/h) | `ATTENDEZ`, `OK_PASSER` | traversée de sa branche |
 | `VehiculePrioritaire` | `vp` | 11,1 m/s (40 km/h) | aucune, c'est lui qu'on laisse passer | approche, anneau sur la voie intérieure, sortie |
 
-- `vitesse_autorisee()` et `se_range()` traduisent la consigne en cours : vitesse réduite de moitié pour `DEGAGEZ`, et rangement sur la droite pour `DEGAGEZ` et `CHANGEZ_VOIE`. La place disponible dépend de l'endroit (bord de la chaussée sur une branche, voie extérieure sur l'anneau) : c'est la trajectoire qui la donne, et le déplacement qui l'applique. `ATTENDEZ` ne change pas la vitesse : l'usager avance jusqu'à la ligne d'entrée de sa trajectoire et s'y arrête. `OK_PASSER` lève la consigne.
+- `vitesse_autorisee()` et `se_range()` traduisent la consigne en cours : vitesse réduite de moitié pour `DEGAGEZ`, nulle pour `CHANGEZ_VOIE`, et rangement sur la droite pour `DEGAGEZ` et `CHANGEZ_VOIE`. `retenu_avant_la_ligne()` vaut pour `ATTENDEZ` et `CHANGEZ_VOIE` : le client et le serveur partagent ainsi la règle qui retient un usager avant sa ligne d'entrée. `ECART_EN_APPROCHE` est l'écart latéral habituel sur la chaussée d'approche : nul, sauf pour le VP, qui roule 0,8 m à gauche du milieu, d'où il double les usagers rangés. La place disponible dépend de l'endroit (bord de la chaussée sur une branche, voie extérieure sur l'anneau) : c'est la trajectoire qui la donne, et le déplacement qui l'applique. `ATTENDEZ` ne change pas la vitesse : l'usager avance jusqu'à la ligne d'entrée de sa trajectoire et s'y arrête. `OK_PASSER` lève la consigne.
 - `Pieton` redéfinit `calculer_trajectoire()` : il ne prend pas l'anneau, il traverse une seule branche, qui est à la fois son entrée et sa sortie. `VehiculePrioritaire` la redéfinit aussi, pour rester sur la voie intérieure de l'anneau.
 - Le cap est la direction de marche, en degrés depuis le nord. `verifier_cap()` sert au setter et au serveur, qui contrôle le cap d'un POS avant de modifier l'usager.
 - `depuis_dict()` instancie la bonne sous-classe d'après la catégorie reçue dans le HELLO.
@@ -597,10 +599,10 @@ classDiagram
 ```
 
 - Chaque client roule sans voir les autres. `Circulation.voir()` calcule, pour chaque véhicule dont la position est connue, la distance jusqu'à l'obstacle le plus proche devant lui sur sa voie (autre véhicule ou piéton sur le passage) et s'il doit céder le passage. `cadencer()` l'envoie à chaque véhicule dans un message DEVANT, que la régulation soit active ou non : c'est la simulation de ce que voit un conducteur, pas une consigne.
-- Sur une chaussée de branche, deux véhicules sont sur la même file si leurs écarts à l'axe diffèrent de moins d'un mètre : un usager rangé sur le bord ne gêne pas ceux qui roulent au milieu. Sur l'anneau, deux véhicules sont sur la même voie si leurs distances au centre diffèrent de moins d'une demi-largeur de voie.
+- Une chaussée de branche n'a qu'une file : tout véhicule devant sur la même chaussée est un obstacle. Seul un VP prioritaire double un usager rangé sur le bord : pour lui, un véhicule dont l'écart à l'axe diffère du sien d'au moins un mètre n'est pas sur sa file. Sur l'anneau, deux véhicules sont sur la même voie si leurs distances au centre diffèrent de moins d'une demi-largeur de voie.
 - Le cédez-le-passage demande 15 m libres en amont et 10 m en aval du point d'entrée, sur les deux voies, puisque l'usager qui entre traverse la voie extérieure. Ces marges empêchent l'anneau de se bloquer en boucle.
 - Les entrées se font une par une. `donner_le_tour()` accorde l'entrée à un seul véhicule proche de sa ligne, qui la garde pendant qu'il rejoint l'anneau ; c'est le seul état que `Circulation` retient d'une cadence à l'autre (`tour_d_entree`).
-- `prioritaires` désigne les VP annoncés quand la régulation est active : ils entrent sans attendre leur tour et ne regardent que la voie intérieure.
+- `prioritaires` désigne les VP annoncés quand la régulation est active : ils entrent sans attendre leur tour, doublent les usagers rangés sur leur chaussée d'approche et ne regardent que la voie intérieure de l'anneau. Un véhicule retenu avant sa ligne (ATTENDEZ, CHANGEZ_VOIE) ne reçoit pas le tour d'entrée.
 - `passages_fermes()` donne les demi-chaussées où marche un piéton : seules celles-là bloquent les véhicules, et le STATE les transmet à la supervision. Un piéton voit le piéton qui le précède sur le passage, pour ne pas lui marcher dessus.
 
 ### Régulation
@@ -620,6 +622,7 @@ classDiagram
         -changement(identifiant: str, voulue: tuple | None) Notification | None
         -tout_liberer() list[Notification]
         -chemin_restant(usager: Usager) list[str]
+        -devant_le_vp(usager: Usager, vp: Usager) bool$
         -segments_devant(vp: Usager, passage: PassageEnCours) set[str]$
     }
 
@@ -637,7 +640,7 @@ classDiagram
 ```
 
 - `Regulateur.decider()` est appelé à chaque cadence par `cadencer()`. Il calcule la consigne voulue pour chaque usager, la compare à celle déjà envoyée (`consignes_envoyees`) et ne renvoie que les changements ; un usager libéré reçoit OK_PASSER.
-- Autour d'un VP : DEGAGEZ pour qui est ou va passer sur un segment réservé devant le VP, CHANGEZ_VOIE pour la file sur la branche d'entrée du VP, ATTENDEZ pour qui entrerait sur un segment réservé, et ATTENDEZ pour les piétons devant les passages de l'entrée et de la sortie du VP. Sans VP, le dosage temporise la moins chargée des entrées occupées quand une branche est en densité forte.
+- Autour d'un VP : DEGAGEZ pour qui est ou va passer sur un segment réservé devant le VP, CHANGEZ_VOIE pour les usagers devant le VP sur sa chaussée d'approche, jusqu'à ce qu'il les devance de 8 m (sa longueur et une marge), ATTENDEZ pour qui entrerait sur un segment réservé, et ATTENDEZ pour les piétons devant les passages de l'entrée et de la sortie du VP. Sans VP, le dosage temporise la moins chargée des entrées occupées quand une branche est en densité forte.
 - `oublier()` est appelé à la fermeture d'une session : après une reconnexion, la consigne qui vaut encore est renvoyée.
 - Régulation coupée (`active` à False, message REGLAGE), `decider()` lève une fois les consignes en cours puis ne renvoie plus rien.
 
@@ -716,7 +719,7 @@ classDiagram
 - `rouler()` enchaîne les connexions. Après une coupure, ou un refus provisoire (`InscriptionRefuseeError.reessayer`), il attend avec un délai qui double (1, 2, 4, 8 s, plafonné à 10 s). L'attente se fait sur un `threading.Event` : `arreter()` réveille le client sans attendre la fin du délai. Un refus définitif l'arrête.
 - `circuler()` fait avancer l'usager d'un pas à chaque intervalle de position, envoie le POS en UDP, envoie un PING toutes les `intervalle_ping` secondes et traite les messages reçus. Elle s'arrête si le serveur reste muet plus de `timeout_client` secondes, et dit au revoir (BYE) à la fin du trajet ou à l'arrêt.
 - Les messages lus attendent dans une file (`recus`) : une NOTIF arrivée dans la même lecture que le HELLO_ACK n'est pas perdue.
-- `Deplacement` contient les règles de mouvement, sans réseau, ce qui permet de les tester seules. À chaque pas, l'usager parcourt la distance que permet sa consigne et s'arrête sur la ligne d'entrée pendant un ATTENDEZ ou un cédez-le-passage s'il ne l'a pas encore franchie. Pour se ranger, il se décale progressivement (2 m/s) jusqu'à la place que donne sa trajectoire ; pendant un DEGAGEZ, il ne ralentit qu'une fois rangé, pour ne pas boucher la voie qu'il libère. Chaque pas met à jour sa position, son cap, sa vitesse, son segment et son étape. `noter_devant()` fixe l'avancement à ne pas dépasser pour garder sa distance de sécurité avec l'obstacle de devant (`Usager.DISTANCE_SECURITE` : 6 m pour un véhicule, 1,5 m pour un piéton) ; l'usager ne recule jamais.
+- `Deplacement` contient les règles de mouvement, sans réseau, ce qui permet de les tester seules. À chaque pas, l'usager parcourt la distance que permet sa consigne et s'arrête sur la ligne d'entrée pendant un ATTENDEZ, un CHANGEZ_VOIE ou un cédez-le-passage s'il ne l'a pas encore franchie. Pour se ranger, il se décale progressivement (2 m/s) jusqu'à la place que donne sa trajectoire ; pendant un DEGAGEZ, il ne ralentit qu'une fois rangé, pour ne pas boucher la voie qu'il libère ; pendant un CHANGEZ_VOIE, il se décale sans accélérer puis s'immobilise. Sur sa chaussée d'approche, le VP serre la gauche (`ECART_EN_APPROCHE`). Chaque pas met à jour sa position, son cap, sa vitesse, son segment et son étape. `noter_devant()` fixe l'avancement à ne pas dépasser pour garder sa distance de sécurité avec l'obstacle de devant (`Usager.DISTANCE_SECURITE` : 6 m pour un véhicule, 1,5 m pour un piéton) ; l'usager ne recule jamais.
 - Un client de VP envoie VP_ALERT à chaque connexion tant que le VP n'a pas quitté l'anneau, avec son `eta` (le temps qu'il lui faut pour atteindre l'anneau), puis VP_FIN au pas où il passe en étape de sortie.
 
 Setters prévus : aucun.
