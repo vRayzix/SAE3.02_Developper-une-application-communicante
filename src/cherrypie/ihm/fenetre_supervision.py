@@ -8,7 +8,7 @@ from PyQt6.QtCore import Qt, QThread
 from PyQt6.QtGui import QCloseEvent, QColor, QGuiApplication
 from PyQt6.QtWidgets import (
     QCheckBox,
-    QFormLayout,
+    QGridLayout,
     QGroupBox,
     QLabel,
     QMainWindow,
@@ -232,6 +232,8 @@ class FenetreSupervision(QMainWindow):
         if connecte:
             self.__case_a_aligner = True
         else:
+            # Reconnecté, la supervision ne sait pas ce qui a changé entre-temps : pas d'événement inventé.
+            self.__panneau_suivi.oublier_etat()
             self.__colorer(self.__indicateur_regulation, INCONNU, COULEUR_INDICATEUR_INACTIF)
             self.__colorer(self.__indicateur_vp, INCONNU, COULEUR_INDICATEUR_INACTIF)
 
@@ -246,12 +248,13 @@ class FenetreSupervision(QMainWindow):
         etiquette.setStyleSheet(f"color: {couleur.name()}; font-weight: bold;")
 
     def __relier(self) -> None:
-        """Relie le réseau et l'interrupteur aux méthodes de la fenêtre."""
+        """Relie le réseau et l'interrupteur aux méthodes de la fenêtre, et les STATE à la section « Suivi »."""
         self.__fil.started.connect(self.__reseau.tourner)
         # quit() peut être appelée depuis n'importe quel thread. Reliée en direct, elle ne
         # dépend pas de la boucle de l'IHM, bloquée dans wait() pendant la fermeture.
         self.__reseau.termine.connect(self.__fil.quit, Qt.ConnectionType.DirectConnection)
         self.__reseau.etat_recu.connect(self.__afficher_etat)
+        self.__reseau.etat_recu.connect(self.__panneau_suivi.noter_etat)
         self.__reseau.connexion_changee.connect(self.__noter_connexion)
         self.__case_regulation.clicked.connect(self.__regler)
 
@@ -261,12 +264,18 @@ class FenetreSupervision(QMainWindow):
         Rien n'a de taille fixe : la scène suit la place qu'on lui laisse, le séparateur se
         déplace, et le panneau latéral défile si la fenêtre manque de hauteur.
         """
+        # Deux indicateurs par rangée : le panneau garde sa hauteur pour les sections.
         serveur = QGroupBox("Serveur")
-        formulaire = QFormLayout(serveur)
-        formulaire.addRow("Connexion", self.__etat_connexion)
-        formulaire.addRow("Régulation", self.__indicateur_regulation)
-        formulaire.addRow("Véhicule prioritaire", self.__indicateur_vp)
-        formulaire.addRow(self.__case_regulation)
+        grille = QGridLayout(serveur)
+        grille.addWidget(QLabel("Connexion"), 0, 0)
+        grille.addWidget(self.__etat_connexion, 0, 1)
+        grille.addWidget(QLabel("Régulation"), 0, 2)
+        grille.addWidget(self.__indicateur_regulation, 0, 3)
+        grille.addWidget(QLabel("Véhicule prioritaire"), 1, 0)
+        grille.addWidget(self.__indicateur_vp, 1, 1)
+        grille.addWidget(self.__case_regulation, 1, 2, 1, 2)
+        grille.setColumnStretch(1, 1)
+        grille.setColumnStretch(3, 1)
         self.__sections.addTab(self.__panneau_scenario, "Scénario")
         self.__sections.addTab(self.__panneau_suivi, "Suivi")
         contenu_lateral = QWidget()

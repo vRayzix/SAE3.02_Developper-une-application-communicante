@@ -54,6 +54,7 @@ class PassageEnCours:
         segments_reserves: list[str],
         annonce: float,
         regulation: bool,
+        eta: float = 0.0,
     ) -> None:
         """Ouvre le suivi d'un VP qui vient de s'annoncer et démarre le chronomètre.
 
@@ -64,6 +65,7 @@ class PassageEnCours:
             segments_reserves (list[str]): noms des segments de sa trajectoire sur l'anneau.
             annonce (float): instant du VP_ALERT, sur l'horloge monotone du serveur.
             regulation (bool): régulation en vigueur à l'annonce.
+            eta (float): temps annoncé pour atteindre l'anneau, en secondes (0 si inconnu).
         """
         self.__identifiant = identifiant
         self.__entree = entree
@@ -72,6 +74,7 @@ class PassageEnCours:
         self.__annonce = annonce
         self.__debut = datetime.now()
         self.__regulation = regulation
+        self.__eta = eta
         self.__entree_anneau: float | None = None
         self.__releves_densite: list[float] = []
 
@@ -109,6 +112,11 @@ class PassageEnCours:
     def regulation(self) -> bool:
         """bool: régulation en vigueur à l'annonce."""
         return self.__regulation
+
+    @property
+    def eta(self) -> float:
+        """float: temps annoncé pour atteindre l'anneau, en secondes, compté depuis l'annonce."""
+        return self.__eta
 
     @property
     def entree_anneau(self) -> float | None:

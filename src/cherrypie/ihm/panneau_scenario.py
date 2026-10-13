@@ -38,7 +38,8 @@ MILLISECONDES_PAR_SECONDE = 1000
 # Attente maximale de l'arrêt de chaque client, en secondes, quand on arrête tout.
 DELAI_ARRET = 2.0
 FILTRE_FICHIERS = "Scénarios (*.json)"
-BOUTONS_EDITION = ("monter", "descendre", "supprimer", "vider", "enregistrer", "charger")
+BOUTONS_EDITION = ("monter", "descendre", "modifier", "supprimer", "vider")
+BOUTONS_FICHIER = ("enregistrer", "charger")
 COLONNES_EDITION = 3
 
 journal = logging.getLogger(__name__)
@@ -49,7 +50,8 @@ class PanneauScenario(QWidget):
 
     On choisit le type d'usager, l'entrée, la sortie, le nombre et le délai depuis la
     ligne précédente, puis on ajoute la ligne. La liste se réordonne avec les boutons ou
-    par glisser-déposer. « Lancer le scénario » programme chaque ligne à son instant ;
+    par glisser-déposer. « Modifier », ou un double-clic, remet une ligne dans le
+    formulaire ; « Valider la modification » la remplace à sa place. « Lancer le scénario » programme chaque ligne à son instant ;
     « Arrêter tout » annule ce qui n'est pas encore parti et arrête les clients lancés.
     Le scénario s'enregistre et se recharge en JSON, pour rejouer une démonstration.
     """
@@ -66,6 +68,7 @@ class PanneauScenario(QWidget):
         branches = lanceur.config.branches
         self.__branches = {branche.nom for branche in branches}
         self.__minuteries: list[QTimer] = []
+        self.__ligne_modifiee: QListWidgetItem | None = None
         self.__choix_categorie = QComboBox()
         for categorie in CLASSES_PAR_CATEGORIE:
             self.__choix_categorie.addItem(NOMS_CATEGORIE[categorie], categorie)
@@ -87,12 +90,15 @@ class PanneauScenario(QWidget):
             nom: QPushButton(texte)
             for nom, texte in (
                 ("ajouter", "Ajouter au scénario"),
+                ("valider", "Valider la modification"),
+                ("annuler", "Annuler"),
                 ("monter", "Monter"),
                 ("descendre", "Descendre"),
+                ("modifier", "Modifier"),
                 ("supprimer", "Supprimer"),
                 ("vider", "Vider"),
-                ("enregistrer", "Enregistrer…"),
-                ("charger", "Charger…"),
+                ("enregistrer", "Enregistrer le scénario…"),
+                ("charger", "Ouvrir un scénario…"),
                 ("lancer", "Lancer le scénario"),
                 ("arreter", "Arrêter tout"),
             )
@@ -100,6 +106,7 @@ class PanneauScenario(QWidget):
         self.__disposer()
         self.__relier()
         self.__adapter_sortie()
+        self.__montrer_le_mode_d_edition()
         self.__mettre_a_jour_le_resume()
 
     @property
@@ -144,6 +151,11 @@ class PanneauScenario(QWidget):
         return Scenario([self.__liste.item(rang).data(Qt.ItemDataRole.UserRole) for rang in rangs])
 
     @property
+    def en_modification(self) -> bool:
+        """bool: True quand le formulaire montre une ligne en cours de modification."""
+        return self.__ligne_modifiee is not None
+
+    @property
     def en_cours(self) -> bool:
         """bool: True tant que des lignes du scénario lancé attendent leur instant."""
         return any(minuterie.isActive() for minuterie in self.__minuteries)
@@ -154,16 +166,47 @@ class PanneauScenario(QWidget):
         Returns:
             LigneScenario: la ligne ajoutée.
         """
-        ligne = LigneScenario(
-            self.__choix_categorie.currentData(),
-            self.__choix_entree.currentData(),
-            self.__choix_sortie.currentData(),
-            self.__choix_nombre.value(),
-            self.__choix_delai.value(),
-        )
+        ligne = self.__ligne_du_formulaire()
         self.__inserer(self.__liste.count(), ligne)
         self.__mettre_a_jour_le_resume()
         return ligne
+
+    def modifier(self) -> None:
+        """Remet les valeurs de la ligne sélectionnée dans le formulaire, pour la modifier."""
+        element = self.__liste.currentItem()
+        if element is None:
+            return
+        ligne: LigneScenario = element.data(Qt.ItemDataRole.UserRole)
+        self.__choix_categorie.setCurrentIndex(self.__choix_categorie.findData(ligne.categorie))
+        self.__choix_entree.setCurrentIndex(self.__choix_entree.findData(ligne.entree))
+        self.__choix_sortie.setCurrentIndex(self.__choix_sortie.findData(ligne.sortie))
+        self.__choix_nombre.setValue(ligne.nombre)
+        self.__choix_delai.setValue(ligne.delai)
+        self.__ligne_modifiee = element
+        self.__montrer_le_mode_d_edition()
+
+    def valider_modification(self) -> LigneScenario | None:
+        """Remplace la ligne en cours de modification par le formulaire, à la même place.
+
+        Returns:
+            LigneScenario | None: la nouvelle ligne, None si aucune ligne n'était en cours de modification.
+        """
+        if self.__ligne_modifiee is None:
+            return None
+        # La ligne a pu être déplacée pendant la modification : on la cherche à sa place actuelle.
+        rang = self.__liste.row(self.__ligne_modifiee)
+        ligne = self.__ligne_du_formulaire()
+        self.__liste.takeItem(rang)
+        self.__inserer(rang, ligne)
+        self.__liste.setCurrentRow(rang)
+        self.annuler_modification()
+        self.__mettre_a_jour_le_resume()
+        return ligne
+
+    def annuler_modification(self) -> None:
+        """Abandonne la modification en cours ; le formulaire sert de nouveau à ajouter."""
+        self.__ligne_modifiee = None
+        self.__montrer_le_mode_d_edition()
 
     def deplacer(self, decalage: int) -> None:
         """Monte (décalage négatif) ou descend la ligne sélectionnée.
@@ -183,11 +226,14 @@ class PanneauScenario(QWidget):
         """Retire la ligne sélectionnée."""
         rang = self.__liste.currentRow()
         if rang >= 0:
+            if self.__liste.item(rang) is self.__ligne_modifiee:
+                self.annuler_modification()
             self.__liste.takeItem(rang)
             self.__mettre_a_jour_le_resume()
 
     def vider(self) -> None:
         """Retire toutes les lignes."""
+        self.annuler_modification()
         self.__liste.clear()
         self.__mettre_a_jour_le_resume()
 
@@ -231,6 +277,7 @@ class PanneauScenario(QWidget):
             ScenarioInvalideError: si ce n'est pas un scénario valide pour ce rond-point.
         """
         scenario = Scenario.depuis_json(chemin.read_text(encoding="utf-8"), self.__branches)
+        self.annuler_modification()
         self.__liste.clear()
         for rang, ligne in enumerate(scenario.lignes):
             self.__inserer(rang, ligne)
@@ -240,6 +287,23 @@ class PanneauScenario(QWidget):
         """Lance les usagers d'une ligne arrivée à son instant."""
         self.__lanceur.lancer(ligne.categorie, ligne.entree, ligne.sortie, ligne.nombre)
         self.__minuteries = [minuterie for minuterie in self.__minuteries if minuterie.isActive()]
+
+    def __ligne_du_formulaire(self) -> LigneScenario:
+        """Construit la ligne que décrit le formulaire."""
+        return LigneScenario(
+            self.__choix_categorie.currentData(),
+            self.__choix_entree.currentData(),
+            self.__choix_sortie.currentData(),
+            self.__choix_nombre.value(),
+            self.__choix_delai.value(),
+        )
+
+    def __montrer_le_mode_d_edition(self) -> None:
+        """Montre « Ajouter » pour une nouvelle ligne, « Valider » et « Annuler » pendant une modification."""
+        modification = self.en_modification
+        self.__boutons["ajouter"].setVisible(not modification)
+        self.__boutons["valider"].setVisible(modification)
+        self.__boutons["annuler"].setVisible(modification)
 
     def __inserer(self, rang: int, ligne: LigneScenario) -> None:
         """Insère une ligne dans la liste, avec un texte lisible et la ligne en donnée."""
@@ -292,6 +356,10 @@ class PanneauScenario(QWidget):
         self.__choix_entree.currentIndexChanged.connect(self.__adapter_sortie)
         boutons = self.__boutons
         boutons["ajouter"].clicked.connect(self.ajouter)
+        boutons["valider"].clicked.connect(self.valider_modification)
+        boutons["annuler"].clicked.connect(self.annuler_modification)
+        boutons["modifier"].clicked.connect(self.modifier)
+        self.__liste.itemDoubleClicked.connect(lambda _: self.modifier())
         boutons["monter"].clicked.connect(lambda: self.deplacer(-1))
         boutons["descendre"].clicked.connect(lambda: self.deplacer(1))
         boutons["supprimer"].clicked.connect(self.supprimer)
@@ -316,18 +384,25 @@ class PanneauScenario(QWidget):
         formulaire.addRow("Entrée", self.__choix_entree)
         formulaire.addRow("Sortie", self.__choix_sortie)
         formulaire.addRow("Nombre", nombre_et_delai)
-        composition = QGroupBox("Nouvelle ligne")
+        validation = QHBoxLayout()
+        for nom in ("ajouter", "valider", "annuler"):
+            validation.addWidget(self.__boutons[nom], 1)
+        composition = QGroupBox("Ligne du scénario")
         disposition_composition = QVBoxLayout(composition)
         disposition_composition.addLayout(formulaire)
-        disposition_composition.addWidget(self.__boutons["ajouter"])
+        disposition_composition.addLayout(validation)
         edition = QGridLayout()
         for rang, nom in enumerate(BOUTONS_EDITION):
             edition.addWidget(self.__boutons[nom], rang // COLONNES_EDITION, rang % COLONNES_EDITION)
+        fichier = QHBoxLayout()
+        for nom in BOUTONS_FICHIER:
+            fichier.addWidget(self.__boutons[nom], 1)
         lignes = QGroupBox("Scénario")
         disposition_lignes = QVBoxLayout(lignes)
         disposition_lignes.addWidget(self.__liste, 1)
         disposition_lignes.addWidget(self.__resume)
         disposition_lignes.addLayout(edition)
+        disposition_lignes.addLayout(fichier)
         lancement = QGridLayout()
         lancement.addWidget(self.__boutons["lancer"], 0, 0)
         lancement.addWidget(self.__boutons["arreter"], 0, 1)

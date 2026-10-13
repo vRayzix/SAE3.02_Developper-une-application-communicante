@@ -53,7 +53,7 @@ Dans le code, `Message` porte `type`, `id` et `donnees` ; `Enveloppe` y ajoute `
 | VP_ALERT | client VP → serveur | TCP | `{"entree": "nations_sud", "sortie": "nations_nord", "eta": 4.5}`, `eta` en secondes avant l'anneau |
 | VP_FIN | client VP → serveur | TCP | `{}` |
 | NOTIF | serveur → client | TCP | `{"code": "DEGAGEZ", "message": "..."}`, code parmi `DEGAGEZ`, `CHANGEZ_VOIE`, `ATTENDEZ`, `OK_PASSER` |
-| STATE | serveur → supervision | TCP | `{"usagers": [...], "densite": {"nations_nord": 0.25, ...}, "vp_actif": true, "segments_reserves": ["jean_de_la_bruyere-nations_nord", "nations_sud-jean_de_la_bruyere"], "entrees_bloquees": [], "passages_fermes": [{"branche": "nations_nord", "chaussee": "sortie"}], "regulation": true}`, voir plus bas |
+| STATE | serveur → supervision | TCP | `{"usagers": [...], "densite": {"nations_nord": 0.25, ...}, "vp_actif": true, "vps": [{"id": "vp_1", "entree": "nations_sud", "sortie": "nations_nord", "eta": 4.5}], "segments_reserves": ["jean_de_la_bruyere-nations_nord", "nations_sud-jean_de_la_bruyere"], "entrees_bloquees": [], "passages_fermes": [{"branche": "nations_nord", "chaussee": "sortie"}], "regulation": true}`, voir plus bas |
 | ABONNEMENT | supervision → serveur | TCP | `{}` : la connexion reçoit ensuite les STATE |
 | REGLAGE | supervision → serveur | TCP | `{"regulation": false}`, voir « Régulation » |
 | PING | client → serveur | TCP | `{}` |
@@ -73,6 +73,7 @@ Chaque élément de la liste `usagers` d'un STATE décrit un usager connecté :
 
 - `densite` : pour chaque branche, le nombre d'usagers en approche sur cette branche divisé par sa capacité, borné entre 0 et 1. Faible en dessous de 0,4, moyenne en dessous de 0,7, forte au-delà.
 - `vp_actif` : `true` si au moins un VP annoncé n'a pas fini sa traversée.
+- `vps` : les VP annoncés dont la traversée n'est pas finie, avec leur trajet et l'`eta` de leur VP_ALERT (le temps annoncé pour atteindre l'anneau, en secondes, compté depuis l'annonce). La supervision en tire les événements « VP annoncé » et « fin de traversée ».
 - `segments_reserves` : segments de l'anneau réservés aux VP en cours de traversée, triés par nom, pour que la supervision puisse les afficher. Ils sont envoyés que la régulation soit active ou non.
 - `entrees_bloquees` : branches où au moins un usager attend sur ordre du régulateur (ATTENDEZ), triées par nom.
 - `passages_fermes` : demi-chaussées fermées par un piéton qui les traverse, avec leur branche et leur chaussée (`entree` ou `sortie`). Elles sont fermées que la régulation soit active ou non.

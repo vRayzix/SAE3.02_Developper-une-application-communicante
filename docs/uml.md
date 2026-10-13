@@ -877,6 +877,7 @@ classDiagram
         -lanceur : LanceurClients
         -branches : set[str]
         -minuteries : list[QTimer]
+        -ligne_modifiee : QListWidgetItem | None
         -choix_categorie : QComboBox
         -choix_entree : QComboBox
         -choix_sortie : QComboBox
@@ -887,7 +888,11 @@ classDiagram
         -boutons : dict[str, QPushButton]
         +scenario() Scenario
         +en_cours() bool
+        +en_modification() bool
         +ajouter() LigneScenario
+        +modifier() None
+        +valider_modification() LigneScenario | None
+        +annuler_modification() None
         +deplacer(decalage: int) None
         +supprimer() None
         +vider() None
@@ -896,6 +901,8 @@ classDiagram
         +enregistrer(chemin: Path) None
         +charger(chemin: Path) None
         -lancer_ligne(ligne: LigneScenario) None
+        -ligne_du_formulaire() LigneScenario
+        -montrer_le_mode_d_edition() None
         -inserer(rang: int, ligne: LigneScenario) None
         -mettre_a_jour_le_resume() None
         -adapter_sortie() None
@@ -907,13 +914,31 @@ classDiagram
 
     class PanneauSuivi {
         -lignes : dict[str, QTreeWidgetItem]
+        -evenements : EvenementsServeur
+        -dernier_message : tuple | None
+        -sujets : dict[str, int]
         -liste_clients : QTreeWidget
-        -consignes : QListWidget
+        -messages : QListWidget
+        +noter_etat(etat: dict) None
+        +oublier_etat() None
         -ajouter_client(identifiant: str, trajet: str) None
         -noter_position(identifiant: str, usager: dict) None
         -noter_connexion(identifiant: str, etat: str, detail: str) None
         -noter_consigne(identifiant: str, code: str, texte: str, appliquee: bool) None
+        -ajouter_message(cle: tuple, sujet: str, debut: str, suite: str, couleur: QColor) None
+        -nommer(sujets: dict[str, int]) str$
         -disposer() None
+    }
+
+    class EvenementsServeur {
+        -libelles : dict[str, str]
+        -precedent : dict | None
+        +oublier() None
+        +comparer(etat: dict, maintenant: datetime) list[tuple[str, str]]
+        -regulation(precedent: dict, etat: dict) list$
+        -vps(precedent: dict, etat: dict, maintenant: datetime) list
+        -entrees(precedent: dict, etat: dict) list
+        -passages(precedent: dict, etat: dict) list
     }
 
     class RelaisClient {
@@ -953,6 +978,7 @@ classDiagram
     PanneauScenario ..> Scenario : compose
     Scenario "1" *-- "0..*" LigneScenario
     PanneauSuivi ..> LanceurClients : écoute
+    PanneauSuivi *-- EvenementsServeur
     LanceurClients "1" *-- "0..*" ClientUsager
     ClientUsager --> RelaisClient : rappels
     RelaisClient ..> LanceurClients : signaux
@@ -969,6 +995,8 @@ classDiagram
 - `SceneRondPoint` travaille en mètres, comme le modèle, avec l'ordonnée inversée (`vers_scene()`), et ne recalcule rien : elle montre l'état reçu. La chaussée est dessinée une fois d'après le rond-point : deux chaussées par branche avec leur terre-plein, lignes de rive, ligne de cédez-le-passage, passage piéton et refuge, flèches de sens, deux voies sur l'anneau. La voie intérieure des segments réservés et les entrées temporisées (barre sur la ligne et feu) sont posées cachées et rendues visibles d'après le STATE. Le niveau de densité reprend `CalculateurDensite.niveau()`, pour que les seuils restent ceux du serveur. Le cadre de la scène suit le dessin ; `VueRondPoint` le recadre à chaque changement de taille.
 - `MarqueurUsager` dessine un usager à son gabarit (`style.py`), tourné selon le cap reçu dans le STATE. L'avant d'un véhicule est sur sa position : arrêté sur la ligne d'entrée, il la touche. Le VP a un halo et une rampe lumineuse.
 - La fenêtre place la scène et sa légende d'un côté d'un `QSplitter`, et de l'autre un panneau latéral dans un `QScrollArea` : l'état du serveur, puis les onglets « Scénario » et « Suivi ». Aucune taille n'est fixe : la fenêtre ne descend pas sous 1000 × 640, le séparateur partage la largeur dans des proportions constantes (3 pour la scène, 2 pour le panneau), le panneau défile s'il manque de hauteur et `VueRondPoint` recadre la scène avec `fitInView()`.
+- `PanneauScenario.modifier()` remet la ligne sélectionnée dans le formulaire et retient l'élément de la liste, pas son rang : la ligne peut être déplacée pendant la modification, `valider_modification()` la remplace là où elle se trouve.
+- `PanneauSuivi` montre dans une seule liste les consignes reçues par les clients lancés et les événements du serveur. Le serveur ne diffuse pas d'événements, seulement son état : `EvenementsServeur` compare chaque STATE au précédent (`vps`, `entrees_bloquees`, `passages_fermes`, `regulation`) et rend la nature et l'objet de chaque changement. Après une déconnexion, `oublier()` fait du STATE suivant une nouvelle référence. Un message de même clé que celui du haut (même consigne et même texte, ou même nature d'événement) ajoute son sujet à cette ligne au lieu d'en ouvrir une.
 - `LanceurClients` est partagé par les deux sections : la première lance, la seconde suit. Il numérote les identifiants par catégorie, sans jamais les resservir.
 - `PanneauScenario` compose une suite de `LigneScenario`. L'ordre affiché fait foi, même après un glisser-déposer : `scenario` relit la liste à chaque appel. `lancer()` programme une minuterie Qt à usage unique par ligne, à l'instant cumulé de son délai ; ces minuteries vivent dans le thread de l'IHM, sans thread de plus. `arreter_tout()` arrête les minuteries pas encore échues puis les clients. Un scénario s'enregistre en JSON (`{"version": 1, "lignes": [...]}`) ; à la lecture, `Scenario.depuis_json()` refuse un fichier mal formé ou qui nomme une branche que ce rond-point n'a pas, avec `ScenarioInvalideError`, et la liste reste intacte.
 - `style.py` réunit couleurs, tailles et libellés : la scène et la légende utilisent les mêmes constantes, si bien qu'une couleur changée l'est partout.

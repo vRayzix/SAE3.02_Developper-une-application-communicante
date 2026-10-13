@@ -45,6 +45,7 @@ def etat(regulation: bool = True, vp_actif: bool = False) -> dict:
         "usagers": [voiture.vers_dict()],
         "densite": {"nations_nord": 0.0, "jean_de_la_bruyere": 0.25, "nations_sud": 0.5, "albert_camus": 0.875},
         "vp_actif": vp_actif,
+        "vps": [{"id": "vp_1", "entree": "nations_sud", "sortie": "nations_nord", "eta": 4.0}] if vp_actif else [],
         "segments_reserves": ["nations_sud-jean_de_la_bruyere"] if vp_actif else [],
         "entrees_bloquees": [],
         "passages_fermes": [],
@@ -163,7 +164,20 @@ def test_sections_scenario_et_suivi(fenetre: FenetreSupervision) -> None:
 
 def test_consigne_du_lanceur_affichee_dans_le_suivi(fenetre: FenetreSupervision) -> None:
     fenetre.lanceur.notification_recue.emit("voiture_1", "ATTENDEZ", "attendez", True)
-    assert fenetre.panneau_suivi.consignes.item(0).text().endswith("voiture_1 : ATTENDEZ")
+    assert fenetre.panneau_suivi.messages.item(0).text().endswith("voiture_1 ← ATTENDEZ : attendez")
+
+
+def test_evenement_du_state_affiche_dans_le_suivi(fenetre: FenetreSupervision) -> None:
+    fenetre.reseau.etat_recu.emit(etat())
+    fenetre.reseau.etat_recu.emit(etat(vp_actif=True))
+    assert "VP annoncé : vp_1, Bd des Nations (sud) vers Bd des Nations (nord)" in fenetre.panneau_suivi.messages.item(0).text()
+
+
+def test_deconnexion_n_invente_pas_d_evenement(fenetre: FenetreSupervision) -> None:
+    fenetre.reseau.etat_recu.emit(etat())
+    fenetre.reseau.connexion_changee.emit(EtatConnexion.DECONNECTE.value, "connexion perdue")
+    fenetre.reseau.etat_recu.emit(etat(regulation=False))
+    assert fenetre.panneau_suivi.messages.count() == 0
 
 
 # ---------- Avec un vrai serveur ----------
