@@ -1,11 +1,67 @@
-"""Doublure de l'accès à la base : AccesBdd sans MariaDB, qui garde en mémoire ce qu'on lui écrit."""
+"""Doublures de la base pour les tests, sans MariaDB.
+
+FausseConnexion remplace une connexion mysql.connector, pour vérifier les requêtes
+d'AccesBdd. DoublureBdd remplace AccesBdd tout entier, pour le serveur et l'historique.
+"""
 
 import threading
+
+import mysql.connector
+from mysql.connector import errorcode
 
 from cherrypie.bdd.acces_bdd import AccesBdd
 from cherrypie.bdd.enregistrements import EvenementConnexion, ReleveDensite
 from cherrypie.commun.erreurs import BddInjoignableError
 from cherrypie.serveur.passages import PassageVp
+
+class FauxCurseur:
+    """Curseur qui note les requêtes et renvoie des lignes préparées."""
+
+    def __init__(self, connexion: "FausseConnexion") -> None:
+        self.connexion = connexion
+        self.resultats: list[tuple] = []
+
+    def execute(self, requete: str, parametres: tuple | None = None) -> None:
+        self.connexion.verifier_panne()
+        self.connexion.requetes.append((requete, parametres))
+        self.resultats = self.connexion.lignes.pop(0) if self.connexion.lignes else []
+
+    def executemany(self, requete: str, lignes: list[tuple]) -> None:
+        self.connexion.verifier_panne()
+        self.connexion.requetes.append((requete, lignes))
+
+    def fetchall(self) -> list[tuple]:
+        return self.resultats
+
+    def close(self) -> None:
+        self.connexion.curseurs_fermes += 1
+
+
+class FausseConnexion:
+    """Connexion qui note les requêtes, les commits et sa fermeture."""
+
+    def __init__(self, **parametres: object) -> None:
+        self.parametres = parametres
+        self.requetes: list[tuple] = []
+        self.lignes: list[list[tuple]] = []
+        self.commits = 0
+        self.curseurs_fermes = 0
+        self.fermee = False
+        self.panne = False
+
+    def verifier_panne(self) -> None:
+        if self.panne:
+            raise mysql.connector.Error(msg="Lost connection", errno=errorcode.CR_SERVER_LOST)
+
+    def cursor(self) -> FauxCurseur:
+        return FauxCurseur(self)
+
+    def commit(self) -> None:
+        self.commits += 1
+
+    def close(self) -> None:
+        self.fermee = True
+
 
 PARAMETRES_DOUBLURE = {"hote": "doublure", "port": 3306, "utilisateur": "test", "mot_de_passe": "test", "base": "test"}
 DELAI_CONNEXION_DOUBLURE = 0.1

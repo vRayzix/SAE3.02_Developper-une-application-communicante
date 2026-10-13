@@ -1,6 +1,6 @@
 """Tests de l'accès à la base : requêtes paramétrées, commits, lecture et erreurs traduites.
 
-mysql.connector.connect est remplacé par une fausse connexion qui note ce qu'on lui
+mysql.connector.connect est remplacé par une FausseConnexion qui note ce qu'on lui
 demande : aucun de ces tests n'a besoin de MariaDB, sauf ceux marqués « bdd ».
 """
 
@@ -9,6 +9,7 @@ from pathlib import Path
 
 import mysql.connector
 import pytest
+from doublure_bdd import FausseConnexion
 from mysql.connector import errorcode
 
 from cherrypie.bdd.acces_bdd import REQUETE_DENSITE, REQUETE_PASSAGE, AccesBdd
@@ -32,55 +33,6 @@ DELAI_CONNEXION = 3.0
 DEBUT = datetime(2026, 11, 17, 15, 31, 14)
 FIN = datetime(2026, 11, 17, 15, 31, 21)
 PASSAGE = PassageVp("vp_1", "nations_sud", "nations_nord", DEBUT, FIN, 7.3, 2.1, True, 0.4)
-
-
-class FauxCurseur:
-    """Curseur qui note les requêtes et renvoie des lignes préparées."""
-
-    def __init__(self, connexion: "FausseConnexion") -> None:
-        self.connexion = connexion
-        self.resultats: list[tuple] = []
-
-    def execute(self, requete: str, parametres: tuple | None = None) -> None:
-        self.connexion.verifier_panne()
-        self.connexion.requetes.append((requete, parametres))
-        self.resultats = self.connexion.lignes.pop(0) if self.connexion.lignes else []
-
-    def executemany(self, requete: str, lignes: list[tuple]) -> None:
-        self.connexion.verifier_panne()
-        self.connexion.requetes.append((requete, lignes))
-
-    def fetchall(self) -> list[tuple]:
-        return self.resultats
-
-    def close(self) -> None:
-        self.connexion.curseurs_fermes += 1
-
-
-class FausseConnexion:
-    """Connexion qui note les requêtes, les commits et sa fermeture."""
-
-    def __init__(self, **parametres: object) -> None:
-        self.parametres = parametres
-        self.requetes: list[tuple] = []
-        self.lignes: list[list[tuple]] = []
-        self.commits = 0
-        self.curseurs_fermes = 0
-        self.fermee = False
-        self.panne = False
-
-    def verifier_panne(self) -> None:
-        if self.panne:
-            raise mysql.connector.Error(msg="Lost connection", errno=errorcode.CR_SERVER_LOST)
-
-    def cursor(self) -> FauxCurseur:
-        return FauxCurseur(self)
-
-    def commit(self) -> None:
-        self.commits += 1
-
-    def close(self) -> None:
-        self.fermee = True
 
 
 @pytest.fixture
