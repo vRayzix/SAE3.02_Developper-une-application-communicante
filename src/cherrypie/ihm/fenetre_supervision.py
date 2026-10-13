@@ -24,6 +24,7 @@ from cherrypie.commun.config import Configuration
 from cherrypie.ihm.lanceur_clients import LanceurClients
 from cherrypie.ihm.legende import Legende
 from cherrypie.ihm.panneau_scenario import PanneauScenario
+from cherrypie.ihm.panneau_stats import PanneauStats
 from cherrypie.ihm.panneau_suivi import PanneauSuivi
 from cherrypie.ihm.scene_rond_point import SceneRondPoint, VueRondPoint
 from cherrypie.ihm.style import (
@@ -59,8 +60,9 @@ class FenetreSupervision(QMainWindow):
 
     L'onglet « Rond-point » montre à gauche la scène 2D et sa légende, à droite l'état du
     serveur avec l'interrupteur de régulation, puis deux sections : « Scénario », où l'on
-    compose et lance les usagers, et « Suivi », qui montre les clients en route et leurs
-    dernières consignes. Le réseau tourne dans un QThread ; tout ce qu'il reçoit arrive ici
+    compose et lance les usagers, et « Suivi », qui montre les clients en route, leurs
+    consignes et les événements du serveur. L'onglet « Statistiques » montre les temps de
+    traversée du VP et la densité dans le temps, que le serveur lit en base à la demande. Le réseau tourne dans un QThread ; tout ce qu'il reçoit arrive ici
     par signaux Qt, dans le thread de l'IHM. La fenêtre n'interprète rien : elle affiche
     l'état diffusé par le serveur.
     """
@@ -79,6 +81,7 @@ class FenetreSupervision(QMainWindow):
         self.__lanceur = LanceurClients(config)
         self.__panneau_scenario = PanneauScenario(self.__lanceur)
         self.__panneau_suivi = PanneauSuivi(self.__lanceur)
+        self.__panneau_stats = PanneauStats({branche.nom: branche.libelle for branche in config.branches})
         self.__etat_connexion = QLabel(LIBELLES_CONNEXION[EtatConnexion.DECONNECTE])
         self.__indicateur_regulation = QLabel(INCONNU)
         self.__indicateur_vp = QLabel(INCONNU)
@@ -130,6 +133,11 @@ class FenetreSupervision(QMainWindow):
     def panneau_suivi(self) -> PanneauSuivi:
         """PanneauSuivi: section qui suit les clients lancés et leurs consignes."""
         return self.__panneau_suivi
+
+    @property
+    def panneau_stats(self) -> PanneauStats:
+        """PanneauStats: onglet des statistiques, lues en base par le serveur."""
+        return self.__panneau_stats
 
     @property
     def sections(self) -> QTabWidget:
@@ -241,6 +249,11 @@ class FenetreSupervision(QMainWindow):
         """Transmet au réseau le réglage demandé par un clic sur l'interrupteur."""
         self.__reseau.demander_reglage(coche)
 
+    def __actualiser_si_statistiques(self, rang: int) -> None:
+        """Demande les statistiques au serveur quand l'onglet qui les montre devient visible."""
+        if self.__onglets.widget(rang) is self.__panneau_stats:
+            self.__reseau.demander_statistiques()
+
     @staticmethod
     def __colorer(etiquette: QLabel, texte: str, couleur: QColor) -> None:
         """Écrit un indicateur dans sa couleur."""
@@ -257,6 +270,10 @@ class FenetreSupervision(QMainWindow):
         self.__reseau.etat_recu.connect(self.__panneau_suivi.noter_etat)
         self.__reseau.connexion_changee.connect(self.__noter_connexion)
         self.__case_regulation.clicked.connect(self.__regler)
+        self.__reseau.statistiques_recues.connect(self.__panneau_stats.afficher)
+        self.__panneau_stats.actualisation_demandee.connect(self.__reseau.demander_statistiques)
+        # Ouvrir l'onglet des statistiques les actualise : elles ont pu changer depuis.
+        self.__onglets.currentChanged.connect(self.__actualiser_si_statistiques)
 
     def __disposer(self) -> None:
         """Place la scène et sa légende à gauche, le panneau latéral à droite, dans l'onglet « Rond-point ».
@@ -300,6 +317,7 @@ class FenetreSupervision(QMainWindow):
         self.__separateur.addWidget(self.__panneau_lateral)
         self.__separateur.setChildrenCollapsible(False)
         self.__onglets.addTab(self.__separateur, "Rond-point")
+        self.__onglets.addTab(self.__panneau_stats, "Statistiques")
         self.setCentralWidget(self.__onglets)
         self.setWindowTitle(TITRE)
         self.setMinimumSize(LARGEUR_MINIMALE, HAUTEUR_MINIMALE)

@@ -180,6 +180,30 @@ def test_deconnexion_n_invente_pas_d_evenement(fenetre: FenetreSupervision) -> N
     assert fenetre.panneau_suivi.messages.count() == 0
 
 
+# ---------- Statistiques ----------
+
+
+def test_onglet_statistiques_a_cote_du_rond_point(fenetre: FenetreSupervision) -> None:
+    assert [fenetre.onglets.tabText(rang) for rang in range(fenetre.onglets.count())] == ["Rond-point", "Statistiques"]
+    assert fenetre.onglets.widget(1) is fenetre.panneau_stats
+
+
+def test_reponse_du_serveur_affichee_dans_l_onglet(fenetre: FenetreSupervision) -> None:
+    fenetre.reseau.statistiques_recues.emit({"disponible": False, "raison": "base injoignable"})
+    assert fenetre.panneau_stats.etat.text().endswith("base injoignable")
+
+
+def test_ouvrir_l_onglet_demande_les_statistiques(
+    lancer_serveur: Callable[..., Serveur], fabrique_fenetre: Callable
+) -> None:
+    serveur = lancer_serveur()
+    fenetre = fabrique_fenetre(serveur.config)
+    fenetre.demarrer()
+    attendre_qt(lambda: fenetre.case_regulation.isEnabled())
+    fenetre.onglets.setCurrentWidget(fenetre.panneau_stats)
+    attendre_qt(lambda: "traversée(s) de VP" in fenetre.panneau_stats.etat.text())
+
+
 # ---------- Avec un vrai serveur ----------
 
 
