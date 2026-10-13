@@ -38,17 +38,19 @@ class ReseauSupervision(QObject):
     tourner() se connecte et s'abonne aux STATE (ABONNEMENT). Elle envoie ensuite un PING
     toutes les intervalle_ping secondes, sans quoi le serveur retirerait la supervision,
     et transmet chaque STATE reçu par le signal etat_recu. Si la connexion tombe, elle
-    réessaie avec le même backoff que les clients. arreter() et demander_reglage() sont
-    appelées depuis le thread de l'IHM : la boucle les prend en compte en moins de
-    ATTENTE_MAX secondes.
+    réessaie avec le même backoff que les clients. arreter(), demander_reglage() et
+    demander_statistiques() sont appelées depuis le thread de l'IHM : la boucle les prend
+    en compte en moins de ATTENTE_MAX secondes.
 
     Signals:
         etat_recu (dict): données d'un STATE reçu du serveur.
+        statistiques_recues (dict): données d'un STATS_REPONSE, lues en base par le serveur.
         connexion_changee (str, str): nouvel état de la connexion (valeur de EtatConnexion) et détail.
         termine (): émis quand tourner() a fini, après la fermeture de la connexion.
     """
 
     etat_recu = pyqtSignal(dict)
+    statistiques_recues = pyqtSignal(dict)
     connexion_changee = pyqtSignal(str, str)
     termine = pyqtSignal()
 
@@ -64,6 +66,7 @@ class ReseauSupervision(QObject):
         self.__garde = GardeAntiRejeu(config.fenetre_anti_rejeu)
         self.__arret = threading.Event()
         self.__reglages: queue.SimpleQueue[bool] = queue.SimpleQueue()
+        self.__statistiques_demandees = threading.Event()
         self.__socket: socket.socket | None = None
         self.__decoupeur = DecoupeurTrames()
         self.__etat = EtatConnexion.DECONNECTE
@@ -93,6 +96,15 @@ class ReseauSupervision(QObject):
             regulation (bool): True pour activer la régulation, False pour la couper.
         """
         self.__reglages.put(regulation)
+
+    def demander_statistiques(self) -> None:
+        """Demande au serveur les statistiques qu'il lit en base (message STATS_DEMANDE).
+
+        Peut être appelée depuis le thread de l'IHM. Plusieurs demandes avant l'envoi n'en
+        font qu'une ; hors connexion, la demande part à la connexion suivante. La réponse
+        arrive par le signal statistiques_recues.
+        """
+        self.__statistiques_demandees.set()
 
     def arreter(self) -> None:
         """Demande l'arrêt du travailleur, qui se désabonne (BYE) s'il est connecté.
@@ -152,7 +164,9 @@ class ReseauSupervision(QObject):
         self.__changer_etat(EtatConnexion.CONNECTE, "abonnée aux STATE")
 
     def __ecouter(self) -> None:
-        """Envoie réglages et PING, et lit les STATE tant que la connexion tient ; se désabonne à l'arrêt.
+        """Envoie réglages, demandes de statistiques et PING, et lit les réponses tant que la connexion tient.
+
+        Se désabonne (BYE) à l'arrêt.
 
         Raises:
             OSError: si la connexion est coupée ou si le serveur ne donne plus de nouvelles.
@@ -162,6 +176,9 @@ class ReseauSupervision(QObject):
         derniere_nouvelle = time.monotonic()
         while not self.__arret.is_set():
             self.__envoyer_reglages()
+            if self.__statistiques_demandees.is_set():
+                self.__statistiques_demandees.clear()
+                self.__envoyer(Message(TypeMessage.STATS_DEMANDE, IDENTIFIANT_SUPERVISION))
             maintenant = time.monotonic()
             if maintenant >= prochain_ping:
                 prochain_ping = maintenant + self.__config.intervalle_ping
@@ -175,7 +192,7 @@ class ReseauSupervision(QObject):
         self.__envoyer(Message(TypeMessage.BYE, IDENTIFIANT_SUPERVISION))
 
     def __lire(self, attente: float) -> bool:
-        """Attend des données du serveur, au plus `attente` secondes, et transmet les STATE valides.
+        """Attend des données du serveur, au plus `attente` secondes, et transmet STATE et statistiques valides.
 
         Une trame refusée (JSON, HMAC, rejeu) est journalisée puis ignorée.
 
@@ -202,6 +219,8 @@ class ReseauSupervision(QObject):
             nouvelles = True
             if message.type is TypeMessage.STATE:
                 self.__transmettre_etat(message)
+            elif message.type is TypeMessage.STATS_REPONSE:
+                self.statistiques_recues.emit(message.donnees)
         return nouvelles
 
     def __transmettre_etat(self, message: Message) -> None:

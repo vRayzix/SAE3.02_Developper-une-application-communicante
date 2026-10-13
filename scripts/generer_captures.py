@@ -6,7 +6,9 @@ fenêtre de supervision dans ce processus, sur des ports libres et sans rien aff
 (plateforme Qt offscreen). Il compose le même scénario dans la section « Scénario » et le
 joue deux fois, avec puis sans régulation, en prenant chaque capture au même délai après
 le départ du véhicule prioritaire. Pendant le passage régulé, il capture aussi la fenêtre
-à trois tailles d'écran et la section « Suivi ».
+à trois tailles d'écran et la section « Suivi ». Les deux serveurs écrivent leur historique
+dans la même base en mémoire, la doublure des tests : l'onglet « Statistiques », capturé à
+la fin, compare les deux traversées sans demander de MariaDB.
 """
 
 import configparser
@@ -20,13 +22,17 @@ from collections.abc import Callable
 from pathlib import Path
 
 RACINE = Path(__file__).resolve().parent.parent
-# Le paquet n'est pas installé : on rend src/ importable pour ce script.
+# Le paquet n'est pas installé : on rend src/ importable pour ce script, et tests/ pour la
+# doublure de la base.
 sys.path.insert(0, str(RACINE / "src"))
+sys.path.insert(0, str(RACINE / "tests"))
 # La plateforme est lue à la création de l'application Qt : il faut la fixer avant.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import QCoreApplication
 from PyQt6.QtWidgets import QApplication
+
+from doublure_bdd import DoublureBdd
 
 from cherrypie.commun.config import Configuration
 from cherrypie.ihm.fenetre_supervision import FenetreSupervision
@@ -56,6 +62,10 @@ TAILLES_ECRAN = [(1024, 640), (1280, 720), (1440, 800)]
 DELAI_DISPOSITION = 0.3
 ONGLET_SUIVI = 1
 DELAI_CONNEXION = 5.0
+# Attente maximale de la fin de la traversée du VP, mesurée au VP_FIN, en secondes.
+DELAI_FIN_TRAVERSEE = 30.0
+# Relevés de densité plus serrés que dans l'exemple, pour que les courbes aient des points.
+INTERVALLE_RELEVES = "1"
 PAUSE_BOUCLE = 0.01
 
 
@@ -64,6 +74,7 @@ def configuration() -> Configuration:
     parseur = configparser.ConfigParser(interpolation=None)
     parseur.read(RACINE / "config.exemple.ini", encoding="utf-8")
     parseur["reseau"]["hote"] = "127.0.0.1"
+    parseur["bdd"]["intervalle_releves"] = INTERVALLE_RELEVES
     for cle, type_socket in (("port_tcp", socket.SOCK_STREAM), ("port_udp", socket.SOCK_DGRAM)):
         with socket.socket(socket.AF_INET, type_socket) as prise:
             prise.bind(("127.0.0.1", 0))
@@ -79,9 +90,9 @@ def patienter(duree: float) -> None:
         time.sleep(PAUSE_BOUCLE)
 
 
-def patienter_jusqu_a(condition: Callable[[], bool], description: str) -> None:
-    """Laisse tourner la boucle Qt jusqu'à ce qu'une condition soit vraie."""
-    fin = time.monotonic() + DELAI_CONNEXION
+def patienter_jusqu_a(condition: Callable[[], bool], description: str, delai: float = DELAI_CONNEXION) -> None:
+    """Laisse tourner la boucle Qt jusqu'à ce qu'une condition soit vraie, au plus `delai` secondes."""
+    fin = time.monotonic() + delai
     while not condition():
         if time.monotonic() > fin:
             raise TimeoutError(f"délai dépassé en attendant : {description}")
@@ -101,10 +112,10 @@ def composer(fenetre: FenetreSupervision) -> None:
         panneau.ajouter()
 
 
-def jouer(regulation: bool, dossier: Path) -> None:
-    """Joue le scénario sur un serveur neuf et enregistre les captures."""
+def jouer(regulation: bool, dossier: Path, base: DoublureBdd) -> None:
+    """Joue le scénario sur un serveur neuf, qui écrit dans la base donnée, et enregistre les captures."""
     config = configuration()
-    serveur = Serveur(config)
+    serveur = Serveur(config, base)
     serveur.demarrer()
     fil_serveur = threading.Thread(target=serveur.servir, daemon=True)
     fil_serveur.start()
@@ -129,6 +140,10 @@ def jouer(regulation: bool, dossier: Path) -> None:
     enregistrer(fenetre, dossier / f"vp_{'avec' if regulation else 'sans'}_regulation.png")
     if regulation:
         capturer_les_tailles(fenetre, dossier)
+    # La traversée n'est mesurée qu'au VP_FIN : on l'attend avant de tout fermer.
+    patienter_jusqu_a(lambda: bool(serveur.logique.passages), "fin de la traversée du VP", DELAI_FIN_TRAVERSEE)
+    if not regulation:
+        capturer_les_statistiques(fenetre, dossier)
     fenetre.close()
     serveur.arreter()
     fil_serveur.join()
@@ -146,6 +161,14 @@ def capturer_les_tailles(fenetre: FenetreSupervision, dossier: Path) -> None:
     enregistrer(fenetre, dossier / "suivi.png")
 
 
+def capturer_les_statistiques(fenetre: FenetreSupervision, dossier: Path) -> None:
+    """Ouvre l'onglet « Statistiques », qui les demande au serveur, puis le capture."""
+    fenetre.onglets.setCurrentWidget(fenetre.panneau_stats)
+    patienter_jusqu_a(lambda: "traversée(s) de VP" in fenetre.panneau_stats.etat.text(), "statistiques du serveur")
+    patienter(DELAI_DISPOSITION)
+    enregistrer(fenetre, dossier / "statistiques.png")
+
+
 def enregistrer(fenetre: FenetreSupervision, chemin: Path) -> None:
     """Enregistre une capture de la fenêtre."""
     if not fenetre.grab().save(str(chemin)):
@@ -154,7 +177,7 @@ def enregistrer(fenetre: FenetreSupervision, chemin: Path) -> None:
 
 
 def main() -> int:
-    """Génère les captures : repos, VP qui double, VP avec et sans régulation, tailles d'écran et « Suivi ».
+    """Génère les captures : repos, VP qui double, VP avec et sans régulation, tailles, « Suivi » et statistiques.
 
     Returns:
         int: code de sortie du programme, 0 si tout s'est bien passé.
@@ -164,8 +187,9 @@ def main() -> int:
     dossier.mkdir(parents=True, exist_ok=True)
     application = QApplication(sys.argv)
     try:
-        jouer(regulation=True, dossier=dossier)
-        jouer(regulation=False, dossier=dossier)
+        base = DoublureBdd()
+        jouer(regulation=True, dossier=dossier, base=base)
+        jouer(regulation=False, dossier=dossier, base=base)
     except (OSError, TimeoutError) as erreur:
         print(f"Captures interrompues : {erreur}", file=sys.stderr)
         return 1

@@ -8,6 +8,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
+from doublure_bdd import DoublureBdd
 from outils import DELAI
 from PyQt6.QtWidgets import QApplication
 
@@ -41,6 +42,22 @@ def remplacer_branches(parseur: configparser.ConfigParser, noms: list[str]) -> N
         }
 
 
+@pytest.fixture(autouse=True)
+def aucun_thread_oublie() -> Iterator[None]:
+    """Fait échouer le test qui laisse tourner un thread non démon.
+
+    Un tel thread empêche l'interpréteur de se terminer : pytest resterait figé après
+    son résumé, sans dire quel test l'a lancé.
+    """
+    avant = set(threading.enumerate())
+    yield
+    nouveaux = [fil for fil in threading.enumerate() if fil not in avant and not fil.daemon]
+    for fil in nouveaux:
+        fil.join(timeout=DELAI)
+    restants = [fil.name for fil in nouveaux if fil.is_alive()]
+    assert not restants, f"thread(s) non démon(s) encore actif(s) après le test : {', '.join(restants)}"
+
+
 @pytest.fixture
 def fabrique_config() -> Callable[..., Configuration]:
     """Fabrique des configurations tirées du fichier d'exemple, sur 127.0.0.1 et des ports libres.
@@ -70,6 +87,8 @@ def fabrique_config() -> Callable[..., Configuration]:
 def lancer_serveur(fabrique_config: Callable[..., Configuration]) -> Iterator[Callable[..., Serveur]]:
     """Démarre des serveurs dans des threads, puis les arrête proprement à la fin du test.
 
+    Chaque serveur écrit son historique dans une DoublureBdd (serveur.historique.acces).
+
     lancer_serveur(timeout_client="0.3") fabrique une configuration sur des ports libres ;
     lancer_serveur(config) réutilise une configuration, par exemple pour relancer un
     serveur sur les mêmes ports.
@@ -79,7 +98,8 @@ def lancer_serveur(fabrique_config: Callable[..., Configuration]) -> Iterator[Ca
     def lancer(config: Configuration | None = None, **valeurs: str) -> Serveur:
         if config is None:
             config = fabrique_config(**{"intervalle_etat": "0.05", **valeurs})
-        serveur = Serveur(config)
+        # Une doublure de la base : aucun test ne dépend d'un MariaDB local.
+        serveur = Serveur(config, DoublureBdd())
         serveur.demarrer()
         fil = threading.Thread(target=serveur.servir, daemon=True)
         fil.start()

@@ -75,6 +75,7 @@ def test_exemple_valeurs_bdd() -> None:
         "mot_de_passe": "remplacer_par_le_mot_de_passe",
         "base": "cherrypie",
     }
+    assert (config.delai_connexion_bdd, config.delai_reessai_bdd, config.intervalle_releves) == (3.0, 10.0, 5.0)
 
 
 def test_branches_modifiees_de_l_exterieur_sans_effet() -> None:
@@ -134,6 +135,7 @@ VALEURS_INCOHERENTES = [
     pytest.param("intervalle_position = 0.2", "intervalle_position = 0,2", "doit être un nombre", id="virgule"),
     pytest.param("backoff_max = 10", "backoff_max = inf", "fini", id="delai-infini"),
     pytest.param("rayon = 20", "rayon = -20", "strictement positif", id="rayon-negatif"),
+    pytest.param("delai_reessai = 10", "delai_reessai = 0", "strictement positif", id="reessai-bdd-nul"),
     pytest.param("capacite_par_branche = 8", "capacite_par_branche = 0", "au moins 1", id="capacite-nulle"),
     pytest.param(
         LIGNE_BRANCHES, "branches = nations_nord, nations_sud", "au moins 3 branches", id="trop-peu-de-branches"

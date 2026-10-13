@@ -3,6 +3,10 @@
 import pytest
 
 from cherrypie.commun.erreurs import (
+    AccesBddRefuseError,
+    BaseAbsenteError,
+    BddError,
+    BddInjoignableError,
     BrancheInconnueError,
     CherryPieError,
     ConfigurationInvalideError,
@@ -22,6 +26,10 @@ ERREURS_METIER = [
     BrancheInconnueError,
     UsagerInconnuError,
     ScenarioInvalideError,
+    BddError,
+    BddInjoignableError,
+    AccesBddRefuseError,
+    BaseAbsenteError,
 ]
 
 
@@ -45,3 +53,8 @@ def test_inscription_refusee_garde_sa_raison_et_le_droit_de_reessayer() -> None:
     assert isinstance(refus, CherryPieError)
     assert str(refus) == "l'identifiant voiture_12 est déjà connecté"
     assert refus.reessayer
+
+
+@pytest.mark.parametrize("classe", [BddInjoignableError, AccesBddRefuseError, BaseAbsenteError])
+def test_erreur_de_base_attrapee_par_bdd_error(classe: type) -> None:
+    assert issubclass(classe, BddError)

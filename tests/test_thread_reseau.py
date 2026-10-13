@@ -146,6 +146,19 @@ def test_reglage_demande_hors_connexion_abandonne(
     assert serveur.logique.regulation_active is True
 
 
+# ---------- Statistiques ----------
+
+
+def test_statistiques_demandees_et_recues(lancer_serveur: Callable[..., Serveur], lancer_reseau: Callable) -> None:
+    serveur = lancer_serveur(**DELAIS_RAPIDES)
+    reseau, _, _ = lancer_reseau(serveur.config)
+    recues: list[dict] = []
+    reseau.statistiques_recues.connect(recues.append)
+    reseau.demander_statistiques()
+    attendre_qt(lambda: bool(recues))
+    assert recues[0]["disponible"] is True
+
+
 # ---------- Coupures et arrêt ----------
 
 

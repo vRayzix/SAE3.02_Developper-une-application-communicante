@@ -112,6 +112,12 @@ RECUL_ETIQUETTE = 16.0
 ECART_ETIQUETTE = 1.5
 TAILLE_TEXTE = 10
 
+# Graphiques des statistiques : fond clair, et une couleur par série dans un ordre fixe
+# (bleu, orange, turquoise, jaune), distinguable par les daltoniens. Une série garde sa
+# couleur d'un affichage à l'autre : la couleur suit la branche, pas son rang.
+COULEUR_FOND_GRAPHIQUE = QColor("#ffffff")
+COULEURS_SERIES = [QColor("#2a78d6"), QColor("#eb6834"), QColor("#1baf7a"), QColor("#eda100")]
+
 # Indicateurs du panneau « Serveur » : en vert ce qui fonctionne, en gris ce qui est coupé ou inconnu.
 COULEUR_INDICATEUR_ACTIF = QColor("#3f8f5b")
 COULEUR_INDICATEUR_INACTIF = QColor("#7f8c8d")

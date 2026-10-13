@@ -55,3 +55,19 @@ class InscriptionRefuseeError(CherryPieError):
 
 class ScenarioInvalideError(CherryPieError):
     """Un scénario de démonstration est incohérent ou ne convient pas à ce rond-point."""
+
+
+class BddError(CherryPieError):
+    """L'accès à la base de données a échoué."""
+
+
+class BddInjoignableError(BddError):
+    """Le serveur MariaDB ne répond pas : machine éteinte, adresse erronée ou pare-feu."""
+
+
+class AccesBddRefuseError(BddError):
+    """MariaDB refuse l'utilisateur ou le mot de passe, ou n'autorise pas l'adresse de la machine."""
+
+
+class BaseAbsenteError(BddError):
+    """La base nommée dans config.ini n'existe pas sur le serveur MariaDB."""

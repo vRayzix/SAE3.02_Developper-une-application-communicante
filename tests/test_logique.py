@@ -577,3 +577,29 @@ def test_reglage_sans_booleen_refuse(logique: LogiqueServeur) -> None:
     supervision = supervision_abonnee(logique)
     with pytest.raises(TrameInvalideError, match="REGLAGE invalide"):
         logique.traiter_tcp(supervision, reglage("off"), 1.0)
+
+
+# ---------- Historique et statistiques ----------
+
+def test_hello_accepte_signale_l_usager_inscrit(logique: LogiqueServeur) -> None:
+    numero = logique.ouvrir_session(0.0)
+    reponse = logique.traiter_tcp(numero, hello("voiture_12"), 0.5)
+    assert reponse.inscrit is logique.registre.obtenir("voiture_12")
+
+
+def test_hello_refuse_sans_usager_inscrit(logique: LogiqueServeur) -> None:
+    numero = logique.ouvrir_session(0.0)
+    assert logique.traiter_tcp(numero, hello("voiture_12", entree="inconnue"), 0.5).inscrit is None
+
+
+def test_supervision_demande_les_statistiques(logique: LogiqueServeur) -> None:
+    supervision = logique.ouvrir_session(0.0)
+    logique.traiter_tcp(supervision, Message(TypeMessage.ABONNEMENT, "supervision"), 0.1)
+    reponse = logique.traiter_tcp(supervision, Message(TypeMessage.STATS_DEMANDE, "supervision"), 0.2)
+    assert reponse.statistiques_demandees and reponse.messages == ()
+
+
+def test_statistiques_reservees_aux_supervisions(logique: LogiqueServeur) -> None:
+    numero = session_inscrite(logique)
+    with pytest.raises(TrameInvalideError, match="n'est pas une supervision"):
+        logique.traiter_tcp(numero, Message(TypeMessage.STATS_DEMANDE, "voiture_12"), 1.0)

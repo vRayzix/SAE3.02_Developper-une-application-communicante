@@ -173,7 +173,8 @@ def cote_a_cote(vp: Deplacement, voiture: Deplacement) -> bool:
 
 def espace_lateral(vp: Deplacement, voiture: Deplacement) -> float:
     """Espace entre les flancs de deux usagers côte à côte sur la même chaussée, tels que les dessine la scène."""
-    demi_largeurs = (GABARITS_CATEGORIE[VehiculePrioritaire.CATEGORIE][1] + GABARITS_CATEGORIE[Voiture.CATEGORIE][1]) / 2
+    largeur_vp = GABARITS_CATEGORIE[VehiculePrioritaire.CATEGORIE][1]
+    demi_largeurs = (largeur_vp + GABARITS_CATEGORIE[Voiture.CATEGORIE][1]) / 2
     return abs(voiture.decalage - vp.decalage) - demi_largeurs
 
 

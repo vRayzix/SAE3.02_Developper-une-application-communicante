@@ -9,8 +9,10 @@ from collections import deque
 from collections.abc import Callable, Iterator
 
 import pytest
+from doublure_bdd import DoublureBdd
 from outils import DELAI, attendre
 
+from cherrypie.bdd.enregistrements import TypeConnexion
 from cherrypie.commun.config import Configuration
 from cherrypie.commun.protocole import Enveloppe, Message, TypeMessage
 from cherrypie.commun.securite import Signataire
@@ -313,12 +315,15 @@ def test_datagramme_illisible_ignore(
 # ---------- Arrêt ----------
 
 def test_arret_propre_de_la_boucle(fabrique_config: Callable[..., Configuration]) -> None:
-    serveur = Serveur(fabrique_config(intervalle_etat="0.05"))
+    serveur = Serveur(fabrique_config(intervalle_etat="0.05"), DoublureBdd())
     serveur.demarrer()
-    fil = threading.Thread(target=serveur.servir)
+    fil = threading.Thread(target=serveur.servir, daemon=True)
     fil.start()
-    client = ClientTest(serveur.config, "voiture_12")
-    serveur.arreter()
+    try:
+        client = ClientTest(serveur.config, "voiture_12")
+    finally:
+        # Même si le client échoue, la boucle s'arrête : elle ne survit pas au test.
+        serveur.arreter()
     fil.join(timeout=DELAI)
     assert not fil.is_alive()
     client.attendre_fermeture()
@@ -385,3 +390,93 @@ def test_client_qui_pingue_reste_connecte(lancer_serveur: Callable[..., Serveur]
         time.sleep(0.1)
     assert serveur.logique.registre.contient("voiture_12")
     client.fermer()
+
+
+# ---------- Historique en base ----------
+
+HELLO_VP = {"categorie": "vp", "entree": "nations_sud", "sortie": "nations_nord"}
+
+
+def base_de(serveur: Serveur) -> DoublureBdd:
+    return serveur.historique.acces
+
+
+def test_connexion_et_deconnexion_ecrites(serveur: Serveur, clients: Callable[[str], ClientTest]) -> None:
+    client = voiture_inscrite(clients, "voiture_12")
+    client.envoyer(TypeMessage.BYE)
+    client.attendre_fermeture()
+    attendre(lambda: len(base_de(serveur).connexions) == 2)
+    arrivee, depart = base_de(serveur).connexions
+    assert (arrivee.usager, arrivee.categorie, arrivee.evenement) == ("voiture_12", "voiture", TypeConnexion.CONNEXION)
+    assert (depart.evenement, depart.detail) == (TypeConnexion.DECONNEXION, "le client a dit au revoir (BYE)")
+
+
+def test_traversee_du_vp_ecrite(serveur: Serveur, clients: Callable[[str], ClientTest]) -> None:
+    vp = clients("vp_1")
+    vp.envoyer(TypeMessage.HELLO, HELLO_VP)
+    vp.recevoir(TypeMessage.HELLO_ACK)
+    vp.envoyer(TypeMessage.VP_ALERT, {"entree": "nations_sud", "sortie": "nations_nord", "eta": 3.0})
+    vp.envoyer(TypeMessage.VP_FIN)
+    attendre(lambda: len(base_de(serveur).passages) == 1)
+    assert base_de(serveur).passages == serveur.logique.passages
+
+
+def test_statistiques_juste_apres_le_vp_fin_comptent_sa_traversee(lancer_serveur: Callable[..., Serveur]) -> None:
+    # Cadence lente : la demande arrive avant la cadence qui transmet la traversée.
+    serveur = lancer_serveur(intervalle_etat="1")
+    supervision = ClientTest(serveur.config, "supervision")
+    supervision.envoyer(TypeMessage.ABONNEMENT)
+    vp = ClientTest(serveur.config, "vp_1")
+    vp.envoyer(TypeMessage.HELLO, HELLO_VP)
+    vp.recevoir(TypeMessage.HELLO_ACK)
+    vp.envoyer(TypeMessage.VP_ALERT, {"entree": "nations_sud", "sortie": "nations_nord", "eta": 3.0})
+    vp.envoyer(TypeMessage.VP_FIN)
+    attendre(lambda: bool(serveur.logique.passages))
+    supervision.envoyer(TypeMessage.STATS_DEMANDE)
+    reponse = supervision.recevoir(TypeMessage.STATS_REPONSE)
+    assert [passage["vp"] for passage in reponse.donnees["passages"]] == ["vp_1"]
+    vp.fermer()
+    supervision.fermer()
+
+
+def test_densites_relevees_a_intervalle(lancer_serveur: Callable[..., Serveur]) -> None:
+    serveur = lancer_serveur(intervalle_releves="0.1")
+    attendre(lambda: len(base_de(serveur).releves) >= 2 * len(serveur.config.branches))
+    branches = {releve.branche for releve in base_de(serveur).releves}
+    assert branches == {branche.nom for branche in serveur.config.branches}
+
+
+def test_statistiques_demandees_par_la_supervision(serveur: Serveur, clients: Callable[[str], ClientTest]) -> None:
+    supervision = supervision_abonnee(clients)
+    supervision.envoyer(TypeMessage.STATS_DEMANDE)
+    reponse = supervision.recevoir(TypeMessage.STATS_REPONSE)
+    assert reponse.emetteur == "serveur"
+    assert reponse.donnees["disponible"] is True
+    assert set(reponse.donnees) == {"disponible", "passages", "densites"}
+
+
+def test_statistiques_refusees_a_un_usager(
+    serveur: Serveur, clients: Callable[[str], ClientTest], caplog: pytest.LogCaptureFixture
+) -> None:
+    client = voiture_inscrite(clients)
+    client.envoyer(TypeMessage.STATS_DEMANDE)
+    attendre(lambda: "n'est pas une supervision" in caplog.text)
+    client.envoyer(TypeMessage.PING)
+    client.recevoir(TypeMessage.PONG)
+
+
+def test_base_injoignable_le_serveur_continue(lancer_serveur: Callable[..., Serveur]) -> None:
+    serveur = lancer_serveur(delai_reessai="0.1")
+    base_de(serveur).joignable = False
+    voiture = ClientTest(serveur.config, "voiture_12")
+    voiture.envoyer(TypeMessage.HELLO, HELLO_VOITURE)
+    voiture.recevoir(TypeMessage.HELLO_ACK)
+    supervision = ClientTest(serveur.config, "supervision")
+    supervision.envoyer(TypeMessage.ABONNEMENT)
+    supervision.attendre_etat(lambda etat: identifiants(etat) == ["voiture_12"])
+    supervision.envoyer(TypeMessage.STATS_DEMANDE)
+    assert supervision.recevoir(TypeMessage.STATS_REPONSE).donnees["disponible"] is False
+    base_de(serveur).joignable = True
+    attendre(lambda: [evenement.usager for evenement in base_de(serveur).connexions] == ["voiture_12"])
+    voiture.fermer()
+    supervision.fermer()

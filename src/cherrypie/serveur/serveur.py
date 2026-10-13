@@ -5,6 +5,11 @@ sockets des clients. Elle ne prend aucune décision : elle lit les trames, véri
 leur signature et leur fraîcheur, les confie à LogiqueServeur et envoie ce que
 celle-ci renvoie. Le délai d'attente de select court jusqu'à la prochaine cadence,
 qui rythme la diffusion des STATE et le contrôle des heartbeats : aucune attente active.
+
+L'historique (traversées des VP, relevés de densité, connexions) part en base par le
+thread de l'Historique : la boucle ne fait que le lui confier, et relève à chaque
+cadence les statistiques demandées par les supervisions. Base injoignable, le serveur
+continue de tourner.
 """
 
 from __future__ import annotations
@@ -15,18 +20,24 @@ import socket
 import threading
 import time
 from collections.abc import Callable
+from datetime import datetime
 
+from cherrypie.bdd.acces_bdd import AccesBdd
+from cherrypie.bdd.enregistrements import EvenementConnexion, ReleveDensite, TypeConnexion
+from cherrypie.bdd.historique import Historique
 from cherrypie.commun.config import Configuration
 from cherrypie.commun.erreurs import CherryPieError, TrameInvalideError, UsagerInconnuError
-from cherrypie.commun.protocole import Enveloppe, Message
+from cherrypie.commun.protocole import Enveloppe, Message, TypeMessage
 from cherrypie.commun.securite import GardeAntiRejeu, Signataire
 from cherrypie.commun.trame import DecoupeurTrames
 from cherrypie.modele.rond_point import RondPoint
 from cherrypie.serveur.connexion import Connexion
-from cherrypie.serveur.logique import LogiqueServeur
+from cherrypie.serveur.logique import IDENTIFIANT_SERVEUR, LogiqueServeur
 
 # Taille maximale d'un datagramme UDP.
 TAILLE_MAX_DATAGRAMME = 65535
+# Attente maximale, à l'arrêt, de la dernière écriture de l'historique en base, en secondes.
+DELAI_ARRET_HISTORIQUE = 5.0
 
 journal = logging.getLogger(__name__)
 
@@ -34,11 +45,13 @@ journal = logging.getLogger(__name__)
 class Serveur:
     """Serveur du rond-point : sockets TCP et UDP, connexions des clients et boucle select."""
 
-    def __init__(self, config: Configuration) -> None:
-        """Prépare le serveur, sans ouvrir de socket.
+    def __init__(self, config: Configuration, acces_bdd: AccesBdd | None = None) -> None:
+        """Prépare le serveur, sans ouvrir de socket ni se connecter à la base.
 
         Args:
             config (Configuration): configuration chargée depuis config.ini.
+            acces_bdd (AccesBdd | None): accès à la base de l'historique ; par défaut, celui
+                que décrit la section [bdd] de la configuration.
         """
         self.__config = config
         self.__logique = LogiqueServeur(RondPoint.depuis_config(config), config.timeout_client)
@@ -48,6 +61,15 @@ class Serveur:
         self.__ecoute_tcp: socket.socket | None = None
         self.__socket_udp: socket.socket | None = None
         self.__connexions: dict[int, Connexion] = {}
+        acces = acces_bdd if acces_bdd is not None else AccesBdd(config.parametres_bdd, config.delai_connexion_bdd)
+        self.__historique = Historique(acces, config.delai_reessai_bdd)
+        self.__passages_transmis = 0
+        self.__prochain_releve = 0.0
+
+    @property
+    def historique(self) -> Historique:
+        """Historique: thread qui écrit l'historique en base et lit les statistiques."""
+        return self.__historique
 
     @property
     def config(self) -> Configuration:
@@ -120,6 +142,7 @@ class Serveur:
         if self.__ecoute_tcp is None or self.__socket_udp is None:
             raise RuntimeError("le serveur doit être démarré avant de servir")
         prochaine_cadence = time.monotonic()
+        self.__historique.start()
         try:
             while not self.__arret.is_set():
                 try:
@@ -134,6 +157,8 @@ class Serveur:
                     journal.exception("erreur inattendue dans la boucle du serveur")
         finally:
             self.__tout_fermer()
+            # Après la fermeture des sessions, pour que leurs déconnexions partent aussi en base.
+            self.__historique.arreter(DELAI_ARRET_HISTORIQUE)
 
     def arreter(self) -> None:
         """Demande l'arrêt de la boucle, effectif au plus tard au bout d'un intervalle de STATE.
@@ -164,6 +189,20 @@ class Serveur:
             self.__fermer(numero, f"aucune nouvelle depuis plus de {self.__config.timeout_client:g} s")
         for numero, message in self.__logique.cadencer():
             self.__envoyer(numero, message)
+        self.__transmettre_a_l_historique()
+        for numero, statistiques in self.__historique.reponses_pretes():
+            self.__envoyer(numero, Message(TypeMessage.STATS_REPONSE, IDENTIFIANT_SERVEUR, statistiques))
+
+    def __transmettre_a_l_historique(self) -> None:
+        """Confie à l'historique les traversées de VP terminées et, à leur intervalle, les densités."""
+        self.__transmettre_les_passages()
+        if time.monotonic() >= self.__prochain_releve:
+            self.__prochain_releve = time.monotonic() + self.__config.intervalle_releves
+            instant = datetime.now()
+            densites = self.__logique.calculateur.calculer(self.__logique.registre)
+            self.__historique.noter_densites(
+                [ReleveDensite(instant, branche, densite) for branche, densite in densites.items()]
+            )
 
     def __proteger(self, numero: int, action: Callable[[int], None]) -> None:
         """Exécute une action sur une session sans qu'une erreur imprévue n'arrête le serveur."""
@@ -217,6 +256,14 @@ class Serveur:
             return
         for message in reponse.messages:
             self.__envoyer(numero, message)
+        if reponse.inscrit is not None:
+            usager = reponse.inscrit
+            trajet = f"de {usager.branche_entree} vers {usager.branche_sortie}"
+            self.__noter_connexion(usager.identifiant, usager.CATEGORIE, TypeConnexion.CONNEXION, trajet)
+        if reponse.statistiques_demandees:
+            # Une traversée terminée depuis la dernière cadence doit compter dans la réponse.
+            self.__transmettre_les_passages()
+            self.__historique.demander_statistiques(numero)
         if reponse.fermer:
             self.__fermer(numero, "le client a dit au revoir (BYE)")
 
@@ -281,6 +328,18 @@ class Serveur:
             journal.info("session %d fermée : %s", numero, raison)
         else:
             journal.info("session %d fermée : %s ; usager %s retiré", numero, raison, usager.identifiant)
+            self.__noter_connexion(usager.identifiant, usager.CATEGORIE, TypeConnexion.DECONNEXION, raison)
+
+    def __transmettre_les_passages(self) -> None:
+        """Confie à l'historique les traversées de VP terminées depuis le dernier appel."""
+        passages = self.__logique.passages
+        for passage in passages[self.__passages_transmis:]:
+            self.__historique.noter_passage(passage)
+        self.__passages_transmis = len(passages)
+
+    def __noter_connexion(self, usager: str, categorie: str, evenement: TypeConnexion, detail: str) -> None:
+        """Confie à l'historique l'arrivée ou le départ d'un usager."""
+        self.__historique.noter_connexion(EvenementConnexion(datetime.now(), usager, categorie, evenement, detail))
 
     def __tout_fermer(self) -> None:
         """Ferme toutes les sessions, puis les sockets d'écoute."""

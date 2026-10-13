@@ -124,7 +124,7 @@ class Deplacement:
         self.__placer_usager(min(vitesse, parcouru / duree) if duree > 0 else 0.0)
 
     def __doit_s_arreter_a_la_ligne(self) -> bool:
-        """ATTENDEZ, CHANGEZ_VOIE ou un cédez-le-passage n'arrêtent un usager que s'il n'a pas encore franchi la ligne."""
+        """ATTENDEZ, CHANGEZ_VOIE ou un cédez-le-passage n'arrêtent l'usager qu'avant sa ligne d'entrée."""
         doit_attendre = self.__usager.retenu_avant_la_ligne() or self.__ceder
         return doit_attendre and self.__avancement <= self.__trajectoire.longueur_approche
 

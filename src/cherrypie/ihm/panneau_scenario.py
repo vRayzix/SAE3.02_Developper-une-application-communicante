@@ -51,8 +51,8 @@ class PanneauScenario(QWidget):
     On choisit le type d'usager, l'entrée, la sortie, le nombre et le délai depuis la
     ligne précédente, puis on ajoute la ligne. La liste se réordonne avec les boutons ou
     par glisser-déposer. « Modifier », ou un double-clic, remet une ligne dans le
-    formulaire ; « Valider la modification » la remplace à sa place. « Lancer le scénario » programme chaque ligne à son instant ;
-    « Arrêter tout » annule ce qui n'est pas encore parti et arrête les clients lancés.
+    formulaire ; « Valider la modification » la remplace à sa place. « Lancer le
+    scénario » programme chaque ligne à son instant ; « Arrêter tout » annule ce qui n'est pas encore parti et arrête les clients lancés.
     Le scénario s'enregistre et se recharge en JSON, pour rejouer une démonstration.
     """
 
