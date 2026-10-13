@@ -164,7 +164,20 @@ def test_sections_scenario_et_suivi(fenetre: FenetreSupervision) -> None:
 
 def test_consigne_du_lanceur_affichee_dans_le_suivi(fenetre: FenetreSupervision) -> None:
     fenetre.lanceur.notification_recue.emit("voiture_1", "ATTENDEZ", "attendez", True)
-    assert fenetre.panneau_suivi.consignes.item(0).text().endswith("voiture_1 : ATTENDEZ")
+    assert fenetre.panneau_suivi.messages.item(0).text().endswith("voiture_1 ← ATTENDEZ : attendez")
+
+
+def test_evenement_du_state_affiche_dans_le_suivi(fenetre: FenetreSupervision) -> None:
+    fenetre.reseau.etat_recu.emit(etat())
+    fenetre.reseau.etat_recu.emit(etat(vp_actif=True))
+    assert "VP vp_1 annoncé : Bd des Nations (sud) vers Bd des Nations (nord)" in fenetre.panneau_suivi.messages.item(0).text()
+
+
+def test_deconnexion_n_invente_pas_d_evenement(fenetre: FenetreSupervision) -> None:
+    fenetre.reseau.etat_recu.emit(etat())
+    fenetre.reseau.connexion_changee.emit(EtatConnexion.DECONNECTE.value, "connexion perdue")
+    fenetre.reseau.etat_recu.emit(etat(regulation=False))
+    assert fenetre.panneau_suivi.messages.count() == 0
 
 
 # ---------- Avec un vrai serveur ----------
