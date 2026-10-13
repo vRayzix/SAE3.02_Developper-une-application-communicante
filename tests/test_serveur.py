@@ -433,7 +433,8 @@ def test_statistiques_juste_apres_le_vp_fin_comptent_sa_traversee(lancer_serveur
     vp.envoyer(TypeMessage.VP_FIN)
     attendre(lambda: bool(serveur.logique.passages))
     supervision.envoyer(TypeMessage.STATS_DEMANDE)
-    assert [passage["vp"] for passage in supervision.recevoir(TypeMessage.STATS_REPONSE).donnees["passages"]] == ["vp_1"]
+    reponse = supervision.recevoir(TypeMessage.STATS_REPONSE)
+    assert [passage["vp"] for passage in reponse.donnees["passages"]] == ["vp_1"]
     vp.fermer()
     supervision.fermer()
 
