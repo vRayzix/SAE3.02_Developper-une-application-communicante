@@ -6,7 +6,11 @@ import pytest
 
 from cherrypie.ihm.evenements import EvenementsServeur
 
-LIBELLES = {"nations_sud": "Bd des Nations (sud)", "nations_nord": "Bd des Nations (nord)", "albert_camus": "Rue Albert Camus"}
+LIBELLES = {
+    "nations_sud": "Bd des Nations (sud)",
+    "nations_nord": "Bd des Nations (nord)",
+    "albert_camus": "Rue Albert Camus",
+}
 MAINTENANT = datetime(2026, 11, 17, 15, 31, 14)
 VP = {"id": "vp_1", "entree": "nations_sud", "sortie": "nations_nord", "eta": 6.0}
 

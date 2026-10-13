@@ -170,7 +170,8 @@ def test_consigne_du_lanceur_affichee_dans_le_suivi(fenetre: FenetreSupervision)
 def test_evenement_du_state_affiche_dans_le_suivi(fenetre: FenetreSupervision) -> None:
     fenetre.reseau.etat_recu.emit(etat())
     fenetre.reseau.etat_recu.emit(etat(vp_actif=True))
-    assert "VP annoncé : vp_1, Bd des Nations (sud) vers Bd des Nations (nord)" in fenetre.panneau_suivi.messages.item(0).text()
+    annonce = "VP annoncé : vp_1, Bd des Nations (sud) vers Bd des Nations (nord)"
+    assert annonce in fenetre.panneau_suivi.messages.item(0).text()
 
 
 def test_deconnexion_n_invente_pas_d_evenement(fenetre: FenetreSupervision) -> None:

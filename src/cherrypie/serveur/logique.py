@@ -435,7 +435,9 @@ class LogiqueServeur:
     def __demander_statistiques(session: Session) -> Reponse:
         """Accepte une demande de statistiques, réservée aux supervisions : seul le serveur parle à la base."""
         if not session.superviseur:
-            raise TrameInvalideError(f"STATS_DEMANDE reçu sur la session {session.numero}, qui n'est pas une supervision")
+            raise TrameInvalideError(
+                f"STATS_DEMANDE reçu sur la session {session.numero}, qui n'est pas une supervision"
+            )
         return Reponse(statistiques_demandees=True)
 
     def __usager_de(self, session: Session) -> Usager:

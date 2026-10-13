@@ -125,7 +125,8 @@ class PanneauStats(QWidget):
             if mesure is None:
                 morceaux.append(f"{nom} : aucune mesure")
             else:
-                morceaux.append(f"{nom} : {PanneauStats.__en_francais(mesure[0])} s en moyenne sur {mesure[1]} traversée(s)")
+                moyenne = PanneauStats.__en_francais(mesure[0])
+                morceaux.append(f"{nom} : {moyenne} s en moyenne sur {mesure[1]} traversée(s)")
         resume = " ; ".join(morceaux)
         if moyennes[True] is not None and moyennes[False] is not None:
             gain = (1 - moyennes[True][0] / moyennes[False][0]) * POURCENT

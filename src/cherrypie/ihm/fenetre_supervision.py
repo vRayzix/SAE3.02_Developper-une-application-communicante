@@ -62,8 +62,9 @@ class FenetreSupervision(QMainWindow):
     serveur avec l'interrupteur de régulation, puis deux sections : « Scénario », où l'on
     compose et lance les usagers, et « Suivi », qui montre les clients en route, leurs
     consignes et les événements du serveur. L'onglet « Statistiques » montre les temps de
-    traversée du VP et la densité dans le temps, que le serveur lit en base à la demande. Le réseau tourne dans un QThread ; tout ce qu'il reçoit arrive ici
-    par signaux Qt, dans le thread de l'IHM. La fenêtre n'interprète rien : elle affiche
+    traversée du VP et la densité dans le temps, que le serveur lit en base à la demande.
+    Le réseau tourne dans un QThread ; tout ce qu'il reçoit arrive ici par signaux Qt,
+    dans le thread de l'IHM. La fenêtre n'interprète rien : elle affiche
     l'état diffusé par le serveur.
     """
 

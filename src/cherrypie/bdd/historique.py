@@ -226,7 +226,9 @@ class Historique(threading.Thread):
             return False
         if self.__en_panne:
             journal.info(
-                "base de nouveau joignable (%s) : écriture de %d enregistrement(s)", self.__acces.adresse, self.en_attente
+                "base de nouveau joignable (%s) : écriture de %d enregistrement(s)",
+                self.__acces.adresse,
+                self.en_attente,
             )
             self.__en_panne = False
         return True

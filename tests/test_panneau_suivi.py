@@ -58,7 +58,8 @@ def test_client_termine_retire_de_la_liste(lanceur: LanceurClients, suivi: Panne
 def test_consigne_affichee_en_haut_avec_son_texte(lanceur: LanceurClients, suivi: PanneauSuivi) -> None:
     lanceur.notification_recue.emit("voiture_1", "ATTENDEZ", "Attendez avant d'entrer.", True)
     lanceur.notification_recue.emit("moto_1", "DEGAGEZ", "Dégagez la voie.", False)
-    assert re.fullmatch(r"\d\d:\d\d:\d\d  moto_1 ← DEGAGEZ : Dégagez la voie\. \(ignorée\)", suivi.messages.item(0).text())
+    attendu = r"\d\d:\d\d:\d\d  moto_1 ← DEGAGEZ : Dégagez la voie\. \(ignorée\)"
+    assert re.fullmatch(attendu, suivi.messages.item(0).text())
     assert suivi.messages.item(1).text().endswith("voiture_1 ← ATTENDEZ : Attendez avant d'entrer.")
 
 
