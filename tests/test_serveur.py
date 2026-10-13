@@ -421,6 +421,23 @@ def test_traversee_du_vp_ecrite(serveur: Serveur, clients: Callable[[str], Clien
     assert base_de(serveur).passages == serveur.logique.passages
 
 
+def test_statistiques_juste_apres_le_vp_fin_comptent_sa_traversee(lancer_serveur: Callable[..., Serveur]) -> None:
+    # Cadence lente : la demande arrive avant la cadence qui transmet la traversée.
+    serveur = lancer_serveur(intervalle_etat="1")
+    supervision = ClientTest(serveur.config, "supervision")
+    supervision.envoyer(TypeMessage.ABONNEMENT)
+    vp = ClientTest(serveur.config, "vp_1")
+    vp.envoyer(TypeMessage.HELLO, HELLO_VP)
+    vp.recevoir(TypeMessage.HELLO_ACK)
+    vp.envoyer(TypeMessage.VP_ALERT, {"entree": "nations_sud", "sortie": "nations_nord", "eta": 3.0})
+    vp.envoyer(TypeMessage.VP_FIN)
+    attendre(lambda: bool(serveur.logique.passages))
+    supervision.envoyer(TypeMessage.STATS_DEMANDE)
+    assert [passage["vp"] for passage in supervision.recevoir(TypeMessage.STATS_REPONSE).donnees["passages"]] == ["vp_1"]
+    vp.fermer()
+    supervision.fermer()
+
+
 def test_densites_relevees_a_intervalle(lancer_serveur: Callable[..., Serveur]) -> None:
     serveur = lancer_serveur(intervalle_releves="0.1")
     attendre(lambda: len(base_de(serveur).releves) >= 2 * len(serveur.config.branches))

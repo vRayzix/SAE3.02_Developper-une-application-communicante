@@ -195,10 +195,7 @@ class Serveur:
 
     def __transmettre_a_l_historique(self) -> None:
         """Confie à l'historique les traversées de VP terminées et, à leur intervalle, les densités."""
-        passages = self.__logique.passages
-        for passage in passages[self.__passages_transmis:]:
-            self.__historique.noter_passage(passage)
-        self.__passages_transmis = len(passages)
+        self.__transmettre_les_passages()
         if time.monotonic() >= self.__prochain_releve:
             self.__prochain_releve = time.monotonic() + self.__config.intervalle_releves
             instant = datetime.now()
@@ -264,6 +261,8 @@ class Serveur:
             trajet = f"de {usager.branche_entree} vers {usager.branche_sortie}"
             self.__noter_connexion(usager.identifiant, usager.CATEGORIE, TypeConnexion.CONNEXION, trajet)
         if reponse.statistiques_demandees:
+            # Une traversée terminée depuis la dernière cadence doit compter dans la réponse.
+            self.__transmettre_les_passages()
             self.__historique.demander_statistiques(numero)
         if reponse.fermer:
             self.__fermer(numero, "le client a dit au revoir (BYE)")
@@ -330,6 +329,13 @@ class Serveur:
         else:
             journal.info("session %d fermée : %s ; usager %s retiré", numero, raison, usager.identifiant)
             self.__noter_connexion(usager.identifiant, usager.CATEGORIE, TypeConnexion.DECONNEXION, raison)
+
+    def __transmettre_les_passages(self) -> None:
+        """Confie à l'historique les traversées de VP terminées depuis le dernier appel."""
+        passages = self.__logique.passages
+        for passage in passages[self.__passages_transmis:]:
+            self.__historique.noter_passage(passage)
+        self.__passages_transmis = len(passages)
 
     def __noter_connexion(self, usager: str, categorie: str, evenement: TypeConnexion, detail: str) -> None:
         """Confie à l'historique l'arrivée ou le départ d'un usager."""
