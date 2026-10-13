@@ -72,8 +72,13 @@ GABARIT_GYROPHARE = (0.7, 1.7)
 COULEURS_CONSIGNE = {
     "ATTENDEZ": QColor("#f28c28"),
     "DEGAGEZ": QColor("#f6c90e"),
-    "CHANGEZ_VOIE": QColor("#f6c90e"),
+    "CHANGEZ_VOIE": QColor("#00b4d8"),
 }
+# Fond des lignes de la liste des messages : la couleur de la consigne, ou du gris pour un
+# événement du serveur, assez transparente pour que le texte reste lisible.
+COULEURS_MESSAGE = COULEURS_CONSIGNE | {"OK_PASSER": QColor("#3f8f5b")}
+COULEUR_EVENEMENT = QColor("#7f8c8d")
+OPACITE_FOND_MESSAGE = 60
 EPAISSEUR_CONTOUR_CONSIGNE = 0.6
 
 # Voie intérieure réservée au VP, sur les segments qu'il va parcourir.
