@@ -124,6 +124,72 @@ def test_ordre_affiche_fait_foi_apres_un_glisser_deposer(panneau: PanneauScenari
     assert categories(panneau) == ["moto", "voiture"]
 
 
+# ---------- Modification ----------
+
+def test_modifier_remet_la_ligne_dans_le_formulaire(panneau: PanneauScenario) -> None:
+    composer(panneau, "voiture", "nations_sud", "albert_camus", nombre=2, delai=1.5)
+    composer(panneau, "moto", "nations_nord", "nations_sud")
+    panneau.liste.setCurrentRow(0)
+    panneau.boutons["modifier"].click()
+    assert panneau.en_modification
+    formulaire = (
+        panneau.choix_categorie.currentData(),
+        panneau.choix_entree.currentData(),
+        panneau.choix_sortie.currentData(),
+        panneau.choix_nombre.value(),
+        panneau.choix_delai.value(),
+    )
+    assert formulaire == ("voiture", "nations_sud", "albert_camus", 2, 1.5)
+    assert panneau.boutons["valider"].isVisibleTo(panneau) and not panneau.boutons["ajouter"].isVisibleTo(panneau)
+
+
+def test_valider_remplace_la_ligne_a_sa_place(panneau: PanneauScenario) -> None:
+    composer(panneau, "voiture", "nations_sud", "albert_camus")
+    composer(panneau, "moto", "nations_nord", "nations_sud")
+    composer(panneau, "trottinette", "albert_camus", "nations_nord")
+    panneau.liste.setCurrentRow(1)
+    panneau.modifier()
+    panneau.choix_nombre.setValue(4)
+    panneau.boutons["valider"].click()
+    assert categories(panneau) == ["voiture", "moto", "trottinette"]
+    assert panneau.scenario.lignes[1] == LigneScenario("moto", "nations_nord", "nations_sud", 4, 0.0)
+    assert not panneau.en_modification
+    assert panneau.boutons["ajouter"].isVisibleTo(panneau)
+
+
+def test_double_clic_modifie_la_ligne(panneau: PanneauScenario) -> None:
+    composer(panneau, "voiture", "nations_sud", "albert_camus")
+    composer(panneau, "moto", "nations_nord", "nations_sud", nombre=3)
+    panneau.liste.setCurrentRow(1)
+    panneau.liste.itemDoubleClicked.emit(panneau.liste.item(1))
+    assert panneau.en_modification
+    assert panneau.choix_nombre.value() == 3
+
+
+def test_modification_suit_la_ligne_deplacee(panneau: PanneauScenario) -> None:
+    composer(panneau, "voiture", "nations_sud", "albert_camus")
+    composer(panneau, "moto", "nations_nord", "nations_sud")
+    panneau.liste.setCurrentRow(1)
+    panneau.modifier()
+    panneau.deplacer(-1)
+    panneau.choix_delai.setValue(2.0)
+    panneau.valider_modification()
+    assert categories(panneau) == ["moto", "voiture"]
+    assert panneau.scenario.lignes[0].delai == 2.0
+
+
+def test_annuler_ou_supprimer_arrete_la_modification(panneau: PanneauScenario) -> None:
+    composer(panneau, "voiture", "nations_sud", "albert_camus")
+    panneau.liste.setCurrentRow(0)
+    panneau.modifier()
+    panneau.boutons["annuler"].click()
+    assert not panneau.en_modification
+    panneau.modifier()
+    panneau.supprimer()
+    assert not panneau.en_modification
+    assert panneau.valider_modification() is None
+
+
 # ---------- Lancement ----------
 
 def test_lignes_lancees_dans_l_ordre_avec_leurs_delais(
