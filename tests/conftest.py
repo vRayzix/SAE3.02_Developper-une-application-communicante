@@ -41,6 +41,22 @@ def remplacer_branches(parseur: configparser.ConfigParser, noms: list[str]) -> N
         }
 
 
+@pytest.fixture(autouse=True)
+def aucun_thread_oublie() -> Iterator[None]:
+    """Fait échouer le test qui laisse tourner un thread non démon.
+
+    Un tel thread empêche l'interpréteur de se terminer : pytest resterait figé après
+    son résumé, sans dire quel test l'a lancé.
+    """
+    avant = set(threading.enumerate())
+    yield
+    nouveaux = [fil for fil in threading.enumerate() if fil not in avant and not fil.daemon]
+    for fil in nouveaux:
+        fil.join(timeout=DELAI)
+    restants = [fil.name for fil in nouveaux if fil.is_alive()]
+    assert not restants, f"thread(s) non démon(s) encore actif(s) après le test : {', '.join(restants)}"
+
+
 @pytest.fixture
 def fabrique_config() -> Callable[..., Configuration]:
     """Fabrique des configurations tirées du fichier d'exemple, sur 127.0.0.1 et des ports libres.

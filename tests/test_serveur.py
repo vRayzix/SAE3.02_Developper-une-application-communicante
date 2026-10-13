@@ -315,10 +315,13 @@ def test_datagramme_illisible_ignore(
 def test_arret_propre_de_la_boucle(fabrique_config: Callable[..., Configuration]) -> None:
     serveur = Serveur(fabrique_config(intervalle_etat="0.05"))
     serveur.demarrer()
-    fil = threading.Thread(target=serveur.servir)
+    fil = threading.Thread(target=serveur.servir, daemon=True)
     fil.start()
-    client = ClientTest(serveur.config, "voiture_12")
-    serveur.arreter()
+    try:
+        client = ClientTest(serveur.config, "voiture_12")
+    finally:
+        # Même si le client échoue, la boucle s'arrête : elle ne survit pas au test.
+        serveur.arreter()
     fil.join(timeout=DELAI)
     assert not fil.is_alive()
     client.attendre_fermeture()
