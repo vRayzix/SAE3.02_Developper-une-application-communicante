@@ -79,6 +79,12 @@ def test_consignes_identiques_regroupees(lanceur: LanceurClients, suivi: Panneau
     assert ligne.toolTip() == "voiture_0, voiture_1, voiture_2, voiture_3, voiture_4"
 
 
+def test_un_seul_destinataire_de_plus_au_singulier(lanceur: LanceurClients, suivi: PanneauSuivi) -> None:
+    for numero in range(DESTINATAIRES_AFFICHES + 1):
+        lanceur.notification_recue.emit(f"voiture_{numero}", "ATTENDEZ", "attendez", True)
+    assert " et 1 autre ← ATTENDEZ" in suivi.messages.item(0).text()
+
+
 def test_consigne_differente_ouvre_une_ligne(lanceur: LanceurClients, suivi: PanneauSuivi) -> None:
     lanceur.notification_recue.emit("voiture_1", "ATTENDEZ", "attendez", True)
     lanceur.notification_recue.emit("voiture_1", "OK_PASSER", "passez", True)

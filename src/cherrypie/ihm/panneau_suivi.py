@@ -159,7 +159,8 @@ class PanneauSuivi(QWidget):
         noms = [nom if fois == 1 else f"{nom} (×{fois})" for nom, fois in sujets.items()]
         if len(noms) <= DESTINATAIRES_AFFICHES:
             return ", ".join(noms)
-        return ", ".join(noms[:DESTINATAIRES_AFFICHES]) + f" et {len(noms) - DESTINATAIRES_AFFICHES} autres"
+        restants = len(noms) - DESTINATAIRES_AFFICHES
+        return ", ".join(noms[:DESTINATAIRES_AFFICHES]) + f" et {restants} autre" + ("s" if restants > 1 else "")
 
     def __disposer(self) -> None:
         """Empile les clients en route et les messages."""
