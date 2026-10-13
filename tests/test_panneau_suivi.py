@@ -1,5 +1,6 @@
-"""Tests de la section « Suivi » : clients en route et dernières consignes."""
+"""Tests de la section « Suivi » : clients en route, consignes et événements du serveur."""
 
+import re
 from collections.abc import Callable
 
 import pytest
@@ -12,9 +13,11 @@ from cherrypie.ihm.panneau_suivi import (
     COLONNE_CONNEXION,
     COLONNE_CONSIGNE,
     COLONNE_TRAJET,
-    NOMBRE_MAX_CONSIGNES,
+    DESTINATAIRES_AFFICHES,
+    NOMBRE_MAX_MESSAGES,
     PanneauSuivi,
 )
+from cherrypie.ihm.style import COULEUR_EVENEMENT, COULEURS_MESSAGE
 from cherrypie.serveur.serveur import Serveur
 
 
@@ -50,20 +53,71 @@ def test_client_termine_retire_de_la_liste(lanceur: LanceurClients, suivi: Panne
     assert suivi.liste_clients.topLevelItemCount() == 0
 
 
-# ---------- Dernières consignes ----------
+# ---------- Consignes ----------
 
-def test_consigne_ajoutee_en_haut(lanceur: LanceurClients, suivi: PanneauSuivi) -> None:
+def test_consigne_affichee_en_haut_avec_son_texte(lanceur: LanceurClients, suivi: PanneauSuivi) -> None:
+    lanceur.notification_recue.emit("voiture_1", "ATTENDEZ", "Attendez avant d'entrer.", True)
+    lanceur.notification_recue.emit("moto_1", "DEGAGEZ", "Dégagez la voie.", False)
+    assert re.fullmatch(r"\d\d:\d\d:\d\d  moto_1 ← DEGAGEZ : Dégagez la voie\. \(ignorée\)", suivi.messages.item(0).text())
+    assert suivi.messages.item(1).text().endswith("voiture_1 ← ATTENDEZ : Attendez avant d'entrer.")
+
+
+@pytest.mark.parametrize("code", list(COULEURS_MESSAGE))
+def test_ligne_coloree_selon_le_code(lanceur: LanceurClients, suivi: PanneauSuivi, code: str) -> None:
+    lanceur.notification_recue.emit("voiture_1", code, "texte", True)
+    fond = suivi.messages.item(0).background().color()
+    assert fond.rgb() == COULEURS_MESSAGE[code].rgb()
+
+
+def test_consignes_identiques_regroupees(lanceur: LanceurClients, suivi: PanneauSuivi) -> None:
+    for numero in range(DESTINATAIRES_AFFICHES + 2):
+        lanceur.notification_recue.emit(f"voiture_{numero}", "ATTENDEZ", "attendez", True)
+    lanceur.notification_recue.emit("voiture_0", "ATTENDEZ", "attendez", True)
+    assert suivi.messages.count() == 1
+    ligne = suivi.messages.item(0)
+    assert "voiture_0 (×2), voiture_1, voiture_2 et 2 autres ← ATTENDEZ" in ligne.text()
+    assert ligne.toolTip() == "voiture_0, voiture_1, voiture_2, voiture_3, voiture_4"
+
+
+def test_consigne_differente_ouvre_une_ligne(lanceur: LanceurClients, suivi: PanneauSuivi) -> None:
     lanceur.notification_recue.emit("voiture_1", "ATTENDEZ", "attendez", True)
-    lanceur.notification_recue.emit("moto_1", "DEGAGEZ", "dégagez", False)
-    assert suivi.consignes.item(0).text().endswith("moto_1 : DEGAGEZ (ignorée)")
-    assert suivi.consignes.item(1).toolTip() == "attendez"
+    lanceur.notification_recue.emit("voiture_1", "OK_PASSER", "passez", True)
+    lanceur.notification_recue.emit("voiture_2", "ATTENDEZ", "attendez", True)
+    assert suivi.messages.count() == 3
 
 
-def test_consignes_les_plus_anciennes_oubliees(lanceur: LanceurClients, suivi: PanneauSuivi) -> None:
-    for numero in range(NOMBRE_MAX_CONSIGNES + 5):
-        lanceur.notification_recue.emit(f"voiture_{numero}", "ATTENDEZ", "", True)
-    assert suivi.consignes.count() == NOMBRE_MAX_CONSIGNES
-    assert f"voiture_{NOMBRE_MAX_CONSIGNES + 4} " in suivi.consignes.item(0).text()
+def test_messages_les_plus_anciens_oublies(lanceur: LanceurClients, suivi: PanneauSuivi) -> None:
+    for numero in range(NOMBRE_MAX_MESSAGES + 5):
+        code = "ATTENDEZ" if numero % 2 else "OK_PASSER"
+        lanceur.notification_recue.emit(f"voiture_{numero}", code, "", True)
+    assert suivi.messages.count() == NOMBRE_MAX_MESSAGES
+    assert f"voiture_{NOMBRE_MAX_MESSAGES + 4} " in suivi.messages.item(0).text()
+
+
+# ---------- Événements du serveur ----------
+
+def etat(**changements: object) -> dict:
+    return {"regulation": True, "vps": [], "entrees_bloquees": [], "passages_fermes": []} | changements
+
+
+def test_evenement_du_serveur_dans_la_meme_liste(lanceur: LanceurClients, suivi: PanneauSuivi) -> None:
+    suivi.noter_etat(etat())
+    lanceur.notification_recue.emit("voiture_1", "ATTENDEZ", "attendez", True)
+    suivi.noter_etat(etat(entrees_bloquees=["nations_sud"]))
+    assert suivi.messages.item(0).text().endswith("Serveur : Entrée temporisée : Bd des Nations (sud)")
+    assert suivi.messages.item(0).background().color().rgb() == COULEUR_EVENEMENT.rgb()
+    assert suivi.messages.count() == 2
+
+
+def test_apres_oubli_pas_d_evenement_invente(suivi: PanneauSuivi) -> None:
+    suivi.noter_etat(etat())
+    for _ in range(3):
+        suivi.noter_etat(etat(regulation=False))
+        suivi.noter_etat(etat())
+    assert suivi.messages.count() == 6
+    suivi.oublier_etat()
+    suivi.noter_etat(etat(regulation=False))
+    assert suivi.messages.count() == 6
 
 
 # ---------- Avec de vrais clients ----------
