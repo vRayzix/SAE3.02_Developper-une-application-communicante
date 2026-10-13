@@ -8,7 +8,7 @@ from PyQt6.QtCore import Qt, QThread
 from PyQt6.QtGui import QCloseEvent, QColor, QGuiApplication
 from PyQt6.QtWidgets import (
     QCheckBox,
-    QFormLayout,
+    QGridLayout,
     QGroupBox,
     QLabel,
     QMainWindow,
@@ -261,12 +261,18 @@ class FenetreSupervision(QMainWindow):
         Rien n'a de taille fixe : la scène suit la place qu'on lui laisse, le séparateur se
         déplace, et le panneau latéral défile si la fenêtre manque de hauteur.
         """
+        # Deux indicateurs par rangée : le panneau garde sa hauteur pour les sections.
         serveur = QGroupBox("Serveur")
-        formulaire = QFormLayout(serveur)
-        formulaire.addRow("Connexion", self.__etat_connexion)
-        formulaire.addRow("Régulation", self.__indicateur_regulation)
-        formulaire.addRow("Véhicule prioritaire", self.__indicateur_vp)
-        formulaire.addRow(self.__case_regulation)
+        grille = QGridLayout(serveur)
+        grille.addWidget(QLabel("Connexion"), 0, 0)
+        grille.addWidget(self.__etat_connexion, 0, 1)
+        grille.addWidget(QLabel("Régulation"), 0, 2)
+        grille.addWidget(self.__indicateur_regulation, 0, 3)
+        grille.addWidget(QLabel("Véhicule prioritaire"), 1, 0)
+        grille.addWidget(self.__indicateur_vp, 1, 1)
+        grille.addWidget(self.__case_regulation, 1, 2, 1, 2)
+        grille.setColumnStretch(1, 1)
+        grille.setColumnStretch(3, 1)
         self.__sections.addTab(self.__panneau_scenario, "Scénario")
         self.__sections.addTab(self.__panneau_suivi, "Suivi")
         contenu_lateral = QWidget()
