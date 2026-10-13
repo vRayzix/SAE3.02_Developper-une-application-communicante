@@ -109,6 +109,14 @@ def test_evenement_du_serveur_dans_la_meme_liste(lanceur: LanceurClients, suivi:
     assert suivi.messages.count() == 2
 
 
+def test_evenements_de_meme_nature_regroupes(suivi: PanneauSuivi) -> None:
+    suivi.noter_etat(etat())
+    suivi.noter_etat(etat(entrees_bloquees=["nations_sud", "albert_camus"]))
+    suivi.noter_etat(etat())
+    assert suivi.messages.count() == 2
+    assert suivi.messages.item(0).text().endswith("Serveur : Entrée libérée : Rue Albert Camus, Bd des Nations (sud)")
+
+
 def test_apres_oubli_pas_d_evenement_invente(suivi: PanneauSuivi) -> None:
     suivi.noter_etat(etat())
     for _ in range(3):

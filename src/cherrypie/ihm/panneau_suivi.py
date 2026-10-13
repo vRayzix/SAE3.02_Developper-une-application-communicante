@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QBrush, QColor
 from PyQt6.QtWidgets import (
     QGroupBox,
@@ -27,7 +28,7 @@ COLONNE_CONNEXION = 2
 COLONNE_CONSIGNE = 3
 SANS_CONSIGNE = "aucune"
 # La liste des messages garde les plus récents ; un message regroupé nomme au plus ce
-# nombre de destinataires, les autres sont comptés et listés dans l'info-bulle.
+# nombre de sujets, les autres sont comptés et listés dans l'info-bulle.
 NOMBRE_MAX_MESSAGES = 100
 DESTINATAIRES_AFFICHES = 3
 EMETTEUR_SERVEUR = "Serveur"
@@ -40,7 +41,8 @@ class PanneauSuivi(QWidget):
     événements que la fenêtre lui transmet à chaque STATE. Un client disparaît de la liste
     quand il a terminé. Chaque message tient sur une ligne, la plus récente en haut, colorée
     selon sa consigne : « 15:31:14  voiture_3 ← DEGAGEZ : texte ». Un message identique au
-    précédent ne crée pas de ligne : il s'ajoute à ses destinataires, ou à son compte.
+    précédent ne crée pas de ligne : il ajoute son destinataire à la ligne du haut, et un
+    événement de même nature y ajoute son objet (« Entrée libérée : A, B »).
     """
 
     def __init__(self, lanceur: LanceurClients, parent: QWidget | None = None) -> None:
@@ -53,9 +55,9 @@ class PanneauSuivi(QWidget):
         super().__init__(parent)
         self.__lignes: dict[str, QTreeWidgetItem] = {}
         self.__evenements = EvenementsServeur({branche.nom: branche.libelle for branche in lanceur.config.branches})
-        # Message de la ligne du haut et ses destinataires, avec leur nombre de réceptions.
+        # Message de la ligne du haut et ses sujets, avec le nombre de fois que chacun est revenu.
         self.__dernier_message: tuple | None = None
-        self.__destinataires: dict[str, int] = {}
+        self.__sujets: dict[str, int] = {}
         self.__liste_clients = QTreeWidget()
         self.__liste_clients.setHeaderLabels(COLONNES_CLIENTS)
         self.__liste_clients.setRootIsDecorated(False)
@@ -66,6 +68,8 @@ class PanneauSuivi(QWidget):
         entete.setStretchLastSection(False)
         self.__messages = QListWidget()
         self.__messages.setWordWrap(True)
+        # Une ligne longue passe à la ligne : la liste ne défile qu'en hauteur.
+        self.__messages.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.__disposer()
         lanceur.client_lance.connect(self.__ajouter_client)
         lanceur.position_changee.connect(self.__noter_position)
@@ -88,8 +92,9 @@ class PanneauSuivi(QWidget):
         Args:
             etat (dict): données d'un STATE reçu par la supervision.
         """
-        for evenement in self.__evenements.comparer(etat, datetime.now()):
-            self.__ajouter_message(("evenement", evenement), EMETTEUR_SERVEUR, f" : {evenement}", COULEUR_EVENEMENT)
+        for nature, objet in self.__evenements.comparer(etat, datetime.now()):
+            debut = f"{EMETTEUR_SERVEUR} : {nature}" + (" : " if objet else "")
+            self.__ajouter_message(("evenement", nature), objet, debut, "", COULEUR_EVENEMENT)
 
     def oublier_etat(self) -> None:
         """Oublie le dernier STATE, après une déconnexion : le suivant ne produira pas d'événement."""
@@ -124,16 +129,17 @@ class PanneauSuivi(QWidget):
     def __noter_consigne(self, identifiant: str, code: str, texte: str, appliquee: bool) -> None:
         """Ajoute la consigne reçue par un client, ou la regroupe avec la précédente si elle est identique."""
         suite = f" ← {code} : {texte}" + ("" if appliquee else " (ignorée)")
-        self.__ajouter_message(("consigne", code, texte, appliquee), identifiant, suite, COULEURS_MESSAGE[code])
+        self.__ajouter_message(("consigne", code, texte, appliquee), identifiant, "", suite, COULEURS_MESSAGE[code])
 
-    def __ajouter_message(self, cle: tuple, destinataire: str, suite: str, couleur: QColor) -> None:
+    def __ajouter_message(self, cle: tuple, sujet: str, debut: str, suite: str, couleur: QColor) -> None:
         """Ajoute un message en haut de la liste, ou complète la ligne du haut si c'est le même message.
 
-        La ligne s'écrit : heure, destinataires, puis la suite du message.
+        La ligne s'écrit : heure, début du message, ses sujets (destinataires d'une consigne,
+        objets d'un événement), puis la suite.
         """
         if cle != self.__dernier_message or self.__messages.count() == 0:
             self.__dernier_message = cle
-            self.__destinataires = {}
+            self.__sujets = {}
             ligne = QListWidgetItem()
             fond = QColor(couleur)
             fond.setAlpha(OPACITE_FOND_MESSAGE)
@@ -141,16 +147,16 @@ class PanneauSuivi(QWidget):
             self.__messages.insertItem(0, ligne)
             while self.__messages.count() > NOMBRE_MAX_MESSAGES:
                 self.__messages.takeItem(self.__messages.count() - 1)
-        self.__destinataires[destinataire] = self.__destinataires.get(destinataire, 0) + 1
+        self.__sujets[sujet] = self.__sujets.get(sujet, 0) + 1
         heure = datetime.now().time().isoformat(timespec="seconds")
         ligne = self.__messages.item(0)
-        ligne.setText(f"{heure}  {self.__nommer(self.__destinataires)}{suite}")
-        ligne.setToolTip(", ".join(self.__destinataires))
+        ligne.setText(f"{heure}  {debut}{self.__nommer(self.__sujets)}{suite}")
+        ligne.setToolTip(", ".join(self.__sujets))
 
     @staticmethod
-    def __nommer(destinataires: dict[str, int]) -> str:
-        """Nomme les destinataires d'un message regroupé, avec le nombre de réceptions de chacun."""
-        noms = [nom if fois == 1 else f"{nom} (×{fois})" for nom, fois in destinataires.items()]
+    def __nommer(sujets: dict[str, int]) -> str:
+        """Nomme les sujets d'un message regroupé, avec le nombre de fois que chacun est revenu."""
+        noms = [nom if fois == 1 else f"{nom} (×{fois})" for nom, fois in sujets.items()]
         if len(noms) <= DESTINATAIRES_AFFICHES:
             return ", ".join(noms)
         return ", ".join(noms[:DESTINATAIRES_AFFICHES]) + f" et {len(noms) - DESTINATAIRES_AFFICHES} autres"

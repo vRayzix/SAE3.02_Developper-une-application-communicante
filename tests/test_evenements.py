@@ -43,20 +43,20 @@ def test_apres_oubli_le_state_suivant_sert_de_reference(evenements: EvenementsSe
 @pytest.mark.parametrize(
     ("suivant", "attendus"),
     [
-        (etat(regulation=False), ["Régulation coupée"]),
+        (etat(regulation=False), [("Régulation coupée", "")]),
         (
             etat(vps=[VP]),
-            ["VP vp_1 annoncé : Bd des Nations (sud) vers Bd des Nations (nord), à l'anneau vers 15:31:20"],
+            [("VP annoncé", "vp_1, Bd des Nations (sud) vers Bd des Nations (nord), à l'anneau vers 15:31:20")],
         ),
-        (etat(entrees_bloquees=["albert_camus"]), ["Entrée temporisée : Rue Albert Camus"]),
+        (etat(entrees_bloquees=["albert_camus"]), [("Entrée temporisée", "Rue Albert Camus")]),
         (
             etat(passages_fermes=[{"branche": "nations_nord", "chaussee": "sortie"}]),
-            ["Passage piéton fermé : Bd des Nations (nord), chaussée de sortie"],
+            [("Passage piéton fermé", "Bd des Nations (nord), chaussée de sortie")],
         ),
     ],
     ids=["regulation", "vp-annonce", "entree-temporisee", "passage-ferme"],
 )
-def test_changement_decrit(evenements: EvenementsServeur, suivant: dict, attendus: list[str]) -> None:
+def test_changement_decrit(evenements: EvenementsServeur, suivant: dict, attendus: list[tuple[str, str]]) -> None:
     assert evenements.comparer(suivant, MAINTENANT) == attendus
 
 
@@ -69,8 +69,8 @@ def test_retour_a_l_etat_calme_decrit(evenements: EvenementsServeur) -> None:
     )
     evenements.comparer(agite, MAINTENANT)
     assert evenements.comparer(etat(), MAINTENANT) == [
-        "Régulation activée",
-        "VP vp_1 : fin de traversée",
-        "Entrée libérée : Rue Albert Camus",
-        "Passage piéton rouvert : Bd des Nations (nord), chaussée d'entrée",
+        ("Régulation activée", ""),
+        ("Fin de traversée", "vp_1"),
+        ("Entrée libérée", "Rue Albert Camus"),
+        ("Passage piéton rouvert", "Bd des Nations (nord), chaussée d'entrée"),
     ]
