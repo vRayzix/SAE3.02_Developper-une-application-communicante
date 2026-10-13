@@ -14,6 +14,9 @@ POURCENT = 100
 TAILLE_POINT = 10
 EPAISSEUR_LIGNE = 2
 OPACITE_GRILLE = 0.2
+# Marge au-dessus de la plus longue traversée, et de part et d'autre des numéros de traversée.
+MARGE_HAUT = 1.15
+MARGE_RANG = 0.5
 DECALAGE_LEGENDE = (10, 10)
 MODES = ((True, "avec régulation"), (False, "sans régulation"))
 
@@ -105,6 +108,10 @@ class PanneauStats(QWidget):
             )
             moyennes[regulation] = (sum(durees) / len(durees), len(durees)) if durees else None
         self.__resume.setText(self.__resumer(moyennes))
+        # Les durées partent de zéro, pour que l'écart entre les deux modes se lise à sa vraie taille.
+        plus_longue = max((passage["duree"] for passage in passages), default=1.0)
+        self.__traversees.setYRange(0, plus_longue * MARGE_HAUT)
+        self.__traversees.setXRange(1 - MARGE_RANG, max(len(passages), 1) + MARGE_RANG)
 
     def __tracer_densites(self, releves: list[dict]) -> None:
         """Une courbe par branche : densité en pourcentage selon l'heure du relevé."""
@@ -151,6 +158,8 @@ class PanneauStats(QWidget):
             graphique.showGrid(x=False, y=True, alpha=OPACITE_GRILLE)
             graphique.addLegend(offset=DECALAGE_LEGENDE)
         self.__densites.setYRange(0, POURCENT)
+        # Une traversée porte un numéro entier : pas de graduation entre deux.
+        self.__traversees.getAxis("bottom").setTickSpacing(1, 1)
 
     def __disposer(self) -> None:
         """Le bouton et l'état en haut, puis le résumé et les deux graphiques côte à côte."""
