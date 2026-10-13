@@ -35,6 +35,8 @@ class TypeMessage(Enum):
     PONG = "PONG"
     BYE = "BYE"
     DEVANT = "DEVANT"
+    STATS_DEMANDE = "STATS_DEMANDE"
+    STATS_REPONSE = "STATS_REPONSE"
 
 
 class CodeNotification(Enum):

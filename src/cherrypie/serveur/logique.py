@@ -38,10 +38,15 @@ class Reponse:
     Attributes:
         messages (tuple[Message, ...]): messages à renvoyer à l'émetteur, dans l'ordre.
         fermer (bool): True si la session doit être fermée ensuite.
+        inscrit (Usager | None): usager que le message vient d'inscrire, pour l'historique.
+        statistiques_demandees (bool): True si une supervision demande les statistiques,
+            que le serveur lit en base à part et renvoie plus tard.
     """
 
     messages: tuple[Message, ...] = ()
     fermer: bool = False
+    inscrit: Usager | None = None
+    statistiques_demandees: bool = False
 
 
 class LogiqueServeur:
@@ -201,6 +206,8 @@ class LogiqueServeur:
             return self.__terminer_vp(session, maintenant)
         if message.type is TypeMessage.REGLAGE:
             return self.__regler(session, message)
+        if message.type is TypeMessage.STATS_DEMANDE:
+            return self.__demander_statistiques(session)
         raise TrameInvalideError(f"message {message.type.value} inattendu sur une session TCP")
 
     def traiter_udp(self, message: Message, maintenant: float) -> None:
@@ -362,7 +369,7 @@ class LogiqueServeur:
             "usager %s inscrit (%s, de %s vers %s)",
             usager.identifiant, usager.CATEGORIE, usager.branche_entree, usager.branche_sortie,
         )
-        return Reponse((self.__accuse_hello(True),))
+        return Reponse((self.__accuse_hello(True),), inscrit=usager)
 
     def __creer_usager(self, message: Message) -> Usager:
         """Crée l'usager décrit par un HELLO, après avoir vérifié ses champs et ses branches."""
@@ -423,6 +430,13 @@ class LogiqueServeur:
         self.__regulateur.active = regulation
         journal.info("régulation %s par la supervision (session %d)", "activée" if regulation else "coupée", session.numero)
         return Reponse()
+
+    @staticmethod
+    def __demander_statistiques(session: Session) -> Reponse:
+        """Accepte une demande de statistiques, réservée aux supervisions : seul le serveur parle à la base."""
+        if not session.superviseur:
+            raise TrameInvalideError(f"STATS_DEMANDE reçu sur la session {session.numero}, qui n'est pas une supervision")
+        return Reponse(statistiques_demandees=True)
 
     def __usager_de(self, session: Session) -> Usager:
         """Renvoie l'usager inscrit sur une session, pour un message qui en exige un."""
