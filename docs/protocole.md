@@ -6,7 +6,7 @@ Ce document décrit les messages échangés entre le serveur du rond-point, les 
 
 | Transport | Port | Usage |
 | --- | --- | --- |
-| TCP | 5050 | messages qui doivent arriver : HELLO, VP_ALERT, VP_FIN, BYE, PING, PONG, NOTIF, STATE, ABONNEMENT, REGLAGE, DEVANT |
+| TCP | 5050 | messages qui doivent arriver : HELLO, VP_ALERT, VP_FIN, BYE, PING, PONG, NOTIF, STATE, ABONNEMENT, REGLAGE, DEVANT, STATS_DEMANDE, STATS_REPONSE |
 | UDP | 5051 | positions (POS), environ toutes les 200 ms ; une position perdue est remplacée par la suivante |
 
 Les ports et les délais se règlent dans `config.ini`.
@@ -60,6 +60,8 @@ Dans le code, `Message` porte `type`, `id` et `donnees` ; `Enveloppe` y ajoute `
 | PONG | serveur → client | TCP | `{}` |
 | BYE | client → serveur | TCP | `{}` |
 | DEVANT | serveur → client | TCP | `{"distance": 12.4, "ceder": false}`, voir « Ce que voit un conducteur » |
+| STATS_DEMANDE | supervision → serveur | TCP | `{}`, voir « Historique et statistiques » |
+| STATS_REPONSE | serveur → supervision | TCP | `{"disponible": true, "passages": [...], "densites": [...]}`, ou `{"disponible": false, "raison": "..."}` |
 
 Les branches sont désignées par leur identifiant, tiré du nom de la rue : `nations_nord`, `jean_de_la_bruyere`, `nations_sud` et `albert_camus` pour le rond-point de Bel Air (voir [geometrie_bel_air.md](geometrie_bel_air.md)). Un segment porte le nom de ses deux branches, dans le sens de circulation, séparés par un tiret.
 
@@ -142,7 +144,29 @@ REGLAGE n'est accepté que d'une session de supervision abonnée, avec `regulati
 - Comme un client, elle envoie un PING toutes les `intervalle_ping` secondes, sans quoi le serveur la retirerait au bout de `timeout_client`. Si elle ne reçoit ni PONG ni STATE pendant `timeout_client` secondes, elle considère la connexion perdue, se reconnecte avec le même backoff que les clients, puis se réabonne.
 - Elle envoie un REGLAGE à chaque clic sur l'interrupteur de régulation. Le serveur ne répond pas : l'effet se lit dans le champ `regulation` des STATE suivants, et c'est ce champ que la supervision affiche. Un réglage demandé pendant une coupure est abandonné ; à la reconnexion, l'interrupteur reprend l'état du serveur.
 - Un STATE auquel il manque un champ est journalisé puis ignoré.
+- Elle envoie un STATS_DEMANDE quand on ouvre l'onglet « Statistiques » ou qu'on clique sur « Actualiser ». Plusieurs demandes faites avant l'envoi n'en font qu'une ; pendant une coupure, la demande part à la reconnexion.
 - À la fermeture de la fenêtre, la supervision envoie un BYE.
+
+## Historique et statistiques
+
+Seul le serveur accède à la base MariaDB. Il y écrit son historique par un thread à part, qui reçoit les enregistrements par une file : la boucle `select` n'attend jamais la base.
+
+- À chaque VP_FIN, la mesure de la traversée (début, fin, durée, durée sur l'anneau, régulation, densité moyenne) part dans la table `passage_vp`.
+- Toutes les `intervalle_releves` secondes (section `[bdd]`), la densité de chaque branche part dans `releve_densite`.
+- Chaque HELLO accepté et chaque session d'usager fermée (avec sa raison : BYE, silence, coupure) part dans `evenement_connexion`.
+
+Si la base est injoignable, le serveur continue de fonctionner : les enregistrements attendent en mémoire, jusqu'à 10 000 par table (les plus anciens sont oubliés au-delà), et le thread réessaie de se connecter toutes les `delai_reessai` secondes. La panne est journalisée une fois, puis le retour de la base.
+
+STATS_DEMANDE n'est accepté que d'une session de supervision abonnée ; venu d'un usager, il est refusé comme une trame invalide. Le serveur lit en base les 200 dernières traversées et les 2 000 derniers relevés de densité, puis répond par un STATS_REPONSE à la cadence suivante. Avant de lire, il écrit ce qui attend, traversée tout juste terminée comprise.
+
+```json
+{"disponible": true,
+ "passages": [{"vp": "vp_1", "entree": "nations_sud", "sortie": "nations_nord", "debut": "2026-11-17T15:31:14.512000",
+               "duree": 9.2, "duree_anneau": 3.1, "regulation": true, "densite_moyenne": 0.31}],
+ "densites": [{"instant": "2026-11-17T15:31:15.004000", "branche": "nations_sud", "densite": 0.375}]}
+```
+
+Les listes vont du plus ancien au plus récent, les dates en ISO 8601. Base injoignable, la réponse vaut `{"disponible": false, "raison": "base injoignable (10.0.0.2:3306)"}` et la supervision affiche la raison. Comme toutes les trames, STATS_DEMANDE et STATS_REPONSE sont signés par HMAC et soumis à l'anti-rejeu.
 
 ## Positions en UDP
 
