@@ -36,6 +36,10 @@ classDiagram
     class BrancheInconnueError
     class UsagerInconnuError
     class ScenarioInvalideError
+    class BddError
+    class BddInjoignableError
+    class AccesBddRefuseError
+    class BaseAbsenteError
     class InscriptionRefuseeError {
         -reessayer : bool
     }
@@ -48,6 +52,10 @@ classDiagram
     CherryPieError <|-- BrancheInconnueError
     CherryPieError <|-- UsagerInconnuError
     CherryPieError <|-- ScenarioInvalideError
+    CherryPieError <|-- BddError
+    BddError <|-- BddInjoignableError
+    BddError <|-- AccesBddRefuseError
+    BddError <|-- BaseAbsenteError
     CherryPieError <|-- InscriptionRefuseeError
 ```
 
@@ -73,6 +81,9 @@ classDiagram
         -longueur_branche : float
         -capacite_par_branche : int
         -parametres_bdd : dict[str, str | int]
+        -delai_connexion_bdd : float
+        -delai_reessai_bdd : float
+        -intervalle_releves : float
         +depuis_fichier(chemin: str | Path) Configuration$
     }
 
@@ -406,6 +417,9 @@ classDiagram
         -ecoute_tcp : socket | None
         -socket_udp : socket | None
         -connexions : dict[int, Connexion]
+        -historique : Historique
+        -passages_transmis : int
+        -prochain_releve : float
         +demarrer() None
         +servir() None
         +arreter() None
@@ -419,6 +433,9 @@ classDiagram
         -envoyer(numero: int, message: Message) None
         -vider(numero: int) None
         -fermer(numero: int, raison: str) None
+        -transmettre_a_l_historique() None
+        -transmettre_les_passages() None
+        -noter_connexion(usager: str, categorie: str, evenement: TypeConnexion, detail: str) None
     }
 
     class Connexion {
@@ -457,12 +474,15 @@ classDiagram
         -signaler_vp(session: Session, message: Message) Reponse
         -terminer_vp(session: Session, maintenant: float) Reponse
         -regler(session: Session, message: Message) Reponse
+        -demander_statistiques(session: Session) Reponse$
     }
 
     class Reponse {
         <<dataclass>>
         +messages : tuple[Message, ...]
         +fermer : bool
+        +inscrit : Usager | None
+        +statistiques_demandees : bool
     }
 
     class Session {
@@ -482,6 +502,7 @@ classDiagram
     }
 
     Serveur *-- LogiqueServeur
+    Serveur *-- Historique
     Serveur "1" *-- "0..*" Connexion
     Connexion *-- DecoupeurTrames
     LogiqueServeur *-- Registre
@@ -500,6 +521,7 @@ classDiagram
 - `servir()` fait tourner une seule boucle `select` sur la socket d'écoute TCP, la socket UDP et les sockets des clients. Son délai d'attente court jusqu'à la prochaine cadence (`intervalle_etat`) : à chaque cadence, `cadencer()` ferme les sessions silencieuses et envoie le STATE aux supervisions. `arreter()` lève un `threading.Event` vérifié à chaque tour, ce qui arrête la boucle en moins d'un intervalle.
 - Chaque trame reçue passe par `ouvrir()` (enveloppe, HMAC, anti-rejeu) avant d'être confiée à la logique. Une trame refusée est journalisée puis ignorée.
 - `Connexion` utilise une socket non bloquante. Son découpeur recolle les trames reçues en plusieurs morceaux ou collées ensemble, et sa file d'envoi garde ce que la socket n'a pas pu accepter, jusqu'à ce que `select` la signale prête à écrire. Un client qui laisse plus de 1 Mio en attente est déconnecté.
+- `Serveur` confie l'historique à `Historique` (paquet `bdd`), qui l'écrit en base dans son propre thread : à chaque cadence, les traversées terminées et, toutes les `intervalle_releves` secondes, un relevé de densité par branche ; à chaque HELLO accepté (`Reponse.inscrit`) et à chaque session d'usager fermée, un événement de connexion. Un STATS_DEMANDE (`Reponse.statistiques_demandees`) part à l'historique, après les traversées pas encore transmises ; la réponse revient à une cadence suivante, en STATS_REPONSE.
 - Aux frontières, une erreur imprévue sur une session ne ferme que cette session ; ailleurs dans la boucle, elle est journalisée et la boucle continue.
 
 Setters : `Session.identifiant` (une seule fois, au HELLO), `Session.superviseur` (à l'ABONNEMENT) et `Session.derniere_activite` (à chaque message reçu, jamais en arrière).
@@ -747,6 +769,7 @@ classDiagram
         -lanceur : LanceurClients
         -panneau_scenario : PanneauScenario
         -panneau_suivi : PanneauSuivi
+        -panneau_stats : PanneauStats
         -etat_connexion : QLabel
         -indicateur_regulation : QLabel
         -indicateur_vp : QLabel
@@ -768,6 +791,7 @@ classDiagram
         -relier() None
         -disposer() None
         -dimensionner() None
+        -actualiser_si_statistiques(rang: int) None
     }
 
     class SceneRondPoint {
@@ -813,6 +837,7 @@ classDiagram
 
     class ReseauSupervision {
         +etat_recu : pyqtSignal$
+        +statistiques_recues : pyqtSignal$
         +connexion_changee : pyqtSignal$
         +termine : pyqtSignal$
         -config : Configuration
@@ -820,11 +845,13 @@ classDiagram
         -garde : GardeAntiRejeu
         -arret : threading.Event
         -reglages : SimpleQueue[bool]
+        -statistiques_demandees : threading.Event
         -socket : socket | None
         -decoupeur : DecoupeurTrames
         -etat : EtatConnexion
         +tourner() None
         +demander_reglage(regulation: bool) None
+        +demander_statistiques() None
         +arreter() None
         -boucler() None
         -connecter() None
@@ -967,6 +994,7 @@ classDiagram
     FenetreSupervision *-- LanceurClients
     FenetreSupervision *-- PanneauScenario
     FenetreSupervision *-- PanneauSuivi
+    FenetreSupervision *-- PanneauStats
     FenetreSupervision *-- QThread
     FenetreSupervision *-- QSplitter
     FenetreSupervision *-- QScrollArea
@@ -1005,36 +1033,113 @@ classDiagram
 
 Setters prévus : aucun.
 
-## Paquet `bdd` (prévisionnel)
+## Paquet `bdd`
 
 ```mermaid
 classDiagram
+    class Thread
     class QWidget
 
-    class PanneauStats {
-        -acces_bdd : AccesBdd
-        -graphe_temps_vp : PlotWidget
-        -graphe_densite : PlotWidget
-        +rafraichir() None
-    }
-
     class AccesBdd {
-        -parametres : dict[str, str]
-        -connexion : MySQLConnection | None
+        -parametres : dict[str, str | int]
+        -delai_connexion : float
+        -connexion : MySQLConnectionAbstract | None
+        +adresse() str
+        +connectee() bool
         +connecter() None
         +fermer() None
-        +enregistrer_passage_vp(passage: dict) None
-        +enregistrer_densites(instantanes: list[tuple]) None
-        +enregistrer_evenement(identifiant: str, categorie: str, evenement: str) None
-        +lire_passages_vp() list[dict]
-        +lire_densites() list[dict]
+        +executer_script(script: str) None
+        +enregistrer_passages(passages: list[PassageVp]) None
+        +enregistrer_densites(releves: list[ReleveDensite]) None
+        +enregistrer_connexions(evenements: list[EvenementConnexion]) None
+        +lire_statistiques(nombre_passages: int, nombre_releves: int) dict
+        -ecrire_lot(requete: str, lignes: list[tuple]) None
+        -ecrire(requetes: list[tuple]) None
+        -lire(requete: str, limite: int) list[tuple]
+        -connexion_ouverte() MySQLConnectionAbstract
+        -traduire(erreur: mysql.connector.Error) BddError
+        -est_utile(instruction: str) bool$
     }
 
+    class Historique {
+        -acces : AccesBdd
+        -delai_reessai : float
+        -taches : SimpleQueue
+        -reponses : SimpleQueue[tuple[int, dict]]
+        -arret : threading.Event
+        -passages : deque[PassageVp]
+        -releves : deque[ReleveDensite]
+        -connexions : deque[EvenementConnexion]
+        -prochain_essai : float
+        -en_panne : bool
+        +en_attente() int
+        +noter_passage(passage: PassageVp) None
+        +noter_densites(releves: list[ReleveDensite]) None
+        +noter_connexion(evenement: EvenementConnexion) None
+        +demander_statistiques(numero: int) None
+        +reponses_pretes() list[tuple[int, dict]]
+        +arreter(delai: float) None
+        +run() None
+        -ecrire() None
+        -repondre(numero: int) None
+        -connecter(forcer: bool) bool
+        -signaler_panne(erreur: BddError) None
+    }
+
+    class DemandeStatistiques {
+        <<dataclass>>
+        +numero : int
+    }
+
+    class ReleveDensite {
+        <<dataclass>>
+        +instant : datetime
+        +branche : str
+        +densite : float
+    }
+
+    class EvenementConnexion {
+        <<dataclass>>
+        +instant : datetime
+        +usager : str
+        +categorie : str
+        +evenement : TypeConnexion
+        +detail : str
+    }
+
+    class TypeConnexion {
+        <<enumeration>>
+        CONNEXION
+        DECONNEXION
+    }
+
+    class PanneauStats {
+        +actualisation_demandee : pyqtSignal$
+        -libelles : dict[str, str]
+        -bouton : QPushButton
+        -etat : QLabel
+        -resume : QLabel
+        -traversees : PlotWidget
+        -densites : PlotWidget
+        +afficher(statistiques: dict) None
+        -tracer_traversees(passages: list[dict]) None
+        -tracer_densites(releves: list[dict]) None
+        -resumer(moyennes: dict) str$
+    }
+
+    Thread <|-- Historique
     QWidget <|-- PanneauStats
-    PanneauStats --> AccesBdd
+    Historique *-- AccesBdd
+    Historique ..> DemandeStatistiques : file
+    Historique ..> ReleveDensite : écrit
+    Historique ..> EvenementConnexion : écrit
+    EvenementConnexion --> TypeConnexion
+    AccesBdd ..> PassageVp : écrit
 ```
 
-- `PanneauStats` sera un onglet « Statistiques » de `FenetreSupervision`.
-- `AccesBdd` utilise des requêtes paramétrées et `executemany` pour les instantanés de densité. Le serveur est le seul à écrire ; `PanneauStats` ne fait que lire.
+- Seul le serveur accède à la base. `PanneauStats`, onglet « Statistiques » de la supervision (paquet `ihm`, montré ici avec les données qu'il affiche), ne connaît que la réponse STATS_REPONSE : il ne parle jamais à MariaDB.
+- `AccesBdd` réunit toutes les requêtes : requêtes paramétrées (`%s`), `executemany` pour chaque lot, `commit()` explicite. Une erreur de mysql.connector devient une erreur métier selon son code : `BddInjoignableError` (serveur éteint, adresse inconnue, connexion perdue), `AccesBddRefuseError`, `BaseAbsenteError`, sinon `BddError`. `schema.sql` crée les trois tables (`passage_vp`, `releve_densite`, `evenement_connexion`) avec `CREATE TABLE IF NOT EXISTS` : `scripts/init_bdd.py` peut le relancer sans rien perdre.
+- `Historique` est un `threading.Thread` démon. La boucle du serveur y dépose ce qu'il faut écrire ; le thread l'écrit par lots, une table après l'autre, et ne retire un lot de sa file d'attente qu'une fois validé : un lot refusé est réessayé tel quel, sans doublon. Base injoignable, il garde au plus 10 000 enregistrements par table et retente la connexion toutes les `delai_reessai` secondes. Une demande de statistiques force une tentative, puisque la supervision attend une réponse.
+- Les tests remplacent `AccesBdd` par `DoublureBdd` (une sous-classe qui garde tout en mémoire et peut simuler une panne) et `mysql.connector.connect` par une fausse connexion. Le seul test qui vise une vraie base est marqué `bdd` et ignoré si elle est absente.
 
 Setters prévus : aucun.
