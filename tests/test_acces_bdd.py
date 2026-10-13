@@ -25,10 +25,13 @@ from cherrypie.serveur.passages import PassageVp
 
 RACINE = Path(__file__).resolve().parent.parent
 SCHEMA = RACINE / "src" / "cherrypie" / "bdd" / "schema.sql"
-PARAMETRES = {"hote": "10.0.0.2", "port": 3306, "utilisateur": "cherrypie", "mot_de_passe": "secret", "base": "cherrypie"}
+PARAMETRES = {
+    "hote": "10.0.0.2", "port": 3306, "utilisateur": "cherrypie", "mot_de_passe": "secret", "base": "cherrypie"
+}
 DELAI_CONNEXION = 3.0
 DEBUT = datetime(2026, 11, 17, 15, 31, 14)
-PASSAGE = PassageVp("vp_1", "nations_sud", "nations_nord", DEBUT, datetime(2026, 11, 17, 15, 31, 21), 7.3, 2.1, True, 0.4)
+FIN = datetime(2026, 11, 17, 15, 31, 21)
+PASSAGE = PassageVp("vp_1", "nations_sud", "nations_nord", DEBUT, FIN, 7.3, 2.1, True, 0.4)
 
 
 class FauxCurseur:
@@ -169,7 +172,7 @@ def test_passages_inseres_en_lot_puis_valides(acces: AccesBdd, connexions: list[
     connexion = connexions[0]
     ((requete, lignes),) = connexion.requetes
     assert requete == REQUETE_PASSAGE and "%s" in requete
-    assert lignes[0] == ("vp_1", "nations_sud", "nations_nord", DEBUT, PASSAGE.fin, 7.3, 2.1, True, 0.4)
+    assert lignes[0] == ("vp_1", "nations_sud", "nations_nord", DEBUT, FIN, 7.3, 2.1, True, 0.4)
     assert len(lignes) == 2
     assert connexion.commits == 1
     assert connexion.curseurs_fermes == 1
