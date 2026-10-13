@@ -282,6 +282,7 @@ def test_etat_sans_usager(logique: LogiqueServeur) -> None:
         "usagers": [],
         "densite": {"nations_nord": 0.0, "jean_de_la_bruyere": 0.0, "nations_sud": 0.0, "albert_camus": 0.0},
         "vp_actif": False,
+        "vps": [],
         "segments_reserves": [],
         "entrees_bloquees": [],
         "passages_fermes": [],
@@ -409,6 +410,14 @@ def test_state_signale_le_vp_et_ses_segments_reserves(logique: LogiqueServeur) -
     donnees = logique.construire_etat().donnees
     assert donnees["vp_actif"] is True
     assert donnees["segments_reserves"] == ["jean_de_la_bruyere-nations_nord", "nations_sud-jean_de_la_bruyere"]
+
+
+def test_state_donne_le_trajet_et_l_eta_annonces_du_vp(logique: LogiqueServeur) -> None:
+    numero = vp_inscrit(logique)
+    logique.traiter_tcp(numero, alerte(), 1.0)
+    assert logique.construire_etat().donnees["vps"] == [
+        {"id": "vp_1", "entree": "nations_sud", "sortie": "nations_nord", "eta": alerte().donnees["eta"]}
+    ]
 
 
 def test_densite_relevee_pendant_la_traversee_du_vp(logique: LogiqueServeur) -> None:

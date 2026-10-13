@@ -327,6 +327,10 @@ class LogiqueServeur:
             "usagers": [usager.vers_dict() for usager in self.__registre.usagers],
             "densite": densites,
             "vp_actif": self.vp_actif,
+            "vps": [
+                {"id": passage.identifiant, "entree": passage.entree, "sortie": passage.sortie, "eta": passage.eta}
+                for passage in self.__passages_en_cours.values()
+            ],
             "segments_reserves": self.segments_reserves,
             "entrees_bloquees": self.__regulateur.entrees_bloquees,
             "passages_fermes": [
@@ -387,7 +391,7 @@ class LogiqueServeur:
         if vp.identifiant not in self.__passages_en_cours:
             segments = [segment.nom for segment in vp.calculer_trajectoire(self.__rond_point).segments]
             self.__passages_en_cours[vp.identifiant] = PassageEnCours(
-                vp.identifiant, vp.branche_entree, vp.branche_sortie, segments, maintenant, self.__regulateur.active
+                vp.identifiant, vp.branche_entree, vp.branche_sortie, segments, maintenant, self.__regulateur.active, eta
             )
             journal.info(
                 "VP %s annoncé de %s vers %s, à l'anneau dans %.1f s ; segments réservés : %s",

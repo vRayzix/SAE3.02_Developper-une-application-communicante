@@ -45,6 +45,7 @@ def etat(regulation: bool = True, vp_actif: bool = False) -> dict:
         "usagers": [voiture.vers_dict()],
         "densite": {"nations_nord": 0.0, "jean_de_la_bruyere": 0.25, "nations_sud": 0.5, "albert_camus": 0.875},
         "vp_actif": vp_actif,
+        "vps": [{"id": "vp_1", "entree": "nations_sud", "sortie": "nations_nord", "eta": 4.0}] if vp_actif else [],
         "segments_reserves": ["nations_sud-jean_de_la_bruyere"] if vp_actif else [],
         "entrees_bloquees": [],
         "passages_fermes": [],
