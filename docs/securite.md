@@ -34,9 +34,16 @@ Le cache des nonces est borné : un nonce est oublié dès que son horodatage so
 
 Le contrôle anti-rejeu vient après la signature : tant que le HMAC n'est pas vérifié, l'horodatage et le nonce ont pu être choisis par l'attaquant. Toutes ces erreurs héritent de `CherryPieError` ; la trame fautive est journalisée puis ignorée, sans interrompre le serveur.
 
+## Accès à la base
+
+- Seul le serveur, sur la VM code, se connecte à MariaDB. La supervision demande les statistiques au serveur par STATS_DEMANDE, une trame signée comme les autres et acceptée seulement d'une session de supervision abonnée : les identifiants de la base ne quittent pas la VM code.
+- L'utilisateur MariaDB `cherrypie` n'a de droits que sur la base `cherrypie`, et seulement depuis l'adresse de la VM code (`'cherrypie'@'192.168.56.11'`). Sur la VM bdd, le pare-feu n'ouvre le port 3306 qu'à cette adresse.
+- Toutes les requêtes sont paramétrées (`%s`) : aucune valeur reçue du réseau n'est collée dans le texte SQL.
+
 ## Limites assumées
 
 - **Pas de confidentialité** : les trames circulent en clair. Quelqu'un qui écoute le réseau peut lire les positions et les consignes, mais pas les modifier ni en fabriquer. Chiffrer demanderait une bibliothèque de cryptographie externe, que la stack imposée n'autorise pas, et un chiffrement écrit à la main serait plus dangereux qu'utile.
 - **Clé partagée** : tous les programmes utilisent la même clé. Un client compromis pourrait donc signer des messages au nom d'un autre usager. Le serveur n'accepte une position UDP que pour un identifiant enregistré par une session TCP active, ce qui limite l'usurpation sans l'empêcher.
 - **Horloges** : le contrôle d'horodatage suppose des horloges à moins de 5 s d'écart. C'est automatique sur une seule machine ; sur plusieurs, il faut les synchroniser par NTP.
 - **Clé stockée en clair** dans `config.ini` : ce fichier ne doit être ni versionné ni partagé.
+- **Connexion à MariaDB en clair** : mysql-connector-python peut chiffrer la connexion (TLS), mais cela demande des certificats sur la VM bdd. Sur le réseau privé des deux VM, la connexion reste en clair ; le mot de passe de la base est dans `config.ini`, sur la VM code seulement.
