@@ -30,6 +30,12 @@ pip install -r requirements.txt
 cp config.exemple.ini config.ini   # sous Windows : copy config.exemple.ini config.ini
 ```
 
+`requirements.txt` ne contient que ce qu'il faut pour faire tourner le projet : PyQt6, pyqtgraph et mysql-connector-python, en versions exactes. Pour lancer les tests, on installe en plus les outils de développement :
+
+```bash
+pip install -r requirements-dev.txt   # requirements.txt, plus pytest et pytest-timeout
+```
+
 `config.ini` n'est pas versionné : il contient la clé HMAC partagée et les identifiants de la base. Les valeurs d'exemple sont à remplacer.
 
 La configuration d'exemple décrit le rond-point de Bel Air : quatre branches en double chaussée (le boulevard des Nations, côté nord et côté sud, la rue Jean de la Bruyère et la rue Albert Camus), chacune dans sa section `[branche.<identifiant>]` avec son nom de rue, son cap, la largeur de son terre-plein et la position de son passage piéton, et un anneau à deux voies. Les mesures et les choix de modélisation sont dans [docs/geometrie_bel_air.md](docs/geometrie_bel_air.md).
@@ -99,10 +105,14 @@ La même fenêtre en 1024 × 640, 1280 × 720 et 1440 × 800 : [1024 × 640](doc
 
 ## Tests
 
+Les tests demandent `requirements-dev.txt` (voir l'installation).
+
 ```bash
-python -m pytest                  # tous les tests, environ 55 s
-python -m pytest -m "not lent"    # sans le test de bout en bout, qui joue deux traversées en temps réel
+python -m pytest                  # tous les tests, environ 75 s
+python -m pytest -m "not lent"    # sans les tests qui jouent des traversées en temps réel, environ 30 s
 ```
+
+Chaque test a 60 s au plus (`timeout` dans `pytest.ini`) : un test bloqué échoue, avec la pile de chaque thread, au lieu de figer la suite.
 
 ## Organisation du dépôt
 
