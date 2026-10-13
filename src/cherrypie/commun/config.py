@@ -80,6 +80,9 @@ class Configuration:
             "mot_de_passe": self.__lire_texte(parseur, "bdd", "mot_de_passe"),
             "base": self.__lire_texte(parseur, "bdd", "base"),
         }
+        self.__delai_connexion_bdd = self.__lire_reel_positif(parseur, "bdd", "delai_connexion")
+        self.__delai_reessai_bdd = self.__lire_reel_positif(parseur, "bdd", "delai_reessai")
+        self.__intervalle_releves = self.__lire_reel_positif(parseur, "bdd", "intervalle_releves")
         self.__verifier_coherence()
 
     @classmethod
@@ -212,6 +215,21 @@ class Configuration:
     def parametres_bdd(self) -> dict[str, str | int]:
         """dict[str, str | int]: hote, port, utilisateur, mot_de_passe et base de MariaDB (copie)."""
         return dict(self.__parametres_bdd)
+
+    @property
+    def delai_connexion_bdd(self) -> float:
+        """float: attente maximale d'une connexion à MariaDB, en secondes."""
+        return self.__delai_connexion_bdd
+
+    @property
+    def delai_reessai_bdd(self) -> float:
+        """float: attente entre deux tentatives de connexion à une base injoignable, en secondes."""
+        return self.__delai_reessai_bdd
+
+    @property
+    def intervalle_releves(self) -> float:
+        """float: intervalle entre deux relevés de densité écrits en base, en secondes."""
+        return self.__intervalle_releves
 
     def __verifier_coherence(self) -> None:
         """Vérifie les contraintes qui portent sur plusieurs valeurs à la fois."""
