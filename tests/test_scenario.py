@@ -1,6 +1,7 @@
 """Tests du scénario de démonstration : lignes, instants de départ et enregistrement JSON."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -95,3 +96,12 @@ def test_json_invalide_refuse(texte: str, motif: str) -> None:
 def test_branche_d_un_autre_rond_point_refusee(scenario: Scenario) -> None:
     with pytest.raises(ScenarioInvalideError, match="albert_camus"):
         Scenario.depuis_json(scenario.vers_json(), BRANCHES - {"albert_camus"})
+
+
+# ---------- Scénario fourni ----------
+
+def test_scenario_de_demonstration_valide_pour_bel_air() -> None:
+    chemin = Path(__file__).resolve().parent.parent / "docs" / "scenario_demonstration.json"
+    scenario = Scenario.depuis_json(chemin.read_text(encoding="utf-8"), BRANCHES)
+    assert scenario.nombre_d_usagers == 9
+    assert scenario.lignes[-1].categorie == "vp"
