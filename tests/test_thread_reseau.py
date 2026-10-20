@@ -91,7 +91,6 @@ def lancer_reseau(qapp: QApplication) -> Iterator[Callable[[Configuration], tupl
 
 # ---------- Abonnement et STATE ----------
 
-
 def test_state_recu_dans_le_thread_de_l_ihm(lancer_serveur: Callable[..., Serveur], lancer_reseau: Callable) -> None:
     serveur = lancer_serveur(**DELAIS_RAPIDES)
     _, _, recepteur = lancer_reseau(serveur.config)
@@ -124,7 +123,6 @@ def test_ping_garde_la_supervision_abonnee(lancer_serveur: Callable[..., Serveur
 
 # ---------- Réglage de la régulation ----------
 
-
 def test_reglage_transmis_au_serveur(lancer_serveur: Callable[..., Serveur], lancer_reseau: Callable) -> None:
     serveur = lancer_serveur(**DELAIS_RAPIDES)
     reseau, _, recepteur = lancer_reseau(serveur.config)
@@ -148,7 +146,6 @@ def test_reglage_demande_hors_connexion_abandonne(
 
 # ---------- Statistiques ----------
 
-
 def test_statistiques_demandees_et_recues(lancer_serveur: Callable[..., Serveur], lancer_reseau: Callable) -> None:
     serveur = lancer_serveur(**DELAIS_RAPIDES)
     reseau, _, _ = lancer_reseau(serveur.config)
@@ -160,7 +157,6 @@ def test_statistiques_demandees_et_recues(lancer_serveur: Callable[..., Serveur]
 
 
 # ---------- Coupures et arrêt ----------
-
 
 def test_reconnexion_apres_redemarrage_du_serveur(
     lancer_serveur: Callable[..., Serveur], lancer_reseau: Callable

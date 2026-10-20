@@ -28,7 +28,6 @@ def scene(qapp: QApplication) -> SceneRondPoint:
 
 # ---------- Repère ----------
 
-
 def test_vers_scene_inverse_les_ordonnees() -> None:
     point = SceneRondPoint.vers_scene(Position(3.0, 4.0))
     assert (point.x(), point.y()) == pytest.approx((3.0, -4.0))
@@ -51,7 +50,6 @@ def test_scene_ajustee_au_dessin(scene: SceneRondPoint) -> None:
 
 
 # ---------- Branches ----------
-
 
 def test_scene_une_bande_et_un_texte_par_branche(scene: SceneRondPoint) -> None:
     assert list(scene.bandes_densite) == ["nations_nord", "jean_de_la_bruyere", "nations_sud", "albert_camus"]
@@ -76,7 +74,6 @@ def test_scene_suit_le_nombre_de_branches(qapp: QApplication) -> None:
 
 
 # ---------- Affichage d'un STATE ----------
-
 
 def decrire(usager: Usager, x: float | None = 10.0, y: float = -30.0, consigne: CodeNotification | None = None) -> dict:
     """Décrit un usager comme le fait le STATE, à une position donnée (x à None : position inconnue)."""
