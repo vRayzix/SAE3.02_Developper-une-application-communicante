@@ -103,6 +103,7 @@ class Legende(QGroupBox):
         """Silhouette d'usager vue de dessus, dans les proportions de son gabarit, avec son contour."""
 
         def dessiner(pinceau: QPainter, cadre: QRectF) -> None:
+            """Peint la silhouette au centre de l'icône."""
             longueur, largeur = GABARITS_CATEGORIE[categorie]
             # Chaque silhouette remplit l'icône dans ses propres proportions : la légende
             # montre des formes reconnaissables, pas des tailles relatives.
@@ -130,6 +131,7 @@ class Legende(QGroupBox):
         """Bande horizontale sur fond de chaussée : voie réservée, entrée temporisée ou niveau de densité."""
 
         def dessiner(pinceau: QPainter, cadre: QRectF) -> None:
+            """Peint le fond de chaussée, puis la bande au milieu de l'icône."""
             pinceau.setPen(Qt.PenStyle.NoPen)
             pinceau.setBrush(QBrush(COULEUR_CHAUSSEE))
             pinceau.drawRect(cadre)
