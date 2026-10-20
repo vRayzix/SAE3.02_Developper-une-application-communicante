@@ -1,8 +1,8 @@
-# Diagramme de classes prévisionnel
+# Diagramme de classes
 
-Ce document décrit les classes prévues avant le développement. Il sera ajusté au fil de l'avancement, le diagramme final étant celui du code rendu.
+Ce document décrit les classes du code rendu, paquet par paquet : attributs, méthodes et relations.
 
-Dépendances entre paquets : `commun` ne dépend d'aucun autre paquet ; `modele` utilise `commun` ; `serveur` et `client` utilisent `commun` et `modele` ; `ihm` lance des clients et lit la base ; seul `serveur` écrit dans `bdd`.
+Dépendances entre paquets : `commun` ne dépend d'aucun autre paquet ; `modele` utilise `commun` ; `client` utilise `commun` et `modele` ; `serveur` utilise `commun`, `modele` et `bdd`, à qui il confie son historique ; `bdd` reprend la mesure d'une traversée (`PassageVp`, du paquet `serveur`) pour l'écrire. `ihm` utilise `commun`, `modele` et `client`, pour lancer des clients, et un module de `serveur`, `densite`, pour reprendre les mêmes niveaux de densité (`CalculateurDensite.niveau()`, `NiveauDensite`). Elle ne touche jamais la base.
 
 ## Conventions
 
@@ -72,6 +72,7 @@ classDiagram
         -intervalle_ping : float
         -timeout_client : float
         -intervalle_position : float
+        -intervalle_etat : float
         -backoff_initial : float
         -backoff_max : float
         -branches : list[ParametresBranche]
@@ -85,6 +86,12 @@ classDiagram
         -delai_reessai_bdd : float
         -intervalle_releves : float
         +depuis_fichier(chemin: str | Path) Configuration$
+        -verifier_coherence() None
+        -lire_texte(parseur: configparser.ConfigParser, section: str, cle: str) str$
+        -lire_entier(parseur: configparser.ConfigParser, section: str, cle: str, minimum: int, maximum: int | None) int$
+        -lire_reel_positif(parseur: configparser.ConfigParser, section: str, cle: str) float$
+        -lire_branches(parseur: configparser.ConfigParser) list[ParametresBranche]$
+        -lire_branche(parseur: configparser.ConfigParser, nom: str) ParametresBranche$
     }
 
     class ParametresBranche {
@@ -376,7 +383,6 @@ classDiagram
         +etape_a(avancement: float) Etape
         +segment_a(avancement: float) Segment | None
         +place_a_droite_a(avancement: float) float
-        +passe_par(segment: Segment) bool
         -troncon_a(avancement: float) tuple
         -place_sur_la_chaussee(branche: Branche) float$
         -arcs(rond_point: RondPoint, entree: Branche, sortie: Branche, prioritaire: bool) list[TronconArc]$
@@ -436,6 +442,9 @@ classDiagram
         -transmettre_a_l_historique() None
         -transmettre_les_passages() None
         -noter_connexion(usager: str, categorie: str, evenement: TypeConnexion, detail: str) None
+        +arret_demande() bool
+        -proteger(numero: int, action: Callable[[int], None]) None
+        -tout_fermer() None
     }
 
     class Connexion {
@@ -447,6 +456,7 @@ classDiagram
         +envoyer(trame: bytes) None
         +vider() None
         +fermer() None
+        +octets_en_attente() int
     }
 
     class LogiqueServeur {
@@ -475,6 +485,13 @@ classDiagram
         -terminer_vp(session: Session, maintenant: float) Reponse
         -regler(session: Session, message: Message) Reponse
         -demander_statistiques(session: Session) Reponse$
+        -etat(densites: dict[str, float]) Message
+        -accueillir(session: Session, message: Message) Reponse
+        -creer_usager(message: Message) Usager
+        -usager_de(session: Session) Usager
+        -abonner(session: Session) Reponse
+        -refuser(emetteur: str, raison: str, reessayer: bool) Reponse$
+        -accuse_hello(accepte: bool, raison: str | None, reessayer: bool) Message$
     }
 
     class Reponse {
@@ -553,6 +570,7 @@ classDiagram
         -regulation : bool
         -entree_anneau : float | None
         -releves_densite : list[float]
+        -eta : float
         +sur_l_anneau() bool
         +noter_etape(etape: Etape, maintenant: float) None
         +noter_densite(densite_moyenne: float) None
@@ -613,6 +631,11 @@ classDiagram
         -anneau_libre(branche: Branche, vehicules: list[Usager]) bool
         -sur_la_voie(rayon_de_voie: float, autre: Usager) bool
         -range(usager: Usager, sortie: Branche) bool
+        -branche_de(usager: Usager) str$
+        -le_long(position: Position, branche: Branche) float$
+        -ecart_a_l_axe(position: Position, branche: Branche) float$
+        -angle(position: Position) float$
+        -plus_proche(distances: list[float]) float | None$
     }
 
     Circulation ..> Vue : produit
@@ -710,6 +733,11 @@ classDiagram
         -lire(attente: float) bool
         -envoyer(message: Message) None
         -changer_etat(etat: EtatConnexion, detail: str) None
+        +usager() Usager
+        +arret_demande() bool
+        -ouvrir(octets: bytes) Message
+        -fermer_connexion() None
+        -appeler(rappel: Callable[..., None] | None) None
     }
 
     class Deplacement {
@@ -807,14 +835,19 @@ classDiagram
         +afficher_etat(etat: dict) None
         -afficher_usagers(usagers: list[dict]) None
         -afficher_densite(nom: str, densite: float) None
-        -dessiner_branche(branche: Branche) None
         -dessiner_anneau() None
-        -dessiner_passage_pieton(branche: Branche) None
         -dessiner_densite(branche: Branche) None
-        -dessiner_feu_entree(branche: Branche) None
-        -dessiner_arc_reserve(segment: Segment) None
         -ajouter_ligne(debut: Position, fin: Position, crayon: QPen) QGraphicsLineItem
         -ecrire(texte: QGraphicsTextItem, contenu: str, branche: Branche) None$
+        -dessiner_chaussee(branche: Branche) None
+        -dessiner_terre_plein(branche: Branche) None
+        -dessiner_marquages(branche: Branche) None
+        -peindre_fleche(branche: Branche, distance: float, decalage: float, vers_le_centre: bool) None
+        -poser_entree_temporisee(branche: Branche) None
+        -poser_barrieres_du_passage(branche: Branche) None
+        -poser_voie_reservee(segment: Segment) None
+        -poser_etiquette(branche: Branche) None
+        -ajouter_polygone(branche: Branche, coins: list[tuple[float, float]], pinceau: QBrush, crayon: QPen) QGraphicsItem
     }
 
     class MarqueurUsager {
@@ -864,6 +897,8 @@ classDiagram
         -envoyer(message: Message) None
         -fermer() None
         -changer_etat(etat: EtatConnexion, detail: str) None
+        +reglages_en_attente() int
+        +arret_demande() bool
     }
 
     class LanceurClients {
@@ -1084,6 +1119,12 @@ classDiagram
         -repondre(numero: int) None
         -connecter(forcer: bool) bool
         -signaler_panne(erreur: BddError) None
+        +arret_demande() bool
+        +taches_en_attente() int
+        +reponses_en_attente() int
+        -attendre_une_tache() object
+        -traiter_les_taches_arrivees() None
+        -traiter(tache: object) None
     }
 
     class DemandeStatistiques {
@@ -1125,6 +1166,9 @@ classDiagram
         -tracer_traversees(passages: list[dict]) None
         -tracer_densites(releves: list[dict]) None
         -resumer(moyennes: dict) str$
+        -en_francais(valeur: float) str$
+        -preparer_graphiques() None
+        -disposer() None
     }
 
     Thread <|-- Historique

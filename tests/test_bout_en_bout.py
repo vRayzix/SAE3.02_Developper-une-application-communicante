@@ -83,6 +83,8 @@ def traversee(
     return serveur.logique.passages[0]
 
 
+# ---------- Mesure avec et sans régulation ----------
+
 @pytest.mark.lent
 def test_vp_traverse_plus_vite_avec_la_regulation(
     lancer_serveur: Callable[..., Serveur], preparer_client: Callable[..., ClientUsager]

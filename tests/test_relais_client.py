@@ -45,7 +45,6 @@ def depuis_un_thread(appel: Callable[[], None]) -> None:
 
 # ---------- Rappels ----------
 
-
 def test_position_relayee_dans_le_thread_principal(qapp: QApplication) -> None:
     relais = RelaisClient("voiture_12")
     recepteur = Recepteur(relais)
@@ -72,7 +71,6 @@ def test_connexion_relayee_avec_son_etat(qapp: QApplication) -> None:
 
 
 # ---------- Avec un vrai client ----------
-
 
 def test_client_relie_au_relais(
     qapp: QApplication, lancer_serveur: Callable[..., Serveur], preparer_client: Callable[..., ClientUsager]

@@ -71,7 +71,6 @@ def threads_clients() -> list[threading.Thread]:
 
 # ---------- Fumée ----------
 
-
 def test_fenetre_construite_et_affichee(fenetre: FenetreSupervision) -> None:
     fenetre.show()
     assert fenetre.windowTitle() == TITRE
@@ -87,7 +86,6 @@ def test_vue_montre_tout_le_rond_point(fenetre: FenetreSupervision) -> None:
 
 
 # ---------- Tailles d'écran ----------
-
 
 def test_taille_minimale_sans_taille_fixe(fenetre: FenetreSupervision) -> None:
     assert (fenetre.minimumWidth(), fenetre.minimumHeight()) == (LARGEUR_MINIMALE, HAUTEUR_MINIMALE)
@@ -118,7 +116,6 @@ def test_scene_et_panneau_grandissent_ensemble(fenetre: FenetreSupervision) -> N
 
 
 # ---------- STATE reçu ----------
-
 
 def test_state_dessine_sur_la_scene(fenetre: FenetreSupervision) -> None:
     fenetre.reseau.etat_recu.emit(etat(vp_actif=True))
@@ -155,7 +152,6 @@ def test_deconnexion_desactive_la_case(fenetre: FenetreSupervision) -> None:
 
 # ---------- Sections ----------
 
-
 def test_sections_scenario_et_suivi(fenetre: FenetreSupervision) -> None:
     assert [fenetre.sections.tabText(rang) for rang in range(fenetre.sections.count())] == ["Scénario", "Suivi"]
     assert fenetre.sections.widget(0) is fenetre.panneau_scenario
@@ -183,7 +179,6 @@ def test_deconnexion_n_invente_pas_d_evenement(fenetre: FenetreSupervision) -> N
 
 # ---------- Statistiques ----------
 
-
 def test_onglet_statistiques_a_cote_du_rond_point(fenetre: FenetreSupervision) -> None:
     assert [fenetre.onglets.tabText(rang) for rang in range(fenetre.onglets.count())] == ["Rond-point", "Statistiques"]
     assert fenetre.onglets.widget(1) is fenetre.panneau_stats
@@ -206,7 +201,6 @@ def test_ouvrir_l_onglet_demande_les_statistiques(
 
 
 # ---------- Avec un vrai serveur ----------
-
 
 def test_interrupteur_coupe_la_regulation(lancer_serveur: Callable[..., Serveur], fabrique_fenetre: Callable) -> None:
     serveur = lancer_serveur()

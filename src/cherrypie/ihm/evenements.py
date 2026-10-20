@@ -30,6 +30,11 @@ class EvenementsServeur:
         self.__precedent: dict | None = None
 
     @property
+    def precedent(self) -> dict | None:
+        """dict | None: dernier STATE comparé, None avant le premier ou après un oubli."""
+        return self.__precedent
+
+    @property
     def libelles(self) -> dict[str, str]:
         """dict[str, str]: nom de rue de chaque branche, par identifiant (copie)."""
         return dict(self.__libelles)

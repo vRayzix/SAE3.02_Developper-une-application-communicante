@@ -101,6 +101,11 @@ class FenetreSupervision(QMainWindow):
         self.__disposer()
 
     @property
+    def case_a_aligner(self) -> bool:
+        """bool: True tant que la case de régulation n'a pas repris l'état du serveur depuis la connexion."""
+        return self.__case_a_aligner
+
+    @property
     def config(self) -> Configuration:
         """Configuration: configuration de la supervision."""
         return self.__config

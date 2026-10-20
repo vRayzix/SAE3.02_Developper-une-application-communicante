@@ -414,17 +414,6 @@ class Trajectoire:
         troncon, _ = self.__troncon_a(avancement)
         return troncon.place_a_droite
 
-    def passe_par(self, segment: Segment) -> bool:
-        """Indique si la trajectoire emprunte un segment de l'anneau.
-
-        Args:
-            segment (Segment): segment du rond-point.
-
-        Returns:
-            bool: True si le segment fait partie du trajet.
-        """
-        return segment in self.segments
-
     def __troncon_a(self, avancement: float) -> tuple[Troncon, float]:
         """Trouve le tronçon où se trouve un usager et la distance parcourue sur ce tronçon."""
         if not math.isfinite(avancement) or avancement < 0:
@@ -467,6 +456,7 @@ class Trajectoire:
         ]
 
         def ouverture(longueur: float, rayon: float) -> float:
+            """Angle, en degrés, qu'il faut pour parcourir une longueur sur un rayon, sans dépasser la part permise."""
             return min(math.degrees(longueur / rayon), PART_MAX_TRANSITION * (fin - debut))
 
         points = [

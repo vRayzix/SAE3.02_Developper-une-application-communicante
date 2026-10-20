@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "lignes": [
+    {
+      "categorie": "voiture",
+      "entree": "nations_sud",
+      "sortie": "albert_camus",
+      "nombre": 3,
+      "delai": 0.0
+    },
+    {
+      "categorie": "voiture",
+      "entree": "jean_de_la_bruyere",
+      "sortie": "nations_sud",
+      "nombre": 2,
+      "delai": 0.0
+    },
+    {
+      "categorie": "moto",
+      "entree": "albert_camus",
+      "sortie": "nations_nord",
+      "nombre": 1,
+      "delai": 0.0
+    },
+    {
+      "categorie": "trottinette",
+      "entree": "nations_nord",
+      "sortie": "jean_de_la_bruyere",
+      "nombre": 1,
+      "delai": 0.0
+    },
+    {
+      "categorie": "pieton",
+      "entree": "nations_nord",
+      "sortie": "nations_nord",
+      "nombre": 1,
+      "delai": 0.0
+    },
+    {
+      "categorie": "vp",
+      "entree": "nations_sud",
+      "sortie": "nations_nord",
+      "nombre": 1,
+      "delai": 3.5
+    }
+  ]
+}

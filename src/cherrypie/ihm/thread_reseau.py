@@ -72,6 +72,36 @@ class ReseauSupervision(QObject):
         self.__etat = EtatConnexion.DECONNECTE
 
     @property
+    def signataire(self) -> Signataire:
+        """Signataire: signe et vérifie les trames avec la clé partagée."""
+        return self.__signataire
+
+    @property
+    def garde(self) -> GardeAntiRejeu:
+        """GardeAntiRejeu: refuse les trames trop anciennes ou déjà reçues."""
+        return self.__garde
+
+    @property
+    def socket(self) -> socket.socket | None:
+        """socket.socket | None: connexion au serveur, None hors connexion."""
+        return self.__socket
+
+    @property
+    def decoupeur(self) -> DecoupeurTrames:
+        """DecoupeurTrames: découpeur des trames de la connexion en cours."""
+        return self.__decoupeur
+
+    @property
+    def reglages_en_attente(self) -> int:
+        """int: nombre de réglages demandés par l'IHM, pas encore envoyés."""
+        return self.__reglages.qsize()
+
+    @property
+    def statistiques_demandees(self) -> bool:
+        """bool: True si une demande de statistiques attend d'être envoyée."""
+        return self.__statistiques_demandees.is_set()
+
+    @property
     def config(self) -> Configuration:
         """Configuration: configuration de la supervision."""
         return self.__config

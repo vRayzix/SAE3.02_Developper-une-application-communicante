@@ -67,6 +67,16 @@ class Serveur:
         self.__prochain_releve = 0.0
 
     @property
+    def passages_transmis(self) -> int:
+        """int: nombre de traversées de VP déjà confiées à l'historique."""
+        return self.__passages_transmis
+
+    @property
+    def prochain_releve(self) -> float:
+        """float: instant (horloge monotone) du prochain relevé de densité."""
+        return self.__prochain_releve
+
+    @property
     def historique(self) -> Historique:
         """Historique: thread qui écrit l'historique en base et lit les statistiques."""
         return self.__historique

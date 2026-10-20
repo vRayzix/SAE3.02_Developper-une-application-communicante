@@ -6,7 +6,7 @@ Ce document décrit les messages échangés entre le serveur du rond-point, les 
 
 | Transport | Port | Usage |
 | --- | --- | --- |
-| TCP | 5050 | messages qui doivent arriver : HELLO, VP_ALERT, VP_FIN, BYE, PING, PONG, NOTIF, STATE, ABONNEMENT, REGLAGE, DEVANT, STATS_DEMANDE, STATS_REPONSE |
+| TCP | 5050 | messages qui doivent arriver : HELLO, HELLO_ACK, VP_ALERT, VP_FIN, BYE, PING, PONG, NOTIF, STATE, ABONNEMENT, REGLAGE, DEVANT, STATS_DEMANDE, STATS_REPONSE |
 | UDP | 5051 | positions (POS), environ toutes les 200 ms ; une position perdue est remplacée par la suivante |
 
 Les ports et les délais se règlent dans `config.ini`.

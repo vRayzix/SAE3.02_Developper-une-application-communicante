@@ -21,6 +21,12 @@ class Simulation:
     """Rond-point simulé : chaque pas fait avancer tous les usagers puis tourne une cadence du serveur."""
 
     def __init__(self, rond_point: RondPoint, pas: float = 0.2) -> None:
+        """Crée un rond-point vide, avec une supervision abonnée pour que la logique produise ses STATE.
+
+        Args:
+            rond_point (RondPoint): rond-point simulé.
+            pas (float): durée d'un pas, en secondes, pour les usagers comme pour la cadence du serveur.
+        """
         self.__rond_point = rond_point
         self.__pas = pas
         self.__logique = LogiqueServeur(rond_point, TIMEOUT_INFINI)
@@ -31,15 +37,33 @@ class Simulation:
         self.__logique.traiter_tcp(self.__supervision, Message(TypeMessage.ABONNEMENT, "supervision"), 0.0)
 
     @property
+    def pas(self) -> float:
+        """float: durée d'un pas, en secondes."""
+        return self.__pas
+
+    @property
+    def supervision(self) -> int:
+        """int: numéro de la session de supervision abonnée aux STATE."""
+        return self.__supervision
+
+    @property
+    def vps_annonces(self) -> set[int]:
+        """set[int]: sessions des VP annoncés qui n'ont pas encore envoyé VP_FIN (copie)."""
+        return set(self.__vps_annonces)
+
+    @property
     def rond_point(self) -> RondPoint:
+        """RondPoint: rond-point simulé."""
         return self.__rond_point
 
     @property
     def logique(self) -> LogiqueServeur:
+        """LogiqueServeur: logique du serveur, sans réseau."""
         return self.__logique
 
     @property
     def instant(self) -> float:
+        """float: temps écoulé depuis le début de la simulation, en secondes."""
         return self.__instant
 
     @property

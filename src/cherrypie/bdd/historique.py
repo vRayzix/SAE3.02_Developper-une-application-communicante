@@ -65,6 +65,36 @@ class Historique(threading.Thread):
         self.__en_panne = False
 
     @property
+    def delai_reessai(self) -> float:
+        """float: attente entre deux tentatives de connexion, en secondes."""
+        return self.__delai_reessai
+
+    @property
+    def arret_demande(self) -> bool:
+        """bool: True une fois l'arrêt demandé."""
+        return self.__arret.is_set()
+
+    @property
+    def en_panne(self) -> bool:
+        """bool: True depuis l'échec d'une connexion ou d'une écriture, jusqu'au retour de la base."""
+        return self.__en_panne
+
+    @property
+    def prochain_essai(self) -> float:
+        """float: instant (horloge monotone) avant lequel le thread ne retente pas de se connecter."""
+        return self.__prochain_essai
+
+    @property
+    def taches_en_attente(self) -> int:
+        """int: nombre de tâches déposées que le thread n'a pas encore prises."""
+        return self.__taches.qsize()
+
+    @property
+    def reponses_en_attente(self) -> int:
+        """int: nombre de réponses de statistiques que le serveur n'a pas encore relevées."""
+        return self.__reponses.qsize()
+
+    @property
     def acces(self) -> AccesBdd:
         """AccesBdd: accès à la base."""
         return self.__acces

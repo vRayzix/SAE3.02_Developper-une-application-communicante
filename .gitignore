@@ -7,8 +7,13 @@ __pycache__/
 .venv/
 venv/
 
-# Configuration locale : contient la clé HMAC et le mot de passe de la base
+# Configuration locale : contient la clé HMAC et le mot de passe de la base,
+# et ses copies de sauvegarde (config.ini.ancien...)
 config.ini
+config.ini.*
+
+# Documents de travail locaux (photos aériennes, plans), non diffusables
+ressources_locales/
 
 # Journaux
 *.log

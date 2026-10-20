@@ -62,6 +62,11 @@ class AccesBdd:
         self.__connexion: MySQLConnectionAbstract | None = None
 
     @property
+    def delai_connexion(self) -> float:
+        """float: attente maximale d'une connexion, en secondes."""
+        return self.__delai_connexion
+
+    @property
     def adresse(self) -> str:
         """str: hôte et port du serveur MariaDB, pour les messages."""
         return f"{self.__parametres['hote']}:{self.__parametres['port']}"
