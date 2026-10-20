@@ -267,12 +267,6 @@ def test_etape_et_segment_selon_l_avancement(sud_vers_nord: Trajectoire) -> None
         assert (segment_trouve.nom if segment_trouve else None) == segment
 
 
-def test_passe_par_les_seuls_segments_du_trajet(rond_point: RondPoint, sud_vers_nord: Trajectoire) -> None:
-    segments = {segment.nom: segment for segment in rond_point.segments}
-    assert sud_vers_nord.passe_par(segments[f"{JEAN_DE_LA_BRUYERE}-{NATIONS_NORD}"])
-    assert not sud_vers_nord.passe_par(segments[f"{NATIONS_NORD}-{ALBERT_CAMUS}"])
-
-
 # ---------- Traversée d'un piéton ----------
 
 @pytest.fixture

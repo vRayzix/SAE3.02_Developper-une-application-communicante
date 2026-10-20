@@ -376,7 +376,6 @@ classDiagram
         +etape_a(avancement: float) Etape
         +segment_a(avancement: float) Segment | None
         +place_a_droite_a(avancement: float) float
-        +passe_par(segment: Segment) bool
         -troncon_a(avancement: float) tuple
         -place_sur_la_chaussee(branche: Branche) float$
         -arcs(rond_point: RondPoint, entree: Branche, sortie: Branche, prioritaire: bool) list[TronconArc]$
