@@ -55,6 +55,11 @@ class PanneauStats(QWidget):
         self.__bouton.clicked.connect(self.actualisation_demandee)
 
     @property
+    def libelles(self) -> dict[str, str]:
+        """dict[str, str]: nom de rue de chaque branche, par identifiant (copie)."""
+        return dict(self.__libelles)
+
+    @property
     def bouton(self) -> QPushButton:
         """QPushButton: bouton « Actualiser »."""
         return self.__bouton

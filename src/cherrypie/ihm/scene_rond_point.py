@@ -213,6 +213,11 @@ class SceneRondPoint(QGraphicsScene):
             self.__poser_etiquette(branche)
 
     @property
+    def libelles(self) -> dict[str, str]:
+        """dict[str, str]: nom de rue de chaque branche, par identifiant (copie)."""
+        return dict(self.__libelles)
+
+    @property
     def rond_point(self) -> RondPoint:
         """RondPoint: rond-point dessiné."""
         return self.__rond_point

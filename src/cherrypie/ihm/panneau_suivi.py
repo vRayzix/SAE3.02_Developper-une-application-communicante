@@ -77,6 +77,26 @@ class PanneauSuivi(QWidget):
         lanceur.notification_recue.connect(self.__noter_consigne)
 
     @property
+    def lignes(self) -> dict[str, QTreeWidgetItem]:
+        """dict[str, QTreeWidgetItem]: ligne de chaque client en route, par identifiant (copie)."""
+        return dict(self.__lignes)
+
+    @property
+    def evenements(self) -> EvenementsServeur:
+        """EvenementsServeur: comparaison des STATE successifs."""
+        return self.__evenements
+
+    @property
+    def dernier_message(self) -> tuple | None:
+        """tuple | None: clé du message de la ligne du haut, None tant que la liste est vide."""
+        return self.__dernier_message
+
+    @property
+    def sujets(self) -> dict[str, int]:
+        """dict[str, int]: sujets de la ligne du haut, avec le nombre de fois que chacun est revenu (copie)."""
+        return dict(self.__sujets)
+
+    @property
     def liste_clients(self) -> QTreeWidget:
         """QTreeWidget: une ligne par client en route."""
         return self.__liste_clients

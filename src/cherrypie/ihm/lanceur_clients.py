@@ -46,6 +46,16 @@ class LanceurClients(QObject):
         self.__clients: list[ClientUsager] = []
 
     @property
+    def libelles(self) -> dict[str, str]:
+        """dict[str, str]: nom de rue de chaque branche, par identifiant (copie)."""
+        return dict(self.__libelles)
+
+    @property
+    def compteurs(self) -> dict[str, int]:
+        """dict[str, int]: nombre d'usagers déjà lancés par catégorie (copie)."""
+        return dict(self.__compteurs)
+
+    @property
     def config(self) -> Configuration:
         """Configuration: configuration donnée aux clients lancés."""
         return self.__config

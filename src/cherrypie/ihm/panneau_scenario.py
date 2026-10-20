@@ -110,6 +110,21 @@ class PanneauScenario(QWidget):
         self.__mettre_a_jour_le_resume()
 
     @property
+    def lanceur(self) -> LanceurClients:
+        """LanceurClients: lanceur qui crée les clients."""
+        return self.__lanceur
+
+    @property
+    def branches(self) -> set[str]:
+        """set[str]: identifiants des branches du rond-point, pour vérifier un scénario ouvert (copie)."""
+        return set(self.__branches)
+
+    @property
+    def resume(self) -> QLabel:
+        """QLabel: nombre de lignes, d'usagers et instant des derniers départs."""
+        return self.__resume
+
+    @property
     def choix_categorie(self) -> QComboBox:
         """QComboBox: type d'usager ; la donnée de chaque entrée est la catégorie."""
         return self.__choix_categorie
