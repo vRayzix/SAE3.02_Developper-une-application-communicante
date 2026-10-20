@@ -203,11 +203,22 @@ def test_repr_de_la_configuration_ne_montre_pas_la_cle() -> None:
 
 SECRET = "cle_tres_secrete_42"
 
+def numero_de_ligne(debut: str) -> int:
+    """Numéro, compté depuis 1, de la ligne du fichier d'exemple qui commence par ce texte."""
+    lignes = CHEMIN_EXEMPLE.read_text(encoding="utf-8").splitlines()
+    return next(rang for rang, ligne in enumerate(lignes, start=1) if ligne.startswith(debut))
+
+
 LIGNES_MALFORMEES = [
     pytest.param(
-        "cle_hmac = remplacer_par_une_cle_secrete", f"cle_hmac {SECRET}", "ligne 12", id="sans-egal"
+        "cle_hmac = remplacer_par_une_cle_secrete",
+        f"cle_hmac {SECRET}",
+        f"ligne {numero_de_ligne('cle_hmac = ')}",
+        id="sans-egal",
     ),
-    pytest.param("[reseau]", f"cle_hmac = {SECRET}\n[reseau]", "ligne 4", id="avant-toute-section"),
+    pytest.param(
+        "[reseau]", f"cle_hmac = {SECRET}\n[reseau]", f"ligne {numero_de_ligne('[reseau]')}", id="avant-toute-section"
+    ),
 ]
 
 
