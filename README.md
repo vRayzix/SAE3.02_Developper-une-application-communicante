@@ -12,12 +12,13 @@ L'application se découpe en trois parties :
 
 ## Équipe
 
-- Lucas Carriat
-- Ilkan Guney
+Groupe CherryPie, BUT2 R&T de l'IUT de Colmar : Yassine et Ilkan.
 
 ## Prérequis
 
-- Python 3.11 ou plus récent
+- Python 3.11 ou plus récent, avec le module `venv` (sous Debian : `sudo apt install -y python3 python3-venv`) ;
+- git ;
+- MariaDB pour l'historique et les statistiques (voir « Installation de MariaDB sur Debian »). Sans base, le serveur et la supervision fonctionnent : seules les statistiques manquent.
 
 ## Installation
 
@@ -109,6 +110,18 @@ L'onglet Statistiques, après ces deux traversées :
 
 `python scripts/generer_captures.py` refait ces images : il lance un serveur et la fenêtre dans le même processus, sans rien afficher à l'écran.
 
+## Scénarios de démonstration
+
+`docs/scenario_demonstration.json` est le scénario des captures : trois voitures en file sur le boulevard des Nations côté sud, deux rue Jean de la Bruyère, une moto, une trottinette et un piéton, puis le véhicule prioritaire 3,5 s plus tard, du sud vers le nord. Pour mesurer ce qu'apporte la régulation :
+
+1. lancer le serveur, puis la supervision ;
+2. dans l'onglet Scénario, « Ouvrir un scénario… » et choisir `docs/scenario_demonstration.json`, puis « Lancer le scénario » ;
+3. une fois le véhicule prioritaire sorti, décocher « Régulation active » ;
+4. relancer le même scénario ;
+5. ouvrir l'onglet Statistiques : les deux traversées y sont, avec le temps moyen de chaque mode et le gain.
+
+Chaque scénario composé dans la supervision s'enregistre de la même façon (« Enregistrer le scénario… ») pour être rejoué à l'identique.
+
 ## Historique en base
 
 Le serveur écrit dans MariaDB :
@@ -133,7 +146,7 @@ Le déploiement final sépare trois machines. Les adresses ci-dessous sont des e
 
 Les trames portent une heure, refusée si elle s'écarte de plus de 5 s de celle du destinataire (anti-rejeu). Les horloges des trois machines doivent donc être à l'heure : sur Debian, `timedatectl` doit indiquer `System clock synchronized: yes` (sinon `sudo apt install -y systemd-timesyncd`).
 
-### VM bdd : installation de MariaDB sur Debian
+### Installation de MariaDB sur Debian (VM bdd)
 
 ```bash
 sudo apt update && sudo apt install -y mariadb-server
@@ -238,7 +251,7 @@ Sans MariaDB, le serveur et la supervision fonctionnent quand même. Le serveur 
 Les tests demandent `requirements-dev.txt` (voir l'installation).
 
 ```bash
-python -m pytest                  # tous les tests, environ 75 s
+python -m pytest                  # tous les tests, environ 80 s
 python -m pytest -m "not lent"    # sans les tests qui jouent des traversées en temps réel, environ 30 s
 ```
 
@@ -248,11 +261,24 @@ Chaque test a 60 s au plus (`timeout` dans `pytest.ini`) : un test bloqué écho
 
 ## Organisation du dépôt
 
-| Dossier | Contenu |
+```
+src/cherrypie/
+├── commun/    configuration, erreurs, messages, découpage des trames, HMAC et anti-rejeu
+├── modele/    usagers, rond-point (branches, segments), trajectoires, positions
+├── serveur/   boucle select, logique, registre, densité, circulation, régulation, passages des VP
+├── client/    client usager (connexion, heartbeat, reconnexion) et déplacement
+├── ihm/       fenêtre de supervision, scène 2D, réseau en QThread, scénario, suivi, statistiques
+└── bdd/       schema.sql, AccesBdd, historique écrit dans son thread
+tests/         un fichier test_<module>.py par module, doublures de la base et simulation
+docs/          diagramme de classes, protocole, sécurité, géométrie de Bel Air, captures, scénario
+scripts/       lancement du serveur et de la supervision, création des tables, génération des captures
+Livrables/     livrables rendus (QQOQCP, cahier des charges)
+RessourcesProjets/  consignes et ressources fournies pour la SAÉ
+```
+
+| Fichier | Rôle |
 | --- | --- |
-| `src/cherrypie/` | code de l'application : `commun`, `modele`, `serveur`, `client`, `ihm`, `bdd` |
-| `tests/` | tests pytest |
-| `docs/` | documentation technique : diagramme de classes, protocole, sécurité, captures d'écran |
-| `scripts/` | scripts de lancement, de création des tables (`init_bdd.py`) et de génération des captures |
-| `Livrables/` | livrables rendus (QQOQCP, cahier des charges) |
-| `RessourcesProjets/` | consignes et ressources fournies pour la SAÉ |
+| `config.exemple.ini` | modèle de `config.ini`, une ligne de commentaire par clé |
+| `requirements.txt` | dépendances d'exécution, versions exactes |
+| `requirements-dev.txt` | dépendances de test (pytest, pytest-timeout), en plus des précédentes |
+| `pytest.ini` | chemin des sources, marqueurs `lent` et `bdd`, délai de 60 s par test |
