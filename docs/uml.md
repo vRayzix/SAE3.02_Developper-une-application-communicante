@@ -175,7 +175,8 @@ classDiagram
 ```
 
 - `Enveloppe` est la forme transmise sur le réseau : le `Message`, plus l'horodatage, le nonce et le HMAC. `Signataire.signer()` la construit ; à la réception, `Signataire.verifier()` puis `GardeAntiRejeu.controler()` la valident.
-- `ParametresBranche` décrit une branche telle que la donne sa section `[branche.<identifiant>]` de `config.ini` : identifiant (celui du protocole), libellé affiché, cap depuis le nord, largeur du terre-plein et distance du passage piéton. La configuration refuse un identifiant qui n'est pas en minuscules sans accents, une section sans branche, deux branches au même cap, ou une voie d'anneau plus large que le rayon.
+- `Configuration` valide un `configparser` complet. Les scripts ne la lisent pas directement dans un fichier : la fonction `resoudre_configuration()` (module `commun/resolution.py`, sans classe) part des valeurs par défaut, y applique `config.ini` s'il existe, puis les variables `CHERRYPIE_*` et les options de la ligne de commande, et ajoute la clé HMAC et le mot de passe de la base pris dans l'environnement ou saisis. `Configuration` accepte une clé et un mot de passe vides : chaque script n'exige que les secrets dont il se sert.
+- `ParametresBranche` décrit une branche telle que la donne sa section `[branche.<identifiant>]` de la configuration : identifiant (celui du protocole), libellé affiché, cap depuis le nord, largeur du terre-plein et distance du passage piéton. La configuration refuse un identifiant qui n'est pas en minuscules sans accents, une section sans branche, deux branches au même cap, ou une voie d'anneau plus large que le rayon.
 - `CodeNotification` fait partie du protocole plutôt que du serveur, parce que le client en a besoin pour réagir aux consignes.
 - `DecoupeurTrames` tient le tampon d'une socket TCP : `ajouter()` renvoie les trames complètes et garde le reste pour la lecture suivante.
 

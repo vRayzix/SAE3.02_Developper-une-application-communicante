@@ -12,7 +12,7 @@ Ces protections s'appliquent à toutes les trames, TCP comme UDP. Le code se tro
 
 ## Signature HMAC
 
-- La clé est partagée par le serveur et tous les clients. Elle est lue dans la section `[securite]` de `config.ini`, fichier qui n'est pas versionné.
+- La clé est partagée par le serveur et tous les clients. Elle vient de la variable d'environnement `CHERRYPIE_CLE`, sinon d'une saisie masquée au lancement ; jamais d'une option de la ligne de commande, que `ps` montre à tous les utilisateurs de la machine, ni de `config.ini`, qui refuse de la contenir.
 - Le HMAC est calculé sur l'enveloppe privée de son champ `hmac`, sérialisée de façon canonique : `json.dumps(contenu, sort_keys=True, separators=(",", ":"))`. L'émetteur et le récepteur signent ainsi exactement les mêmes octets, quel que soit l'ordre dans lequel les champs ont été reçus.
 - La vérification recalcule le HMAC et le compare avec `hmac.compare_digest`. Cette comparaison prend le même temps quelle que soit la position de la première différence : mesurer le temps de réponse ne permet pas de deviner la signature octet par octet.
 - Le champ `id` fait partie du contenu signé : sans la clé, impossible de se faire passer pour un autre usager.
@@ -21,7 +21,7 @@ Ces protections s'appliquent à toutes les trames, TCP comme UDP. Le code se tro
 
 Une trame capturée sur le réseau garde une signature valide. Sans autre protection, un attaquant pourrait la renvoyer telle quelle, par exemple un VP_ALERT pour bloquer les entrées du rond-point. Deux contrôles l'en empêchent :
 
-1. **Horodatage** : la trame est refusée si `|maintenant - ts|` dépasse 5 s (`fenetre_anti_rejeu` dans `config.ini`).
+1. **Horodatage** : la trame est refusée si `|maintenant - ts|` dépasse 5 s (`fenetre_anti_rejeu`, réglable dans `config.ini`).
 2. **Nonce** : chaque message porte un nonce de 16 caractères hexadécimaux tiré avec `secrets.token_hex(8)`. Le récepteur retient les nonces reçus et refuse une trame dont le nonce a déjà été vu.
 
 Le cache des nonces est borné : un nonce est oublié dès que son horodatage sort de la fenêtre, puisque sa trame serait de toute façon refusée par le premier contrôle. Sa taille dépend donc du trafic reçu en 5 secondes, pas de la durée de fonctionnement du serveur. Seules les trames correctement signées y entrent : sans la clé, un attaquant ne peut pas le remplir.
@@ -37,7 +37,8 @@ Le contrôle anti-rejeu vient après la signature : tant que le HMAC n'est pas v
 ## Accès à la base
 
 - Seul le serveur, sur la VM code, se connecte à MariaDB. La supervision demande les statistiques au serveur par STATS_DEMANDE, une trame signée comme les autres et acceptée seulement d'une session de supervision abonnée : les identifiants de la base ne quittent pas la VM code.
-- L'utilisateur MariaDB `cherrypie` n'a de droits que sur la base `cherrypie`, et seulement depuis l'adresse de la VM code (`'cherrypie'@'192.168.56.11'`). Sur la VM bdd, le pare-feu n'ouvre le port 3306 qu'à cette adresse.
+- L'utilisateur MariaDB `cherrypie` n'a de droits que sur la base `cherrypie`, et seulement depuis l'adresse de la VM code (`'cherrypie'@'<adresse de la VM code>'`). Si un pare-feu tourne sur la VM bdd, il n'ouvre le port 3306 qu'à cette adresse.
+- Le mot de passe de la base vient de `CHERRYPIE_BDD_MDP` ou d'une saisie masquée, comme la clé. Sur la VM bdd, il ne passe que par une variable du shell, effacée (`unset`) une fois l'utilisateur créé.
 - Toutes les requêtes sont paramétrées (`%s`) : aucune valeur reçue du réseau n'est collée dans le texte SQL.
 
 ## Limites assumées
@@ -45,5 +46,5 @@ Le contrôle anti-rejeu vient après la signature : tant que le HMAC n'est pas v
 - **Pas de confidentialité** : les trames circulent en clair. Quelqu'un qui écoute le réseau peut lire les positions et les consignes, mais pas les modifier ni en fabriquer. Chiffrer demanderait une bibliothèque de cryptographie externe, que la stack imposée n'autorise pas, et un chiffrement écrit à la main serait plus dangereux qu'utile.
 - **Clé partagée** : tous les programmes utilisent la même clé. Un client compromis pourrait donc signer des messages au nom d'un autre usager. Le serveur n'accepte une position UDP que pour un identifiant enregistré par une session TCP active, ce qui limite l'usurpation sans l'empêcher.
 - **Horloges** : le contrôle d'horodatage suppose des horloges à moins de 5 s d'écart. C'est automatique sur une seule machine ; sur plusieurs, il faut les synchroniser par NTP.
-- **Clé stockée en clair** dans `config.ini` : ce fichier ne doit être ni versionné ni partagé.
-- **Connexion à MariaDB en clair** : mysql-connector-python peut chiffrer la connexion (TLS), mais cela demande des certificats sur la VM bdd. Sur le réseau privé des deux VM, la connexion reste en clair ; le mot de passe de la base est dans `config.ini`, sur la VM code seulement.
+- **Secrets dans l'environnement** : `CHERRYPIE_CLE` et `CHERRYPIE_BDD_MDP` restent lisibles par l'utilisateur qui lance le programme (et par root), dans `/proc/<pid>/environ`. C'est moins exposé qu'une option ou un fichier, sans être un coffre-fort ; la saisie masquée évite même cette trace.
+- **Connexion à MariaDB en clair** : mysql-connector-python peut chiffrer la connexion (TLS), mais cela demande des certificats sur la VM bdd. Sur le réseau privé des deux VM, la connexion reste en clair ; le mot de passe de la base n'est saisi que sur la VM code.
