@@ -30,7 +30,11 @@ source .venv/bin/activate          # sous Windows : .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-`requirements.txt` ne contient que ce qu'il faut pour faire tourner le projet : PyQt6, pyqtgraph et mysql-connector-python, en versions exactes. Pour lancer les tests, on installe en plus les outils de développement :
+`requirements.txt` ne contient que ce qu'il faut pour faire tourner le projet : PyQt6, pyqtgraph et mysql-connector-python, ainsi que leurs dépendances (numpy, PyQt6-sip, colorama), toutes en versions exactes.
+
+mysql-connector-python est le client Python qui se connecte à MariaDB : c'est lui qu'impose le choix de « mariaDB » dans la stack technique de la SAÉ.
+
+Pour lancer les tests, on installe en plus les outils de développement :
 
 ```bash
 pip install -r requirements-dev.txt   # requirements.txt, plus pytest et pytest-timeout
