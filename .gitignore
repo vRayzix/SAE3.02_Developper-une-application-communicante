@@ -15,6 +15,10 @@ config.ini.*
 # Documents de travail locaux (photos aériennes, plans), non diffusables
 ressources_locales/
 
+# Supports de cours de tiers, volumineux : gardés en local, pas diffusés par le dépôt
+RessourcesProjets/AidesRessources/Python.pdf
+RessourcesProjets/AidesRessources/PDF.js viewer.pdf
+
 # Journaux
 *.log
 

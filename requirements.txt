@@ -2,3 +2,9 @@ mysql-connector-python==26.7.0
 PyQt6==6.11.0
 PyQt6-Qt6==6.11.2
 pyqtgraph==0.14.0
+# Dépendances indirectes (PyQt6, pyqtgraph), épinglées pour que deux installations soient identiques.
+# numpy 2.4.6 : dernière version qui s'installe sous Python 3.11 (Debian 12) comme sous 3.13 (Debian 13).
+# colorama : pyqtgraph l'exige sur tous les systèmes, pas seulement sous Windows.
+colorama==0.4.6
+numpy==2.4.6
+PyQt6-sip==13.13.1

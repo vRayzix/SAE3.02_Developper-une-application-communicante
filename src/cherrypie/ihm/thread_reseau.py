@@ -88,11 +88,6 @@ class ReseauSupervision(QObject):
         return self.__decoupeur
 
     @property
-    def reglages_en_attente(self) -> int:
-        """int: nombre de réglages demandés par l'IHM, pas encore envoyés."""
-        return self.__reglages.qsize()
-
-    @property
     def statistiques_demandees(self) -> bool:
         """bool: True si une demande de statistiques attend d'être envoyée."""
         return self.__statistiques_demandees.is_set()

@@ -75,16 +75,6 @@ class Historique(threading.Thread):
         return self.__prochain_essai
 
     @property
-    def taches_en_attente(self) -> int:
-        """int: nombre de tâches déposées que le thread n'a pas encore prises."""
-        return self.__taches.qsize()
-
-    @property
-    def reponses_en_attente(self) -> int:
-        """int: nombre de réponses de statistiques que le serveur n'a pas encore relevées."""
-        return self.__reponses.qsize()
-
-    @property
     def acces(self) -> AccesBdd:
         """AccesBdd: accès à la base."""
         return self.__acces
