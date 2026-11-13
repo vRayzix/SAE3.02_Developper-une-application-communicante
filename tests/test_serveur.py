@@ -7,12 +7,14 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable, Iterator
+from types import SimpleNamespace
 
 import pytest
 from doublure_bdd import DoublureBdd
 from outils import DELAI, attendre
 
 from cherrypie.bdd.enregistrements import TypeConnexion
+from cherrypie.commun import securite
 from cherrypie.commun.config import Configuration
 from cherrypie.commun.protocole import Enveloppe, Message, TypeMessage
 from cherrypie.commun.securite import Signataire
@@ -252,6 +254,26 @@ def test_trame_rejouee_ignoree(clients: Callable[[str], ClientTest], caplog: pyt
     client.envoyer(TypeMessage.PING)
     assert client.recevoir(TypeMessage.PONG)
     assert "déjà reçu" in caplog.text
+
+
+@pytest.mark.usefixtures("conseil_a_donner")
+def test_horloge_decalee_conseil_une_seule_fois(
+    clients: Callable[[str], ClientTest], monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    client = voiture_inscrite(clients)
+    heure_reelle = time.time
+    # Seule la signature de ces trames lit une horloge en avance de 34 s, comme sur un poste mal réglé.
+    with monkeypatch.context() as patch:
+        patch.setattr(securite, "time", SimpleNamespace(time=lambda: heure_reelle() + 34.3))
+        decalees = [client.trame(TypeMessage.PING) for _ in range(3)]
+    for trame in decalees:
+        client.envoyer_octets(trame)
+    client.envoyer(TypeMessage.PING)
+    assert client.recevoir(TypeMessage.PONG)
+    messages = [enregistrement.getMessage() for enregistrement in caplog.records]
+    assert sum("horodatage hors fenêtre (-34." in message for message in messages) == 3
+    conseils = [message for message in messages if "CHERRYPIE_CLE" in message]
+    assert len(conseils) == 1 and conseils[0].startswith("trames refusées pour leur horodatage ou leur signature")
 
 
 def test_longueur_aberrante_ferme_la_seule_session_fautive(

@@ -1,5 +1,7 @@
 """Tests du réseau de la supervision : vrai serveur sur 127.0.0.1, travailleur dans un QThread."""
 
+import logging
+import socket
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -11,6 +13,7 @@ from PyQt6.QtWidgets import QApplication
 
 from cherrypie.client.client_usager import EtatConnexion
 from cherrypie.commun.config import Configuration
+from cherrypie.commun.securite import ESSAIS_AVANT_CONSEIL
 from cherrypie.ihm.thread_reseau import ReseauSupervision
 from cherrypie.serveur.serveur import Serveur
 
@@ -177,6 +180,25 @@ def test_serveur_absent_reessaie_sans_fin(fabrique_config: Callable[..., Configu
     _, _, recepteur = lancer_reseau(fabrique_config(**DELAIS_RAPIDES))
     attendre_qt(lambda: recepteur.connexions.count(EtatConnexion.DECONNECTE.value) >= 3)
     assert EtatConnexion.CONNECTE.value not in recepteur.connexions
+
+
+@pytest.mark.usefixtures("conseil_a_donner")
+def test_conseil_apres_plusieurs_abonnements_sans_reponse(
+    fabrique_config: Callable[..., Configuration], lancer_reseau: Callable, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO)
+    config = fabrique_config(**{**DELAIS_RAPIDES, "timeout_client": "0.3"})
+    # Connexion acceptée par le système, sans réponse : le serveur refuse les trames.
+    with socket.create_server((config.hote, config.port_tcp)):
+        reseau, fil, _ = lancer_reseau(config)
+        attendre_qt(lambda: caplog.text.count("aucune nouvelle du serveur") > ESSAIS_AVANT_CONSEIL, delai=4 * DELAI)
+        reseau.arreter()
+        fil.wait(DELAI_MS)
+    messages = [enregistrement.getMessage() for enregistrement in caplog.records]
+    conseils = [rang for rang, message in enumerate(messages) if "CHERRYPIE_CLE" in message]
+    assert len(conseils) == 1
+    assert messages[conseils[0]].startswith(f"aucune réponse du serveur après {ESSAIS_AVANT_CONSEIL} abonnements")
+    assert sum("aucune nouvelle" in message for message in messages[: conseils[0]]) == ESSAIS_AVANT_CONSEIL - 1
 
 
 def test_arret_termine_le_thread_et_desabonne(lancer_serveur: Callable[..., Serveur], lancer_reseau: Callable) -> None:

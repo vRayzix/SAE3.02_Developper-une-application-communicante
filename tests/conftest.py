@@ -16,6 +16,7 @@ from outils import DELAI
 from PyQt6.QtWidgets import QApplication
 
 from cherrypie.client.client_usager import ClientUsager
+from cherrypie.commun import securite
 from cherrypie.commun.config import PREFIXE_SECTION_BRANCHE, TOUR_COMPLET, Configuration
 from cherrypie.modele.usager import Usager, Voiture
 from cherrypie.serveur.serveur import Serveur
@@ -86,6 +87,12 @@ def fabrique_config() -> Callable[..., Configuration]:
         return Configuration(parseur)
 
     return fabriquer
+
+
+@pytest.fixture
+def conseil_a_donner(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Le conseil sur les horloges n'est journalisé qu'une fois par processus : le test repart sans."""
+    monkeypatch.setattr(securite, "conseil_journalise", threading.Event())
 
 
 @pytest.fixture

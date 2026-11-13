@@ -10,15 +10,42 @@ import dataclasses
 import hashlib
 import hmac
 import json
+import logging
 import secrets
+import threading
 import time
 
-from cherrypie.commun.erreurs import RejeuDetecteError, SignatureInvalideError
+from cherrypie.commun.erreurs import HorodatageHorsFenetreError, RejeuDetecteError, SignatureInvalideError
 from cherrypie.commun.protocole import Enveloppe, Message
 
 # 8 octets aléatoires, soit 16 caractères hexadécimaux : tirer deux fois le même
 # nonce pendant la fenêtre anti-rejeu de quelques secondes est improbable.
 TAILLE_NONCE = 8
+# Inscriptions ou abonnements restés sans réponse avant de journaliser le conseil.
+ESSAIS_AVANT_CONSEIL = 3
+# Une fois par processus : la supervision fait tourner des dizaines de clients, qui
+# échoueraient tous pour la même raison.
+conseil_journalise = threading.Event()
+verrou_conseil = threading.Lock()
+
+
+def conseil_horloges(fenetre: float) -> str:
+    """Ce qu'il faut vérifier quand le serveur et ses clients refusent les trames les uns des autres."""
+    return (
+        f"vérifier que les horloges des machines ont moins de {fenetre:g} s d'écart (comparer « date +%s » "
+        "sous Linux et « ([DateTimeOffset](Get-Date)).ToUnixTimeSeconds() » sous Windows) et que CHERRYPIE_CLE "
+        "est identique des deux côtés ; pour dépanner sans régler les horloges : --fenetre-anti-rejeu, "
+        "avec la même valeur sur toutes les machines"
+    )
+
+
+def conseiller_une_fois(journal: logging.Logger, constat: str, fenetre: float) -> None:
+    """Journalise le constat suivi de conseil_horloges(), une seule fois par processus."""
+    with verrou_conseil:
+        if conseil_journalise.is_set():
+            return
+        conseil_journalise.set()
+    journal.warning("%s : %s", constat, conseil_horloges(fenetre))
 
 
 class Signataire:
@@ -103,11 +130,12 @@ class GardeAntiRejeu:
         `maintenant` est l'heure locale, en secondes depuis l'epoch.
 
         Raises:
-            RejeuDetecteError: si l'horodatage sort de la fenêtre ou si le nonce a déjà été reçu.
+            HorodatageHorsFenetreError: si l'horodatage sort de la fenêtre.
+            RejeuDetecteError: si le nonce a déjà été reçu.
         """
         ecart = maintenant - enveloppe.ts
         if abs(ecart) > self.__fenetre:
-            raise RejeuDetecteError(
+            raise HorodatageHorsFenetreError(
                 f"horodatage hors fenêtre ({ecart:+.1f} s) sur un message de {enveloppe.message.emetteur}"
             )
         self.__oublier_nonces_expires(maintenant)

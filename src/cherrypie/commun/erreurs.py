@@ -26,6 +26,10 @@ class RejeuDetecteError(CherryPieError):
     """Enveloppe hors de la fenêtre de temps acceptée, ou nonce déjà reçu."""
 
 
+class HorodatageHorsFenetreError(RejeuDetecteError):
+    """Enveloppe trop ancienne ou datée du futur : rejeu, ou horloges des machines décalées."""
+
+
 class BrancheInconnueError(CherryPieError):
     """La branche demandée n'existe pas dans la configuration du rond-point."""
 

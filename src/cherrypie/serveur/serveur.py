@@ -26,9 +26,15 @@ from cherrypie.bdd.acces_bdd import AccesBdd
 from cherrypie.bdd.enregistrements import EvenementConnexion, ReleveDensite, TypeConnexion
 from cherrypie.bdd.historique import Historique
 from cherrypie.commun.config import Configuration
-from cherrypie.commun.erreurs import CherryPieError, TrameInvalideError, UsagerInconnuError
+from cherrypie.commun.erreurs import (
+    CherryPieError,
+    HorodatageHorsFenetreError,
+    SignatureInvalideError,
+    TrameInvalideError,
+    UsagerInconnuError,
+)
 from cherrypie.commun.protocole import Enveloppe, Message, TypeMessage
-from cherrypie.commun.securite import GardeAntiRejeu, Signataire
+from cherrypie.commun.securite import GardeAntiRejeu, Signataire, conseiller_une_fois
 from cherrypie.commun.trame import DecoupeurTrames
 from cherrypie.modele.rond_point import RondPoint
 from cherrypie.serveur.connexion import Connexion
@@ -256,6 +262,7 @@ class Serveur:
             reponse = self.__logique.traiter_tcp(numero, self.__ouvrir(trame), time.monotonic())
         except CherryPieError as erreur:
             journal.warning("trame refusée sur la session %d : %s", numero, erreur)
+            self.__conseiller(erreur)
             return
         for message in reponse.messages:
             self.__envoyer(numero, message)
@@ -283,6 +290,13 @@ class Serveur:
             journal.info("position ignorée : %s", erreur)
         except CherryPieError as erreur:
             journal.warning("datagramme refusé de %s:%d : %s", adresse[0], adresse[1], erreur)
+            self.__conseiller(erreur)
+
+    def __conseiller(self, erreur: CherryPieError) -> None:
+        """Après un refus pour l'horodatage ou la signature, dit une fois quoi vérifier."""
+        if isinstance(erreur, (HorodatageHorsFenetreError, SignatureInvalideError)):
+            constat = "trames refusées pour leur horodatage ou leur signature"
+            conseiller_une_fois(journal, constat, self.__config.fenetre_anti_rejeu)
 
     def __ouvrir(self, octets: bytes) -> Message:
         """Lit une enveloppe reçue, vérifie son HMAC puis sa fraîcheur, et renvoie son message.

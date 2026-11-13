@@ -1,14 +1,15 @@
 """Tests de la signature HMAC et de la protection anti-rejeu."""
 
 import dataclasses
+import logging
 import re
 import time
 
 import pytest
 
-from cherrypie.commun.erreurs import RejeuDetecteError, SignatureInvalideError
+from cherrypie.commun.erreurs import HorodatageHorsFenetreError, RejeuDetecteError, SignatureInvalideError
 from cherrypie.commun.protocole import Enveloppe, Message, TypeMessage
-from cherrypie.commun.securite import GardeAntiRejeu, Signataire
+from cherrypie.commun.securite import GardeAntiRejeu, Signataire, conseil_horloges, conseiller_une_fois
 
 CLE = b"cle_de_test_partagee"
 FENETRE = 5.0
@@ -144,6 +145,16 @@ def test_controler_enveloppe_datee_du_futur_refusee(garde: GardeAntiRejeu) -> No
         garde.controler(enveloppe_datee(T0 + FENETRE + 0.1), maintenant=T0)
 
 
+def test_horodatage_hors_fenetre_distingue_du_nonce_rejoue(garde: GardeAntiRejeu) -> None:
+    # Seul le premier refus peut venir d'horloges décalées : le conseil ne vaut que pour lui.
+    with pytest.raises(HorodatageHorsFenetreError):
+        garde.controler(enveloppe_datee(T0), maintenant=T0 + 34.3)
+    garde.controler(enveloppe_datee(T0), maintenant=T0)
+    with pytest.raises(RejeuDetecteError) as refus:
+        garde.controler(enveloppe_datee(T0), maintenant=T0)
+    assert not isinstance(refus.value, HorodatageHorsFenetreError)
+
+
 def test_fenetre_nulle_refusee() -> None:
     with pytest.raises(ValueError, match="fenêtre"):
         GardeAntiRejeu(0)
@@ -182,6 +193,25 @@ def test_rejeu_apres_oubli_du_nonce_toujours_refuse(garde: GardeAntiRejeu) -> No
     garde.controler(enveloppe_datee(T0 + 10, "ffffffffffffffff"), maintenant=T0 + 10)
     with pytest.raises(RejeuDetecteError, match="hors fenêtre"):
         garde.controler(enveloppe, maintenant=T0 + 10)
+
+
+# ---------- Conseil quand les trames sont refusées ----------
+
+def test_conseil_nomme_horloges_cle_et_option() -> None:
+    conseil = conseil_horloges(5.0)
+    assert "moins de 5 s d'écart" in conseil
+    assert "date +%s" in conseil and "([DateTimeOffset](Get-Date)).ToUnixTimeSeconds()" in conseil
+    assert "CHERRYPIE_CLE est identique" in conseil and "--fenetre-anti-rejeu" in conseil
+
+
+@pytest.mark.usefixtures("conseil_a_donner")
+def test_conseil_journalise_une_seule_fois(caplog: pytest.LogCaptureFixture) -> None:
+    journal = logging.getLogger("essai")
+    conseiller_une_fois(journal, "premier constat", 30.0)
+    conseiller_une_fois(journal, "second constat", 30.0)
+    assert [(enregistrement.levelno, enregistrement.getMessage()) for enregistrement in caplog.records] == [
+        (logging.WARNING, f"premier constat : {conseil_horloges(30.0)}")
+    ]
 
 
 # ---------- Chaîne de réception complète ----------
