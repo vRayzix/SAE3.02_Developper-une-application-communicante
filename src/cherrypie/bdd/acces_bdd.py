@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 import mysql.connector
 from mysql.connector import errorcode
@@ -35,8 +36,39 @@ REQUETE_LIRE_PASSAGES = (
     "FROM passage_vp ORDER BY debut DESC LIMIT %s"
 )
 REQUETE_LIRE_DENSITES = "SELECT instant, branche, densite FROM releve_densite ORDER BY instant DESC LIMIT %s"
+# Ce qui peut contenir un « ; » sans finir l'instruction : chaîne ou identifiant entre
+# quotes, commentaire « -- » (suivi d'un blanc, comme l'exige MariaDB), « # » ou /* */.
+JETONS_SQL = re.compile(
+    r"""(?P<quote>'(?:[^'\\]|\\.|'')*'|"(?:[^"\\]|\\.|"")*"|`(?:[^`]|``)*`)"""
+    r"|(?P<commentaire>--(?=\s|$)[^\n]*|#[^\n]*|/\*.*?\*/)"
+    r"|(?P<fin>;)",
+    re.DOTALL,
+)
 
 journal = logging.getLogger(__name__)
+
+
+def decouper_script(script: str) -> list[str]:
+    """Découpe un script SQL en instructions, sans ses commentaires ni ses instructions vides.
+
+    Un « ; » ne termine une instruction que hors des quotes et des commentaires.
+    """
+    instructions: list[str] = []
+    morceaux: list[str] = []
+    debut = 0
+    for jeton in JETONS_SQL.finditer(script):
+        morceaux.append(script[debut:jeton.start()])
+        debut = jeton.end()
+        if jeton.lastgroup == "quote":
+            morceaux.append(jeton.group())
+        elif jeton.lastgroup == "commentaire":
+            morceaux.append(" ")
+        else:
+            instructions.append("".join(morceaux).strip())
+            morceaux = []
+    morceaux.append(script[debut:])
+    instructions.append("".join(morceaux).strip())
+    return [instruction for instruction in instructions if instruction]
 
 
 class AccesBdd:
@@ -115,8 +147,7 @@ class AccesBdd:
         Raises:
             BddError: si une instruction échoue.
         """
-        instructions = [instruction.strip() for instruction in script.split(";")]
-        self.__ecrire([(instruction, None) for instruction in instructions if self.__est_utile(instruction)])
+        self.__ecrire([(instruction, None) for instruction in decouper_script(script)])
 
     def enregistrer_passages(self, passages: list[PassageVp]) -> None:
         """Enregistre des traversées de VP.
@@ -228,9 +259,3 @@ class AccesBdd:
         if erreur.errno in ERREURS_INJOIGNABLE:
             return BddInjoignableError(f"serveur MariaDB injoignable ({self.adresse}) : {erreur.msg}")
         return BddError(f"erreur de la base ({self.adresse}) : {erreur}")
-
-    @staticmethod
-    def __est_utile(instruction: str) -> bool:
-        """Indique si un morceau de script contient une instruction, et pas seulement des commentaires."""
-        lignes = [ligne.strip() for ligne in instruction.splitlines()]
-        return any(ligne and not ligne.startswith("--") for ligne in lignes)
