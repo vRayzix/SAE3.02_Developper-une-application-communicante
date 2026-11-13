@@ -23,7 +23,7 @@ from cherrypie.commun.erreurs import ConfigurationInvalideError
 PARAMETRES = {
     "hote": ("reseau", "hote", "CHERRYPIE_HOTE", "adresse du serveur : celle où il écoute, ou celle où le joindre"),
     "port_tcp": ("reseau", "port_tcp", "CHERRYPIE_PORT_TCP", "port TCP du serveur"),
-    "port_udp": ("reseau", "port_udp", "CHERRYPIE_PORT_UDP", "port UDP du serveur (positions)"),
+    "port_udp": ("reseau", "port_udp", "CHERRYPIE_PORT_UDP", "port UDP du serveur, pour les positions"),
     "bdd_hote": ("bdd", "hote", "CHERRYPIE_BDD_HOTE", "adresse du serveur MariaDB"),
     "bdd_port": ("bdd", "port", "CHERRYPIE_BDD_PORT", "port de MariaDB"),
     "bdd_utilisateur": ("bdd", "utilisateur", "CHERRYPIE_BDD_UTILISATEUR", "utilisateur MariaDB"),
@@ -128,13 +128,17 @@ def creer_analyseur(
         description=description, epilog=epilogue, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     analyseur.add_argument(
-        "--config", type=Path, help="config.ini facultatif (défaut : celui de la racine du dépôt, s'il existe)"
+        "--config",
+        type=Path,
+        metavar="FICHIER",
+        help="config.ini facultatif (défaut : celui de la racine du dépôt, s'il existe)",
     )
     for nom in parametres:
         section, cle, variable, aide = PARAMETRES[nom]
         analyseur.add_argument(
             "--" + nom.replace("_", "-"),
             type=port if nom in PARAMETRES_PORT else texte_non_vide,
+            metavar="PORT" if nom in PARAMETRES_PORT else cle.upper().replace("HOTE", "ADRESSE"),
             help=f"{aide} ({variable}, [{section}] {cle})",
         )
     return analyseur

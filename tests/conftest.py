@@ -1,11 +1,14 @@
-"""Fixtures partagées par les tests : configurations sur des ports libres, serveurs et clients lancés."""
+"""Fixtures partagées par les tests : configurations sur des ports libres, serveurs, clients et scripts lancés."""
 
 import configparser
+import io
 import os
 import socket
+import sys
 import threading
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 from doublure_bdd import DoublureBdd
@@ -83,6 +86,23 @@ def fabrique_config() -> Callable[..., Configuration]:
         return Configuration(parseur)
 
     return fabriquer
+
+
+@pytest.fixture
+def lancement_isole(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Callable[[ModuleType], ModuleType]:
+    """Isole un script de lancement chargé comme module : ni config.ini, ni terminal, ni variable CHERRYPIE_*.
+
+    Le config.ini et les variables du poste de développement ne doivent pas changer le résultat des tests.
+    """
+    for variable in [nom for nom in os.environ if nom.startswith("CHERRYPIE_")]:
+        monkeypatch.delenv(variable)
+    monkeypatch.setattr(sys, "stdin", io.StringIO())
+
+    def isoler(script: ModuleType) -> ModuleType:
+        monkeypatch.setattr(script, "CHEMIN_CONFIG", tmp_path / "absent.ini")
+        return script
+
+    return isoler
 
 
 @pytest.fixture
