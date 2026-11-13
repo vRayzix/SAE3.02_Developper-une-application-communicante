@@ -18,7 +18,7 @@ Groupe CherryPie, BUT2 R&T de l'IUT de Colmar : Yassine et Ilkan.
 
 - Python 3.11 ou plus récent, avec le module `venv` (sous Debian : `sudo apt-get install -y python3-venv python3-pip`) ;
 - git ;
-- MariaDB pour l'historique et les statistiques (voir « Déploiement sur des VM Debian vierges »). Sans base, le serveur et la supervision fonctionnent : seules les statistiques manquent.
+- MariaDB pour l'historique et les statistiques (voir « Déploiement sur deux VM Debian vierges »). Sans base, le serveur et la supervision fonctionnent : seules les statistiques manquent.
 
 ## Installation
 
@@ -49,6 +49,7 @@ Les trois scripts se règlent en ligne de commande ; `--help` liste les options 
 | `--bdd-port` | `CHERRYPIE_BDD_PORT` | `[bdd] port` | `3306` | serveur, `init_bdd.py` |
 | `--bdd-utilisateur` | `CHERRYPIE_BDD_UTILISATEUR` | `[bdd] utilisateur` | `cherrypie` | serveur, `init_bdd.py` |
 | `--bdd-nom` | `CHERRYPIE_BDD_NOM` | `[bdd] base` | `cherrypie` | serveur, `init_bdd.py` |
+| `--fenetre-anti-rejeu` | `CHERRYPIE_FENETRE_ANTI_REJEU` | `[securite] fenetre_anti_rejeu` | `5` (secondes) | serveur, supervision et les clients qu'elle lance ; à élargir seulement pour dépanner des horloges décalées (voir « Avant de lancer : les horloges ») |
 | `--config` | | | `config.ini` à la racine, s'il existe | les trois |
 
 La clé HMAC et le mot de passe de la base ne passent jamais en option, où `ps` les montrerait, ni par `config.ini`, qui finit copié : ils viennent de `CHERRYPIE_CLE` (serveur et supervision) et de `CHERRYPIE_BDD_MDP` (serveur et `init_bdd.py`). Si la variable manque et que le script tourne dans un terminal, il demande la valeur, sans l'afficher. Hors d'un terminal, il s'arrête en nommant la variable à définir. Une clé se génère par `python3 -c "import secrets; print(secrets.token_hex(32))"`.
@@ -151,33 +152,79 @@ Le serveur écrit dans MariaDB :
 
 L'écriture se fait dans un thread à part : la boucle du serveur n'attend jamais la base. Si MariaDB est injoignable, le serveur fonctionne normalement. Il journalise la panne une fois, garde l'historique en mémoire et retente la connexion toutes les `delai_reessai` secondes. La section `[bdd]` règle aussi le délai de connexion (`delai_connexion`). Un `config.ini` copié d'une version précédente doit perdre `cle_hmac` et `mot_de_passe` : le serveur refuse de démarrer tant qu'ils y sont, et nomme la variable d'environnement qui les remplace.
 
-## Déploiement sur des VM Debian vierges
+## Déploiement sur deux VM Debian vierges
 
-Le déploiement sépare trois machines :
+Deux machines suffisent, toutes deux sous Debian server, sans écran :
 
 | Machine | Rôle | Paquets Debian |
 | --- | --- | --- |
-| VM bdd (Debian server, sans écran) | MariaDB seule | `mariadb-server` |
-| VM code (Debian server, sans écran) | serveur du rond-point | `git`, `python3-venv`, `python3-pip`, `mariadb-client` |
-| poste IHM (avec écran) | supervision, et clients lancés depuis la supervision | `git`, `python3-venv`, `python3-pip`, bibliothèques de Qt |
+| VM bdd | MariaDB seule | `mariadb-server` |
+| VM code | serveur du rond-point | `git`, `python3-venv`, `python3-pip`, `mariadb-client` |
 
-Le dépôt ne contient ni adresse de machine ni secret : chaque machine commence par une ligne à adapter (l'adresse de l'autre machine), et le mot de passe de la base comme la clé HMAC se saisissent au clavier, sans écho. Aucun `config.ini` n'est nécessaire.
+La supervision, et les clients qu'elle lance, tournent au choix :
 
-Avant de commencer, sur chaque machine :
+- **variante A, testée** (sous Windows) : sur un poste de travail, Windows, macOS ou Linux, avec Python 3.11 ou plus récent ;
+- **variante B, non testée** : dans la VM code elle-même, si elle a un bureau graphique.
 
-- un utilisateur qui a le droit d'utiliser `sudo`. Si Debian a été installée avec un mot de passe root, `sudo` n'y est pas : en root (`su -`), `apt-get install -y sudo && adduser <utilisateur> sudo`, puis se reconnecter ;
-- l'heure juste : les trames sont refusées si les horloges s'écartent de plus de 5 s (anti-rejeu). `timedatectl` doit afficher `System clock synchronized: yes`, sinon `sudo apt-get install -y systemd-timesyncd`.
+Le dépôt ne contient ni adresse de machine ni secret. Chaque bloc qui a besoin d'une adresse commence par une ligne à adapter. Les secrets sont des valeurs d'exemple, les mêmes dans tout ce README, pour que le copier-coller fonctionne :
 
-Chaque machine a deux blocs, à coller dans l'ordre. Le premier se modifie avant d'être collé : il installe les paquets et, s'il le faut, demande le mot de passe. Ses commandes tiennent sur une seule ligne, pour que `sudo` et la saisie du mot de passe ne lisent pas, à la place de ce qu'on tape, des lignes collées après eux. Le second se colle tel quel, dans la même console.
+| Secret | Valeur d'exemple | Doit être identique dans |
+| --- | --- | --- |
+| mot de passe MariaDB | `cherrypie_test` | `CREATE USER` sur la VM bdd et `CHERRYPIE_BDD_MDP` sur la VM code |
+| clé HMAC | `cherrypie_cle_test` | `CHERRYPIE_CLE` sur la VM code et sur la machine de la supervision |
+
+Ces valeurs sont publiques : **à changer en production**. Le mot de passe doit être identique dans `CREATE USER` et `CHERRYPIE_BDD_MDP`, sans apostrophe ni antislash puisqu'il est placé dans une chaîne SQL. Une vraie clé se génère par `python3 -c "import secrets; print(secrets.token_hex(32))"` et se donne à `CHERRYPIE_CLE` sur toutes les machines. Sans la variable, chaque programme demande la valeur au clavier, sans l'afficher.
+
+Sur chaque VM, il faut un utilisateur qui a le droit d'utiliser `sudo`. Si Debian a été installée avec un mot de passe root, `sudo` n'y est pas : en root (`su -`), `apt-get install -y sudo && adduser <utilisateur> sudo`, puis se reconnecter.
+
+Chaque VM a deux blocs, à coller dans l'ordre, dans la même console. Le premier se modifie avant d'être collé (l'adresse) et finit par `sudo apt-get` : `sudo` lit son mot de passe au clavier et prendrait sinon la ligne collée après lui pour le mot de passe. Le second se colle tel quel.
+
+### Avant de lancer : les horloges
+
+Chaque trame porte son heure d'envoi, et le récepteur la refuse si elle s'écarte de plus de 5 s de sa propre horloge (anti-rejeu, voir [docs/securite.md](docs/securite.md)). Les horloges qui comptent sont celles de la VM code et de la machine de la supervision ; celle de la VM bdd n'intervient pas. Dans la variante B, il n'y a qu'une horloge : rien à vérifier. Un écart se voit ainsi : la supervision reste vide, les clients écrivent `pas de HELLO_ACK` et le serveur `horodatage hors fenêtre` ; au bout de quelques essais, chacun journalise une fois ce qu'il faut vérifier.
+
+1. Comparer les horloges en tapant la commande au même moment sur chaque machine. L'écart doit rester sous 5 s.
+
+   ```bash
+   date +%s                                            # Debian, macOS
+   ```
+
+   ```powershell
+   ([DateTimeOffset](Get-Date)).ToUnixTimeSeconds()    # Windows
+   ```
+
+   Sous Windows PowerShell 5.1, `Get-Date -UFormat %s` donne l'heure locale et non l'heure UTC : il afficherait une heure d'écart qui n'existe pas. Si le poste joint la VM code en SSH, une seule commande mesure l'écart, en secondes (poste moins VM) :
+
+   ```powershell
+   $vm = ssh utilisateur@adresse-de-la-vm-code date +%s; ([DateTimeOffset](Get-Date)).ToUnixTimeSeconds() - $vm
+   ```
+
+   ```bash
+   vm=$(ssh utilisateur@adresse-de-la-vm-code date +%s); echo $(( $(date +%s) - vm ))
+   ```
+
+2. Remettre une VM à l'heure :
+
+   - `timedatectl` dit si l'horloge est synchronisée (`System clock synchronized: yes`) ;
+   - avec chrony, `sudo chronyc makestep` rattrape l'écart d'un coup, et `chronyc sources` liste ses sources (aucune ligne qui commence par `^*` : aucune source joignable) ;
+   - si chrony est arrêté ou sans source (VM sans accès à Internet), on règle l'heure à la main sur celle du poste : lire `([DateTimeOffset](Get-Date)).ToUnixTimeSeconds()` sur le poste, taper aussitôt `sudo date -s @<horodatage du poste>` sur la VM, puis recomparer ;
+   - sous VMware, la VM peut prendre l'heure de l'hôte, si l'hôte est lui-même à l'heure : `vmware-toolbox-cmd timesync status`, puis `sudo vmware-toolbox-cmd timesync enable` (paquet `open-vm-tools`). Si c'est l'hôte qui est faux, `sudo vmware-toolbox-cmd timesync disable` l'empêche de réécrire l'heure réglée à la main.
+
+   Sous Windows : Paramètres, Heure et langue, « Synchroniser maintenant », ou `w32tm /resync` dans une console administrateur.
+
+3. Si l'écart ne descend pas sous 5 s, on élargit la fenêtre sur la VM code **et** sur la machine de la supervision, avec la même valeur : `--fenetre-anti-rejeu 60`, ou `export CHERRYPIE_FENETRE_ANTI_REJEU=60` (sous PowerShell : `$env:CHERRYPIE_FENETRE_ANTI_REJEU = "60"`). C'est un dépannage, pas un réglage : une trame capturée reste acceptable pendant toute cette durée (voir [docs/securite.md](docs/securite.md)).
 
 ### 1. VM bdd
 
+L'adresse à donner est celle d'où la VM code joint la VM bdd. Si la VM code a plusieurs cartes réseau, `ip -4 route get adresse-de-la-vm-bdd`, tapé sur la VM code, l'affiche après `src`.
+
 ```bash
 IP_VM_CODE=adresse-de-la-vm-code
-sudo apt-get update && sudo apt-get install -y mariadb-server && read -rsp "Mot de passe à donner à l'utilisateur MariaDB cherrypie : " CHERRYPIE_BDD_MDP && echo
+sudo apt-get update && sudo apt-get install -y mariadb-server
 ```
 
 ```bash
+CHERRYPIE_BDD_MDP=cherrypie_test
 sudo sed -i 's/^bind-address\s*=.*/bind-address = 0.0.0.0/' /etc/mysql/mariadb.conf.d/50-server.cnf
 sudo systemctl enable mariadb
 sudo systemctl restart mariadb
@@ -190,53 +237,41 @@ unset CHERRYPIE_BDD_MDP
 sudo mariadb -e "SELECT user, host FROM mysql.user WHERE user = 'cherrypie'"
 ```
 
-La dernière commande affiche `cherrypie` et l'adresse de la VM code. Le mot de passe est placé dans une chaîne SQL : il ne doit contenir ni apostrophe ni antislash. MariaDB écoute désormais sur toutes les interfaces, mais l'utilisateur `cherrypie` n'est accepté que depuis la VM code. Debian n'active pas de pare-feu par défaut ; si `ufw` est actif : `sudo ufw allow from "$IP_VM_CODE" to any port 3306 proto tcp`.
+La dernière commande affiche `cherrypie` et l'adresse de la VM code. MariaDB écoute désormais sur toutes les interfaces, mais l'utilisateur `cherrypie` n'est accepté que depuis la VM code. Debian n'active pas de pare-feu par défaut ; si `ufw` est actif : `sudo ufw allow from "$IP_VM_CODE" to any port 3306 proto tcp`.
 
 ### 2. VM code
 
 ```bash
 IP_VM_BDD=adresse-de-la-vm-bdd
-sudo apt-get update && sudo apt-get install -y git python3-venv python3-pip mariadb-client && read -rsp "Mot de passe MariaDB de l'utilisateur cherrypie : " CHERRYPIE_BDD_MDP && echo && export CHERRYPIE_BDD_MDP
+sudo apt-get update && sudo apt-get install -y git python3-venv python3-pip mariadb-client
 ```
 
 ```bash
+export CHERRYPIE_BDD_MDP=cherrypie_test
+export CHERRYPIE_CLE=cherrypie_cle_test
+cd ~
 git clone https://github.com/vRayzix/SAE3.02_Developper-une-application-communicante.git
 cd SAE3.02_Developper-une-application-communicante
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/python scripts/init_bdd.py --bdd-hote "$IP_VM_BDD"
-export CHERRYPIE_CLE="$(.venv/bin/python -c 'import secrets; print(secrets.token_hex(32))')"
-echo "Clé HMAC à saisir sur le poste IHM : $CHERRYPIE_CLE"
+.venv/bin/python scripts/init_bdd.py --bdd-hote "$IP_VM_BDD" &&
 .venv/bin/python scripts/lancer_serveur.py --hote 0.0.0.0 --bdd-hote "$IP_VM_BDD"
 ```
 
-`init_bdd.py` affiche `Base prête sur <adresse>:3306` ; s'il échoue, il dit pourquoi (serveur injoignable, accès refusé, base absente) et quoi vérifier. Le serveur affiche ensuite `Serveur du rond-point démarré sur 0.0.0.0 (TCP 5050, UDP 5051)` et reste au premier plan ; Ctrl+C ou `kill` l'arrêtent proprement. Notez la clé affichée : le poste IHM en a besoin, et le serveur la redemande s'il est relancé dans une autre console.
+`init_bdd.py` affiche `Base prête sur <adresse>:3306` ; s'il échoue, il dit pourquoi (serveur injoignable, accès refusé, base absente) et quoi vérifier, et le serveur n'est pas lancé. Le serveur affiche ensuite `Serveur du rond-point démarré sur 0.0.0.0 (TCP 5050, UDP 5051)` et reste au premier plan ; Ctrl+C ou `kill` l'arrêtent proprement.
 
-PyQt6 s'installe avec les autres dépendances, mais ni le serveur ni `init_bdd.py` ne le chargent : ils tournent sans écran. `mariadb-client` sert à vérifier l'accès à la main : `mariadb -h "$IP_VM_BDD" -u cherrypie -p cherrypie -e "SHOW TABLES"`. Si `ufw` est actif : `sudo ufw allow 5050/tcp` et `sudo ufw allow 5051/udp`. Pour fermer la session SSH sans arrêter le serveur, on le lance dans `tmux` (`sudo apt-get install -y tmux`).
+PyQt6 s'installe avec les autres dépendances, mais ni le serveur ni `init_bdd.py` ne le chargent : ils tournent sans écran. Si `ufw` est actif : `sudo ufw allow 5050/tcp` et `sudo ufw allow 5051/udp`. Pour fermer la session SSH sans arrêter le serveur, on le lance dans `tmux` (`sudo apt-get install -y tmux`).
 
-### 3. Poste IHM
+### 3. Supervision
 
-Sous Debian ou Ubuntu, avec un bureau :
+#### Variante A : sur un poste de travail (testée sous Windows)
 
-```bash
-IP_VM_CODE=adresse-de-la-vm-code
-sudo apt-get update && sudo apt-get install -y git python3-venv python3-pip libxcb-cursor0 libxkbcommon-x11-0 libegl1 libgl1
-```
-
-```bash
-git clone https://github.com/vRayzix/SAE3.02_Developper-une-application-communicante.git
-cd SAE3.02_Developper-une-application-communicante
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/python scripts/lancer_supervision.py --hote "$IP_VM_CODE"
-```
-
-Les bibliothèques `libxcb-cursor0`, `libxkbcommon-x11-0`, `libegl1` et `libgl1` sont celles que Qt 6 réclame le plus souvent sur un bureau Debian (« Could not load the Qt platform plugin "xcb" »).
-
-Sous Windows, avec Python 3.11 ou plus récent (python.org) et Git for Windows, dans PowerShell, depuis un dossier au chemin court comme le dossier personnel (Windows limite les chemins à 260 caractères, et ceux du dépôt sont déjà longs) :
+Sous Windows, avec Python 3.11 ou plus récent (python.org) et Git for Windows, dans PowerShell. Le bloc clone le dépôt dans le dossier personnel, au chemin court : Windows limite les chemins à 260 caractères, et ceux du dépôt sont déjà longs.
 
 ```powershell
 $IP_VM_CODE = "adresse-de-la-vm-code"
+$env:CHERRYPIE_CLE = "cherrypie_cle_test"
+cd ~
 git clone https://github.com/vRayzix/SAE3.02_Developper-une-application-communicante.git
 cd SAE3.02_Developper-une-application-communicante
 py -m venv .venv
@@ -244,21 +279,52 @@ py -m venv .venv
 .venv\Scripts\python scripts\lancer_supervision.py --hote $IP_VM_CODE
 ```
 
-La supervision demande la clé HMAC (`Clé HMAC partagée (CHERRYPIE_CLE) :`), celle qu'a affichée la VM code, puis ouvre sa fenêtre. Les clients lancés depuis la fenêtre tournent sur le poste et envoient leurs positions à la VM code, sur les mêmes ports. La supervision peut aussi être lancée avant le serveur : elle s'y connecte dès qu'il répond.
+Sous Linux ou macOS (mêmes commandes, non testées ici) :
+
+```bash
+IP_VM_CODE=adresse-de-la-vm-code
+export CHERRYPIE_CLE=cherrypie_cle_test
+cd ~
+git clone https://github.com/vRayzix/SAE3.02_Developper-une-application-communicante.git
+cd SAE3.02_Developper-une-application-communicante
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python scripts/lancer_supervision.py --hote "$IP_VM_CODE"
+```
+
+Sur un poste Linux, si Qt écrit `Could not load the Qt platform plugin "xcb"`, il manque les bibliothèques de la variante B.
+
+La fenêtre s'ouvre et se connecte au serveur ; elle peut aussi être lancée avant lui. Les clients lancés depuis la fenêtre tournent sur le poste et envoient leurs positions à la VM code, sur les mêmes ports.
+
+#### Variante B : dans la VM code, avec un bureau graphique (non testée)
+
+La supervision a besoin de l'écran : elle se lance dans un terminal du bureau graphique de la VM code, pas par SSH, pendant que le serveur tourne dans sa propre console. Elle joint le serveur sur la même machine, par `127.0.0.1`. Ces bibliothèques sont celles qu'exige le plugin xcb de Qt (lues dans la roue de PyQt6 ; les noms existent sous Debian 12 et 13, mais n'ont pas été installés sur une VM) :
+
+```bash
+sudo apt-get install -y libgl1 libegl1 libx11-xcb1 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-shm0 libxcb-sync1 libxcb-util1 libxcb-xfixes0 libxcb-xkb1 libxkbcommon-x11-0
+```
+
+```bash
+export CHERRYPIE_CLE=cherrypie_cle_test
+cd ~/SAE3.02_Developper-une-application-communicante
+.venv/bin/python scripts/lancer_supervision.py --hote 127.0.0.1
+```
+
+Si la VM code n'a pas de bureau, en installer un pour la recette est long (plusieurs centaines de Mo) : la variante A est plus sûre.
 
 ### Relancer après un redémarrage
 
-MariaDB redémarre seul (`systemctl enable`). Sur la VM code puis sur le poste, depuis le dossier du dépôt :
+MariaDB redémarre seul (`systemctl enable`). Vérifier d'abord les horloges : une VM suspendue puis reprise retarde. Puis, sur la VM code :
 
 ```bash
-.venv/bin/python scripts/lancer_serveur.py --hote 0.0.0.0 --bdd-hote adresse-de-la-vm-bdd
+IP_VM_BDD=adresse-de-la-vm-bdd
+export CHERRYPIE_BDD_MDP=cherrypie_test
+export CHERRYPIE_CLE=cherrypie_cle_test
+cd ~/SAE3.02_Developper-une-application-communicante
+.venv/bin/python scripts/lancer_serveur.py --hote 0.0.0.0 --bdd-hote "$IP_VM_BDD"
 ```
 
-```bash
-.venv/bin/python scripts/lancer_supervision.py --hote adresse-de-la-vm-code
-```
-
-Sans `CHERRYPIE_CLE` ni `CHERRYPIE_BDD_MDP` dans l'environnement, chaque programme demande ce qui lui manque. La clé doit être la même sur les deux machines.
+Et pour la supervision, la variable `CHERRYPIE_CLE` puis la dernière ligne du bloc de sa variante, depuis le dossier du dépôt.
 
 ## Tout en local
 
@@ -266,22 +332,25 @@ Pour développer, tout tourne sur une seule machine : MariaDB, serveur et superv
 
 ```sql
 CREATE DATABASE cherrypie CHARACTER SET utf8mb4;
-CREATE USER 'cherrypie'@'localhost' IDENTIFIED BY 'mot_de_passe_a_choisir';
+CREATE USER 'cherrypie'@'localhost' IDENTIFIED BY 'cherrypie_test';
 GRANT ALL PRIVILEGES ON cherrypie.* TO 'cherrypie'@'localhost';
 ```
 
-Puis, dans deux consoles, chaque programme demandant la clé ou le mot de passe qui lui manque (la même clé dans les deux consoles) :
+Puis, dans deux consoles, avec les secrets d'exemple du déploiement (à changer en production ; le mot de passe doit être identique dans `CREATE USER` et `CHERRYPIE_BDD_MDP`) :
 
 ```bash
+export CHERRYPIE_BDD_MDP=cherrypie_test
+export CHERRYPIE_CLE=cherrypie_cle_test
 python scripts/init_bdd.py
 python scripts/lancer_serveur.py
 ```
 
 ```bash
+export CHERRYPIE_CLE=cherrypie_cle_test
 python scripts/lancer_supervision.py
 ```
 
-Pour ne pas les retaper, on les met dans l'environnement de la console (`export CHERRYPIE_CLE=...`, `export CHERRYPIE_BDD_MDP=...` ; sous PowerShell, `$env:CHERRYPIE_CLE = "..."`).
+Sous PowerShell : `$env:CHERRYPIE_CLE = "cherrypie_cle_test"`. Sans ces variables, chaque programme demande au clavier la clé ou le mot de passe qui lui manque.
 
 Sans MariaDB, le serveur et la supervision fonctionnent quand même. Le serveur signale une fois que la base est injoignable, et l'onglet Statistiques indique qu'elles sont indisponibles.
 
