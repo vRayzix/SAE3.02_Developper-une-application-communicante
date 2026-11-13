@@ -64,10 +64,19 @@ def test_demarre_sans_config_ini(
     assert "démarré sur 0.0.0.0 (TCP 6000, UDP 6001)" in capsys.readouterr().out
 
 
+def test_fenetre_anti_rejeu_en_option(lancer_serveur_script: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CHERRYPIE_CLE", "cle_de_test")
+    monkeypatch.setenv("CHERRYPIE_BDD_MDP", "mdp_de_test")
+    monkeypatch.setenv("CHERRYPIE_FENETRE_ANTI_REJEU", "60")
+    assert lancer_serveur_script.main(["--fenetre-anti-rejeu", "45"]) == 0
+    assert FauxServeur.lances[0].config.fenetre_anti_rejeu == pytest.approx(45.0)
+
+
 def test_aide_sans_pyqt() -> None:
     # La VM code n'a pas d'écran : le serveur ne doit pas charger Qt.
     aide, qt_charge = aide_du_script(CHEMIN_SCRIPT)
-    assert all(option in aide for option in ("--hote", "--port-tcp", "--port-udp", "--bdd-hote", "--bdd-nom"))
+    options = ("--hote", "--port-tcp", "--port-udp", "--bdd-hote", "--bdd-nom", "--fenetre-anti-rejeu")
+    assert all(option in aide for option in options)
     assert "CHERRYPIE_CLE" in aide and "CHERRYPIE_BDD_MDP" in aide
     assert not qt_charge
 

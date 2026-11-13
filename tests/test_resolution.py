@@ -75,6 +75,31 @@ def test_port_invalide_dans_l_environnement_nomme_la_variable(tmp_path: Path) ->
         resoudre(tmp_path, environnement={"CHERRYPIE_PORT_TCP": "cinq_mille"})
 
 
+@pytest.mark.parametrize(
+    ("option", "variable", "fichier", "attendu"),
+    [(2.5, "30", "10", 2.5), (None, "30", "10", 30.0), (None, None, "10", 10.0), (None, None, None, 5.0)],
+    ids=["option", "variable", "fichier", "defaut"],
+)
+def test_priorites_fenetre_anti_rejeu(
+    tmp_path: Path, option: float | None, variable: str | None, fichier: str | None, attendu: float
+) -> None:
+    texte = f"[securite]\nfenetre_anti_rejeu = {fichier}\n"
+    chemin = ecrire_config(tmp_path, texte) if fichier else tmp_path / "absent.ini"
+    config = resoudre(
+        tmp_path,
+        {"fenetre_anti_rejeu": option},
+        {"CHERRYPIE_FENETRE_ANTI_REJEU": variable} if variable else {},
+        chemin_defaut=chemin,
+    )
+    assert config.fenetre_anti_rejeu == pytest.approx(attendu)
+
+
+@pytest.mark.parametrize("texte", ["0", "-5", "nan", "cinq"])
+def test_fenetre_invalide_dans_l_environnement_nomme_la_variable(tmp_path: Path, texte: str) -> None:
+    with pytest.raises(ConfigurationInvalideError, match="CHERRYPIE_FENETRE_ANTI_REJEU : nombre de secondes"):
+        resoudre(tmp_path, environnement={"CHERRYPIE_FENETRE_ANTI_REJEU": texte})
+
+
 def test_chaque_parametre_a_sa_propre_variable() -> None:
     variables = [variable for _, _, variable, _ in PARAMETRES.values()]
     assert len(set(variables)) == len(variables) and all(nom.startswith("CHERRYPIE_") for nom in variables)
@@ -191,13 +216,26 @@ def test_options_du_script_seulement() -> None:
 
 @pytest.mark.parametrize(
     "arguments",
-    [["--port-tcp", "70000"], ["--port-tcp", "cinq_mille"], ["--hote", ""], ["--cle", "secret"]],
-    ids=["port-trop-grand", "port-non-entier", "hote-vide", "secret-en-option"],
+    [
+        ["--port-tcp", "70000"],
+        ["--port-tcp", "cinq_mille"],
+        ["--hote", ""],
+        ["--fenetre-anti-rejeu", "0"],
+        ["--fenetre-anti-rejeu", "inf"],
+        ["--cle", "secret"],
+    ],
+    ids=["port-trop-grand", "port-non-entier", "hote-vide", "fenetre-nulle", "fenetre-infinie", "secret-en-option"],
 )
 def test_option_refusee(arguments: list[str], capsys: pytest.CaptureFixture) -> None:
     with pytest.raises(SystemExit):
-        creer_analyseur("essai", ["hote", "port_tcp"], ["cle"]).parse_args(arguments)
+        creer_analyseur("essai", ["hote", "port_tcp", "fenetre_anti_rejeu"], ["cle"]).parse_args(arguments)
     assert arguments[0] in capsys.readouterr().err
+
+
+def test_fenetre_anti_rejeu_en_secondes() -> None:
+    analyseur = creer_analyseur("essai", ["fenetre_anti_rejeu"])
+    assert vars(analyseur.parse_args(["--fenetre-anti-rejeu", "45"])) == {"config": None, "fenetre_anti_rejeu": 45.0}
+    assert "--fenetre-anti-rejeu SECONDES" in analyseur.format_help()
 
 
 def test_aide_cite_les_variables_des_secrets() -> None:

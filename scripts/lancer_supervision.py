@@ -24,7 +24,7 @@ FORMAT_JOURNAL = "%(asctime)s %(levelname)s %(name)s : %(message)s"
 FORMAT_DATE = "%Y-%m-%dT%H:%M:%S"
 CHEMIN_CONFIG = RACINE / "config.ini"
 # Les clients lancés depuis la fenêtre envoient leurs positions en UDP : il faut les deux ports.
-PARAMETRES = ["hote", "port_tcp", "port_udp"]
+PARAMETRES = ["hote", "port_tcp", "port_udp", "fenetre_anti_rejeu"]
 SECRETS = ["cle"]
 # Qt garde la main dans sa boucle d'événements : ce minuteur la rend à Python assez
 # souvent pour qu'un Ctrl+C dans la console soit traité.

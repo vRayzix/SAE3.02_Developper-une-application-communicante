@@ -19,7 +19,9 @@ from cherrypie.serveur.serveur import Serveur
 FORMAT_JOURNAL = "%(asctime)s %(levelname)s %(name)s : %(message)s"
 FORMAT_DATE = "%Y-%m-%dT%H:%M:%S"
 CHEMIN_CONFIG = RACINE / "config.ini"
-PARAMETRES = ["hote", "port_tcp", "port_udp", "bdd_hote", "bdd_port", "bdd_utilisateur", "bdd_nom"]
+PARAMETRES = [
+    "hote", "port_tcp", "port_udp", "bdd_hote", "bdd_port", "bdd_utilisateur", "bdd_nom", "fenetre_anti_rejeu"
+]
 SECRETS = ["cle", "bdd_mdp"]
 
 
