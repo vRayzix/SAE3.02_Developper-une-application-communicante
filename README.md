@@ -326,6 +326,18 @@ cd ~/SAE3.02_Developper-une-application-communicante
 
 Et pour la supervision, la variable `CHERRYPIE_CLE` puis la dernière ligne du bloc de sa variante, depuis le dossier du dépôt.
 
+## Dépannage
+
+Chaque ligne donne un symptôme déjà rencontré, sa cause et la commande qui la vérifie.
+
+| Symptôme | Cause | Vérification |
+| --- | --- | --- |
+| `accès refusé à cherrypie` (`init_bdd.py`, ou `historique non écrit` dans le journal du serveur) | l'utilisateur MariaDB a été créé pour une autre adresse que celle d'où vient la VM code, ou avec un autre mot de passe que `CHERRYPIE_BDD_MDP` | VM bdd : `sudo mariadb -e "SELECT user, host FROM mysql.user"` ; VM code : `ip -4 route get adresse-de-la-vm-bdd`, l'adresse après `src` doit être dans la colonne `host`. Sinon, recoller les blocs de la VM bdd avec cette adresse. Mot de passe : `sudo mariadb -e "ALTER USER 'cherrypie'@'adresse-de-la-vm-code' IDENTIFIED BY 'cherrypie_test'"` |
+| `Connexion refusée` dans la supervision (`connexion impossible : [WinError 10061]`, `[Errno 111] Connection refused`) | serveur non lancé, ou lancé sans `--hote 0.0.0.0` : il n'écoute alors que sur `127.0.0.1` | VM code : `ss -tlnp \| grep 5050` doit montrer `0.0.0.0:5050` ; poste Windows : `Test-NetConnection adresse-de-la-vm-code -Port 5050` doit afficher `TcpTestSucceeded : True` |
+| `pas de HELLO_ACK` (clients), `aucune nouvelle du serveur` (supervision), `horodatage hors fenêtre` ou `HMAC invalide` (serveur) | horloges à plus de 5 s d'écart (`horodatage hors fenêtre`), ou `CHERRYPIE_CLE` différente (`HMAC invalide`) | horloges : voir « Avant de lancer » ; clé : `echo "$CHERRYPIE_CLE"` (Debian, macOS) ou `$env:CHERRYPIE_CLE` (PowerShell) doit afficher la même valeur des deux côtés |
+| `historique non écrit` dans le journal du serveur | mot de passe ou droits de la base ; le serveur continue de tourner, sans historique ni statistiques | VM code : `mariadb -h adresse-de-la-vm-bdd -u cherrypie -p cherrypie -e "SHOW TABLES"` (mot de passe `cherrypie_test`) doit lister les trois tables |
+| erreur SQL 1064 pendant `init_bdd.py` | ne doit plus se produire : un « ; » dans un commentaire de `schema.sql` coupait le script, c'est corrigé | `git status --short src/cherrypie/bdd/schema.sql` ne doit rien afficher (fichier tel que dans le dépôt) |
+
 ## Tout en local
 
 Pour développer, tout tourne sur une seule machine : MariaDB, serveur et supervision. Les valeurs par défaut visent déjà cette machine (`127.0.0.1` pour le serveur, `localhost` pour la base) : aucune option n'est nécessaire. On installe MariaDB, puis on crée la base et l'utilisateur, autorisé depuis la machine elle-même (`sudo mariadb`) :
