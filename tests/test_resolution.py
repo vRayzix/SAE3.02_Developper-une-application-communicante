@@ -41,9 +41,9 @@ def valeurs(config: Configuration) -> dict[str, object]:
 @pytest.mark.parametrize(
     ("option", "variable", "fichier", "attendu"),
     [
-        ("10.0.0.1", "10.0.0.2", "10.0.0.3", "10.0.0.1"),
-        (None, "10.0.0.2", "10.0.0.3", "10.0.0.2"),
-        (None, None, "10.0.0.3", "10.0.0.3"),
+        ("option.exemple", "variable.exemple", "fichier.exemple", "option.exemple"),
+        (None, "variable.exemple", "fichier.exemple", "variable.exemple"),
+        (None, None, "fichier.exemple", "fichier.exemple"),
         (None, None, None, "127.0.0.1"),
     ],
     ids=["option", "variable", "fichier", "defaut"],

@@ -27,7 +27,7 @@ from cherrypie.serveur.passages import PassageVp
 RACINE = Path(__file__).resolve().parent.parent
 SCHEMA = RACINE / "src" / "cherrypie" / "bdd" / "schema.sql"
 PARAMETRES = {
-    "hote": "10.0.0.2", "port": 3306, "utilisateur": "cherrypie", "mot_de_passe": "secret", "base": "cherrypie"
+    "hote": "bdd.exemple", "port": 3306, "utilisateur": "cherrypie", "mot_de_passe": "secret", "base": "cherrypie"
 }
 DELAI_CONNEXION = 3.0
 DEBUT = datetime(2026, 11, 17, 15, 31, 14)
@@ -70,7 +70,7 @@ def refuser(monkeypatch: pytest.MonkeyPatch, errno: int) -> None:
 def test_connexion_avec_les_parametres_de_config(acces: AccesBdd, connexions: list[FausseConnexion]) -> None:
     assert acces.connectee
     assert connexions[0].parametres == {
-        "host": "10.0.0.2",
+        "host": "bdd.exemple",
         "port": 3306,
         "user": "cherrypie",
         "password": "secret",

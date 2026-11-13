@@ -24,5 +24,5 @@ def test_options_reseau_seulement() -> None:
 
 
 def test_cle_absente_nommee_avant_la_fenetre(lancer_supervision: ModuleType, capsys: pytest.CaptureFixture) -> None:
-    assert lancer_supervision.main(["--hote", "192.0.2.1"]) == 1
+    assert lancer_supervision.main(["--hote", "serveur.exemple"]) == 1
     assert "CHERRYPIE_CLE non définie" in capsys.readouterr().err
