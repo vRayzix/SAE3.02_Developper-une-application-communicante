@@ -906,7 +906,6 @@ classDiagram
         -envoyer(message: Message) None
         -fermer() None
         -changer_etat(etat: EtatConnexion, detail: str) None
-        +reglages_en_attente() int
         +arret_demande() bool
     }
 
@@ -1128,8 +1127,6 @@ classDiagram
         -connecter(forcer: bool) bool
         -signaler_panne(erreur: BddError) None
         +arret_demande() bool
-        +taches_en_attente() int
-        +reponses_en_attente() int
         -attendre_une_tache() object
         -traiter_les_taches_arrivees() None
         -traiter(tache: object) None
