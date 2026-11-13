@@ -68,11 +68,7 @@ class Circulation:
     """
 
     def __init__(self, rond_point: RondPoint) -> None:
-        """Crée le calcul pour un rond-point.
-
-        Args:
-            rond_point (RondPoint): rond-point parcouru par les usagers.
-        """
+        """Crée le calcul pour un rond-point."""
         self.__rond_point = rond_point
         self.__tour_d_entree: str | None = None
 
@@ -98,10 +94,6 @@ class Circulation:
         l'anneau, il ne voit que les obstacles de sa propre voie, la voie intérieure, même
         pendant qu'il la rejoint.
 
-        Args:
-            registre (Registre): usagers connectés, avec leur dernière position et leur étape.
-            prioritaires (frozenset[str]): identifiants des VP prioritaires.
-
         Returns:
             dict[str, Vue]: la vue de chaque usager, par identifiant.
         """
@@ -121,7 +113,6 @@ class Circulation:
         tour = self.__donner_le_tour(vehicules, distances, prioritaires)
         vues = {}
         for vehicule in vehicules:
-            # Un VP prioritaire passe sans attendre son tour ; les autres attendent le leur.
             en_approche = vehicule.etape is Etape.APPROCHE
             ceder = en_approche and vehicule.identifiant not in prioritaires and vehicule.identifiant != tour
             vues[vehicule.identifiant] = Vue(distances[vehicule.identifiant], ceder)
@@ -135,12 +126,6 @@ class Circulation:
         Un piéton ne ferme que la chaussée sur laquelle il marche : arrivé sur le refuge du
         terre-plein, il libère la chaussée d'entrée, et ne ferme la chaussée de sortie qu'en
         y posant le pied. Cela vaut que la régulation soit active ou non.
-
-        Args:
-            registre (Registre): usagers connectés, avec leur dernière position et leur étape.
-
-        Returns:
-            set[tuple[str, Chaussee]]: branche et chaussée de chaque passage fermé.
         """
         fermes = set()
         for usager in registre.usagers:
@@ -270,7 +255,6 @@ class Circulation:
             if autre_rang == rang or autre.branche_entree != branche.nom:
                 continue
             autre_abscisse = -self.__ecart_a_l_axe(autre.position, branche)
-            # À égalité, le premier arrivé au registre est devant.
             if autre_abscisse > abscisse or (autre_abscisse == abscisse and autre_rang < rang):
                 distances.append(autre_abscisse - abscisse)
         return distances

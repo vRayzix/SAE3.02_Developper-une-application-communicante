@@ -55,12 +55,8 @@ class LogiqueServeur:
     def __init__(self, rond_point: RondPoint, timeout_client: float) -> None:
         """Crée la logique d'un serveur, sans session ni usager.
 
-        Args:
-            rond_point (RondPoint): rond-point géré par le serveur.
-            timeout_client (float): silence au-delà duquel une session expire, en secondes.
-
         Raises:
-            ValueError: si le timeout n'est pas strictement positif.
+            ValueError: si le timeout, en secondes, n'est pas strictement positif.
         """
         if not timeout_client > 0:
             raise ValueError(f"le timeout des clients doit être positif (reçu : {timeout_client})")
@@ -141,13 +137,9 @@ class LogiqueServeur:
         return sorted({segment for passage in self.__passages_en_cours.values() for segment in passage.segments_reserves})
 
     def ouvrir_session(self, maintenant: float) -> int:
-        """Ouvre une session pour une nouvelle connexion TCP.
+        """Ouvre une session pour une nouvelle connexion TCP et renvoie son numéro, associé à sa socket.
 
-        Args:
-            maintenant (float): instant de la connexion, sur l'horloge monotone du serveur.
-
-        Returns:
-            int: numéro de la session, que la boucle réseau associe à sa socket.
+        Tous les instants passés à la logique viennent de l'horloge monotone du serveur.
         """
         self.__total_sessions += 1
         numero = self.__total_sessions
@@ -155,40 +147,23 @@ class LogiqueServeur:
         return numero
 
     def fermer_session(self, numero: int) -> Usager | None:
-        """Oublie une session et retire son usager du registre.
-
-        Args:
-            numero (int): numéro de la session.
-
-        Returns:
-            Usager | None: l'usager retiré, None si la session n'en avait pas ou était déjà fermée.
-        """
+        """Oublie une session et retire son usager du registre ; renvoie cet usager, ou None."""
         session = self.__sessions.pop(numero, None)
         if session is None or session.identifiant is None:
             return None
         if self.__passages_en_cours.pop(session.identifiant, None) is not None:
             journal.warning("VP %s disparu avant son VP_FIN : sa réservation est levée, sans mesure", session.identifiant)
-        # S'il revient sur une nouvelle session, la consigne qui vaut encore lui sera renvoyée.
         self.__regulateur.oublier(session.identifiant)
         return self.__registre.retirer(session.identifiant)
 
     def traiter_tcp(self, numero: int, message: Message, maintenant: float) -> Reponse:
-        """Traite un message reçu sur une session TCP.
-
-        Args:
-            numero (int): numéro de la session qui a reçu le message.
-            message (Message): message déjà authentifié (HMAC et anti-rejeu vérifiés).
-            maintenant (float): instant de réception, sur l'horloge monotone du serveur.
-
-        Returns:
-            Reponse: messages à renvoyer à l'émetteur, et fermeture éventuelle de la session.
+        """Traite un message TCP déjà authentifié (HMAC et anti-rejeu vérifiés).
 
         Raises:
             TrameInvalideError: si le message parle au nom d'un autre usager que celui de
                 la session, ou si son type n'a pas sa place sur une session TCP.
         """
         session = self.__sessions[numero]
-        # Contrôle d'identité : une fois le HELLO passé, la session ne parle qu'au nom de son usager.
         if session.identifiant is not None and message.emetteur != session.identifiant:
             raise TrameInvalideError(f"message de {message.emetteur} reçu sur la session de {session.identifiant}")
         session.derniere_activite = maintenant
@@ -211,14 +186,10 @@ class LogiqueServeur:
         raise TrameInvalideError(f"message {message.type.value} inattendu sur une session TCP")
 
     def traiter_udp(self, message: Message, maintenant: float) -> None:
-        """Met à jour un usager à partir d'une position reçue en UDP.
+        """Met à jour un usager à partir d'un POS UDP déjà authentifié.
 
         Si l'usager est un VP annoncé, sa première position sur l'anneau note son entrée
         sur l'anneau.
-
-        Args:
-            message (Message): message déjà authentifié (HMAC et anti-rejeu vérifiés).
-            maintenant (float): instant de réception, sur l'horloge monotone du serveur.
 
         Raises:
             TrameInvalideError: si le message n'est pas un POS ou si ses données sont invalides.
@@ -226,7 +197,6 @@ class LogiqueServeur:
         """
         if message.type is not TypeMessage.POS:
             raise TrameInvalideError(f"seuls les POS passent par UDP (reçu : {message.type.value})")
-        # Contrôle d'identité : seuls les usagers dont la session TCP est ouverte sont au registre.
         usager = self.__registre.obtenir(message.emetteur)
         donnees = message.donnees
         manquants = [champ for champ in CHAMPS_POS if champ not in donnees]
@@ -258,16 +228,10 @@ class LogiqueServeur:
             passage.noter_etape(etape, maintenant)
 
     def sessions_expirees(self, maintenant: float) -> list[int]:
-        """Liste les sessions restées silencieuses plus longtemps que le timeout.
+        """Numéros des sessions restées silencieuses plus longtemps que le timeout.
 
         La boucle réseau les ferme ensuite : un client qui ne donne plus de nouvelles
         ne pourrait de toute façon plus recevoir de consignes.
-
-        Args:
-            maintenant (float): instant présent, sur l'horloge monotone du serveur.
-
-        Returns:
-            list[int]: numéros des sessions expirées.
         """
         return [
             session.numero
@@ -276,11 +240,7 @@ class LogiqueServeur:
         ]
 
     def superviseurs(self) -> list[int]:
-        """Liste les sessions abonnées aux STATE.
-
-        Returns:
-            list[int]: numéros des sessions de supervision.
-        """
+        """Numéros des sessions de supervision, abonnées aux STATE."""
         return [session.numero for session in self.__sessions.values() if session.superviseur]
 
     def cadencer(self) -> list[tuple[int, Message]]:
@@ -289,10 +249,7 @@ class LogiqueServeur:
         La densité moyenne des branches est relevée pour les VP en cours de traversée. Le
         régulateur décide ensuite des consignes (NOTIF), puis un STATE part vers chaque
         supervision, et chaque véhicule reçoit ce qu'il voit devant lui (DEVANT), que la
-        régulation soit active ou non.
-
-        Returns:
-            list[tuple[int, Message]]: messages à envoyer, avec le numéro de leur session.
+        régulation soit active ou non. Renvoie les messages avec le numéro de leur session.
         """
         densites = self.__calculateur.calculer(self.__registre)
         densite_moyenne = sum(densites.values()) / len(densites)
@@ -321,11 +278,7 @@ class LogiqueServeur:
         return envois
 
     def construire_etat(self) -> Message:
-        """Construit le STATE diffusé aux supervisions.
-
-        Returns:
-            Message: STATE avec les usagers, la densité des branches, les VP et la régulation.
-        """
+        """Construit le STATE diffusé aux supervisions : usagers, densités, VP et régulation."""
         return self.__etat(self.__calculateur.calculer(self.__registre))
 
     def __etat(self, densites: dict[str, float]) -> Message:

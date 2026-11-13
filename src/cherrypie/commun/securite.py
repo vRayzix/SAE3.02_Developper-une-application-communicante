@@ -28,14 +28,7 @@ class Signataire:
     """
 
     def __init__(self, cle: bytes) -> None:
-        """Crée un signataire.
-
-        Args:
-            cle (bytes): clé HMAC partagée.
-
-        Raises:
-            ValueError: si la clé est vide.
-        """
+        """Crée un signataire avec la clé HMAC partagée ; ValueError si elle est vide."""
         if not cle:
             raise ValueError("la clé HMAC ne peut pas être vide")
         self.__cle = bytes(cle)
@@ -46,22 +39,12 @@ class Signataire:
         return self.__cle
 
     def signer(self, message: Message) -> Enveloppe:
-        """Emballe un message dans une enveloppe horodatée, avec un nonce neuf et son HMAC.
-
-        Args:
-            message (Message): message à envoyer.
-
-        Returns:
-            Enveloppe: l'enveloppe signée, prête à être encodée.
-        """
+        """Emballe un message dans une enveloppe horodatée, avec un nonce neuf et son HMAC."""
         enveloppe = Enveloppe(message, time.time(), secrets.token_hex(TAILLE_NONCE))
         return dataclasses.replace(enveloppe, hmac=self.__calculer_hmac(enveloppe))
 
     def verifier(self, enveloppe: Enveloppe) -> None:
         """Vérifie que le HMAC d'une enveloppe correspond à son contenu.
-
-        Args:
-            enveloppe (Enveloppe): enveloppe reçue.
 
         Raises:
             SignatureInvalideError: si le HMAC est absent ou ne correspond pas au contenu.
@@ -92,11 +75,7 @@ class GardeAntiRejeu:
     """
 
     def __init__(self, fenetre: float) -> None:
-        """Crée une garde anti-rejeu.
-
-        Args:
-            fenetre (float): écart maximal accepté entre l'horodatage d'une enveloppe
-                et l'heure locale, en secondes.
+        """Crée une garde anti-rejeu ; fenetre est l'écart maximal accepté avec l'heure locale, en secondes.
 
         Raises:
             ValueError: si la fenêtre n'est pas strictement positive.
@@ -121,10 +100,7 @@ class GardeAntiRejeu:
 
         À appeler après Signataire.verifier() : tant que la signature n'est pas
         vérifiée, l'horodatage et le nonce ont pu être choisis par un attaquant.
-
-        Args:
-            enveloppe (Enveloppe): enveloppe dont la signature a été vérifiée.
-            maintenant (float): heure locale, en secondes depuis l'epoch.
+        `maintenant` est l'heure locale, en secondes depuis l'epoch.
 
         Raises:
             RejeuDetecteError: si l'horodatage sort de la fenêtre ou si le nonce a déjà été reçu.

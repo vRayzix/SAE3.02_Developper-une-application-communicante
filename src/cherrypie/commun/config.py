@@ -1,4 +1,4 @@
-"""Lecture et validation du fichier de configuration (config.ini)."""
+"""Lecture et validation de la configuration : config.ini, ou valeurs résolues par resolution.py."""
 
 from __future__ import annotations
 
@@ -48,10 +48,7 @@ class Configuration:
     """
 
     def __init__(self, parseur: configparser.ConfigParser) -> None:
-        """Extrait et valide toutes les valeurs d'un fichier déjà analysé.
-
-        Args:
-            parseur (configparser.ConfigParser): contenu de config.ini.
+        """Extrait et valide toutes les valeurs d'une configuration déjà analysée.
 
         Raises:
             ConfigurationInvalideError: si une clé manque ou si une valeur est incohérente.
@@ -89,13 +86,7 @@ class Configuration:
 
     @classmethod
     def depuis_fichier(cls, chemin: str | Path) -> Configuration:
-        """Lit un fichier config.ini et construit la configuration.
-
-        Args:
-            chemin (str | Path): chemin du fichier à lire.
-
-        Returns:
-            Configuration: la configuration validée.
+        """Lit un fichier config.ini complet et construit la configuration.
 
         Raises:
             ConfigurationInvalideError: si le fichier est introuvable, mal formé
@@ -322,12 +313,6 @@ class Configuration:
 
 def lire_fichier(chemin: str | Path) -> configparser.ConfigParser:
     """Lit un fichier au format de config.ini, sans en valider les valeurs.
-
-    Args:
-        chemin (str | Path): chemin du fichier à lire.
-
-    Returns:
-        configparser.ConfigParser: contenu du fichier.
 
     Raises:
         ConfigurationInvalideError: si le fichier est introuvable, illisible ou mal formé.

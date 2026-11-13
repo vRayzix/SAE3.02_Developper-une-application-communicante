@@ -15,16 +15,9 @@ class PassageVp:
     La mesure va de l'annonce du VP (VP_ALERT) à sa sortie de l'anneau (VP_FIN), avec la
     même définition que la régulation soit active ou non.
 
-    Attributes:
-        identifiant (str): identifiant du VP.
-        entree (str): branche d'entrée.
-        sortie (str): branche de sortie.
-        debut (datetime): instant de l'annonce.
-        fin (datetime): instant de sortie de l'anneau.
-        duree (float): temps de traversée, de l'annonce à la sortie de l'anneau, en secondes.
-        duree_anneau (float | None): temps passé sur l'anneau seul, None si le VP n'y a pas été vu.
-        regulation (bool): True si la régulation était active à l'annonce du VP.
-        densite_moyenne (float): densité moyenne des branches pendant la traversée, entre 0 et 1.
+    Durées en secondes ; duree_anneau vaut None si le VP n'a pas été vu sur l'anneau.
+    regulation dit si la régulation était active à l'annonce ; densite_moyenne, entre 0 et 1,
+    est celle des branches pendant la traversée.
     """
 
     identifiant: str
@@ -59,12 +52,7 @@ class PassageEnCours:
         """Ouvre le suivi d'un VP qui vient de s'annoncer et démarre le chronomètre.
 
         Args:
-            identifiant (str): identifiant du VP.
-            entree (str): branche d'entrée.
-            sortie (str): branche de sortie.
-            segments_reserves (list[str]): noms des segments de sa trajectoire sur l'anneau.
             annonce (float): instant du VP_ALERT, sur l'horloge monotone du serveur.
-            regulation (bool): régulation en vigueur à l'annonce.
             eta (float): temps annoncé pour atteindre l'anneau, en secondes (0 si inconnu).
         """
         self.__identifiant = identifiant
@@ -134,32 +122,16 @@ class PassageEnCours:
         return self.__entree_anneau is not None
 
     def noter_etape(self, etape: Etape, maintenant: float) -> None:
-        """Note l'entrée du VP sur l'anneau, à son premier POS reçu sur l'anneau.
-
-        Args:
-            etape (Etape): étape annoncée par le dernier POS du VP.
-            maintenant (float): instant de réception, sur l'horloge monotone du serveur.
-        """
+        """Note l'entrée du VP sur l'anneau, à son premier POS reçu sur l'anneau."""
         if etape is Etape.ANNEAU and self.__entree_anneau is None:
             self.__entree_anneau = maintenant
 
     def noter_densite(self, densite_moyenne: float) -> None:
-        """Relève la densité moyenne des branches pendant la traversée.
-
-        Args:
-            densite_moyenne (float): moyenne des densités des branches, entre 0 et 1.
-        """
+        """Relève la densité moyenne des branches, entre 0 et 1, pendant la traversée."""
         self.__releves_densite.append(densite_moyenne)
 
     def terminer(self, maintenant: float) -> PassageVp:
-        """Arrête le chronomètre à la sortie de l'anneau.
-
-        Args:
-            maintenant (float): instant du VP_FIN, sur l'horloge monotone du serveur.
-
-        Returns:
-            PassageVp: la mesure de la traversée.
-        """
+        """Arrête le chronomètre au VP_FIN et renvoie la mesure de la traversée."""
         duree = maintenant - self.__annonce
         duree_anneau = None if self.__entree_anneau is None else maintenant - self.__entree_anneau
         releves = self.__releves_densite

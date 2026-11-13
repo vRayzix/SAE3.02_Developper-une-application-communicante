@@ -16,13 +16,7 @@ class TypeConnexion(Enum):
 
 @dataclass(frozen=True)
 class ReleveDensite:
-    """Densité d'une branche à un instant.
-
-    Attributes:
-        instant (datetime): date et heure du relevé.
-        branche (str): identifiant de la branche.
-        densite (float): usagers présents / capacité, entre 0 et 1.
-    """
+    """Densité d'une branche à un instant : usagers en approche / capacité, entre 0 et 1."""
 
     instant: datetime
     branche: str
@@ -31,15 +25,7 @@ class ReleveDensite:
 
 @dataclass(frozen=True)
 class EvenementConnexion:
-    """Connexion ou déconnexion d'un usager.
-
-    Attributes:
-        instant (datetime): date et heure de l'événement.
-        usager (str): identifiant de l'usager.
-        categorie (str): catégorie de l'usager (ex. "voiture").
-        evenement (TypeConnexion): connexion ou déconnexion.
-        detail (str): ce qui s'est passé, par exemple la raison d'une déconnexion.
-    """
+    """Connexion ou déconnexion d'un usager ; detail donne par exemple la raison d'une déconnexion."""
 
     instant: datetime
     usager: str

@@ -11,7 +11,7 @@ class CherryPieError(Exception):
 
 
 class ConfigurationInvalideError(CherryPieError):
-    """Le fichier de configuration est absent, mal formé ou incohérent."""
+    """Configuration absente, mal formée ou incohérente : fichier, option, variable ou secret."""
 
 
 class TrameInvalideError(CherryPieError):
@@ -38,12 +38,7 @@ class InscriptionRefuseeError(CherryPieError):
     """Le serveur a refusé le HELLO d'un usager."""
 
     def __init__(self, raison: str, reessayer: bool) -> None:
-        """Crée l'erreur à partir du HELLO_ACK reçu.
-
-        Args:
-            raison (str): raison donnée par le serveur.
-            reessayer (bool): True si le refus est provisoire (identifiant encore connecté ailleurs).
-        """
+        """Crée l'erreur à partir du HELLO_ACK reçu ; reessayer vaut True si le refus est provisoire."""
         super().__init__(raison)
         self.__reessayer = reessayer
 
@@ -70,4 +65,4 @@ class AccesBddRefuseError(BddError):
 
 
 class BaseAbsenteError(BddError):
-    """La base nommée dans config.ini n'existe pas sur le serveur MariaDB."""
+    """La base demandée n'existe pas sur le serveur MariaDB."""

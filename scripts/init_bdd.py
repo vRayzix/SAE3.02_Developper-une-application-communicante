@@ -26,7 +26,6 @@ SCHEMA = RACINE / "src" / "cherrypie" / "bdd" / "schema.sql"
 CHEMIN_CONFIG = RACINE / "config.ini"
 PARAMETRES = ["bdd_hote", "bdd_port", "bdd_utilisateur", "bdd_nom"]
 SECRETS = ["bdd_mdp"]
-# Ce qu'il faut vérifier pour chaque cause d'échec, en plus du message de l'erreur.
 CONSEILS = {
     BddInjoignableError: (
         "Vérifiez que MariaDB tourne (systemctl status mariadb), que --bdd-hote et --bdd-port sont justes,\n"
@@ -41,14 +40,7 @@ CONSEILS = {
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Résout la configuration, se connecte à la base et crée les tables.
-
-    Args:
-        argv (list[str] | None): arguments de la ligne de commande, sys.argv[1:] par défaut.
-
-    Returns:
-        int: code de sortie du programme, 0 si les tables sont prêtes.
-    """
+    """Résout la configuration, crée les tables et renvoie le code de sortie, 0 si elles sont prêtes."""
     arguments = creer_analyseur(__doc__, PARAMETRES, SECRETS).parse_args(argv)
     try:
         config = resoudre_configuration(vars(arguments), CHEMIN_CONFIG, SECRETS, saisir=saisie_masquee())

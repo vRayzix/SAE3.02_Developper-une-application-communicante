@@ -12,7 +12,6 @@ from cherrypie.bdd.enregistrements import EvenementConnexion, ReleveDensite
 from cherrypie.commun.erreurs import AccesBddRefuseError, BaseAbsenteError, BddError, BddInjoignableError
 from cherrypie.serveur.passages import PassageVp
 
-# Codes d'erreur de mysql.connector qui disent que le serveur MariaDB ne répond pas.
 ERREURS_INJOIGNABLE = frozenset(
     {
         errorcode.CR_CONN_HOST_ERROR,
@@ -53,8 +52,8 @@ class AccesBdd:
         """Prépare l'accès, sans se connecter.
 
         Args:
-            parametres (dict[str, str | int]): section [bdd] de config.ini (hote, port,
-                utilisateur, mot_de_passe, base).
+            parametres (dict[str, str | int]): hote, port, utilisateur, mot_de_passe et base
+                (Configuration.parametres_bdd).
             delai_connexion (float): attente maximale d'une connexion, en secondes.
         """
         self.__parametres = dict(parametres)
@@ -111,10 +110,7 @@ class AccesBdd:
             journal.info("fermeture de la connexion à la base : %s", erreur)
 
     def executer_script(self, script: str) -> None:
-        """Exécute un script SQL, instruction par instruction, puis valide.
-
-        Args:
-            script (str): instructions séparées par des points-virgules, comme dans schema.sql.
+        """Exécute un script SQL comme schema.sql, instruction par instruction, puis valide.
 
         Raises:
             BddError: si une instruction échoue.
@@ -124,9 +120,6 @@ class AccesBdd:
 
     def enregistrer_passages(self, passages: list[PassageVp]) -> None:
         """Enregistre des traversées de VP.
-
-        Args:
-            passages (list[PassageVp]): traversées mesurées.
 
         Raises:
             BddError: si l'écriture échoue ; rien n'est alors enregistré.
@@ -143,9 +136,6 @@ class AccesBdd:
     def enregistrer_densites(self, releves: list[ReleveDensite]) -> None:
         """Enregistre des relevés de densité.
 
-        Args:
-            releves (list[ReleveDensite]): un relevé par branche et par instant.
-
         Raises:
             BddError: si l'écriture échoue ; rien n'est alors enregistré.
         """
@@ -153,9 +143,6 @@ class AccesBdd:
 
     def enregistrer_connexions(self, evenements: list[EvenementConnexion]) -> None:
         """Enregistre des connexions et des déconnexions d'usagers.
-
-        Args:
-            evenements (list[EvenementConnexion]): événements de connexion.
 
         Raises:
             BddError: si l'écriture échoue ; rien n'est alors enregistré.
@@ -167,11 +154,7 @@ class AccesBdd:
         self.__ecrire_lot(REQUETE_CONNEXION, lignes)
 
     def lire_statistiques(self, nombre_passages: int, nombre_releves: int) -> dict:
-        """Lit les dernières traversées de VP et les derniers relevés de densité.
-
-        Args:
-            nombre_passages (int): nombre maximal de traversées lues.
-            nombre_releves (int): nombre maximal de relevés de densité lus.
+        """Lit au plus `nombre_passages` traversées de VP et `nombre_releves` relevés de densité, les derniers.
 
         Returns:
             dict: {"passages": [...], "densites": [...]}, du plus ancien au plus récent, dates en ISO 8601.

@@ -32,14 +32,7 @@ class DecoupeurTrames:
         return bytes(self.__tampon)
 
     def ajouter(self, octets: bytes) -> list[bytes]:
-        """Ajoute des octets reçus et renvoie les trames devenues complètes.
-
-        Args:
-            octets (bytes): données renvoyées par recv().
-
-        Returns:
-            list[bytes]: charges utiles des trames complètes, dans l'ordre d'arrivée.
-                La liste est vide si aucune trame n'est encore complète.
+        """Ajoute des octets reçus et renvoie les charges utiles des trames devenues complètes, dans l'ordre.
 
         Raises:
             TrameInvalideError: si un en-tête annonce plus de TAILLE_MAX_TRAME octets.
@@ -61,12 +54,6 @@ class DecoupeurTrames:
     @staticmethod
     def encoder(charge: bytes) -> bytes:
         """Préfixe une charge utile par sa longueur, pour l'envoyer sur TCP.
-
-        Args:
-            charge (bytes): octets à envoyer (en pratique, une enveloppe JSON).
-
-        Returns:
-            bytes: l'en-tête de longueur suivi de la charge.
 
         Raises:
             TrameInvalideError: si la charge dépasse TAILLE_MAX_TRAME octets.

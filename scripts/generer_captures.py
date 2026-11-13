@@ -56,14 +56,11 @@ DELAI_CAPTURE_REPOS = 3.0
 DELAI_CAPTURE_VP = 8.0
 # Avec régulation, le VP double les voitures rangées de sa branche à peu près à ce délai après son départ.
 DELAI_CAPTURE_DEPASSEMENT = 2.4
-# Taille des captures principales, puis tailles d'écran de portable vérifiées.
 TAILLE_CAPTURE = (1280, 720)
 TAILLES_ECRAN = [(1024, 640), (1280, 720), (1440, 800)]
-# Temps laissé à la fenêtre pour se redisposer après un changement de taille ou d'onglet.
 DELAI_DISPOSITION = 0.3
 ONGLET_SUIVI = 1
 DELAI_CONNEXION = 5.0
-# Attente maximale de la fin de la traversée du VP, mesurée au VP_FIN, en secondes.
 DELAI_FIN_TRAVERSEE = 30.0
 # Relevés de densité plus serrés que dans l'exemple, pour que les courbes aient des points.
 INTERVALLE_RELEVES = "1"

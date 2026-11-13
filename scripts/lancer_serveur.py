@@ -24,14 +24,7 @@ SECRETS = ["cle", "bdd_mdp"]
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Résout la configuration, démarre le serveur et le fait tourner jusqu'à Ctrl+C.
-
-    Args:
-        argv (list[str] | None): arguments de la ligne de commande, sys.argv[1:] par défaut.
-
-    Returns:
-        int: code de sortie du programme, 0 si tout s'est bien passé.
-    """
+    """Résout la configuration, démarre le serveur jusqu'à Ctrl+C et renvoie le code de sortie."""
     arguments = creer_analyseur(__doc__, PARAMETRES, SECRETS).parse_args(argv)
     logging.basicConfig(level=logging.INFO, format=FORMAT_JOURNAL, datefmt=FORMAT_DATE)
     try:

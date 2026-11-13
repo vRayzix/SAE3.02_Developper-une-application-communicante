@@ -32,14 +32,7 @@ INTERVALLE_SIGNAUX_MS = 200
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Résout la configuration, ouvre la fenêtre et la fait tourner jusqu'à sa fermeture.
-
-    Args:
-        argv (list[str] | None): arguments de la ligne de commande, sys.argv[1:] par défaut.
-
-    Returns:
-        int: code de sortie du programme, 0 si tout s'est bien passé.
-    """
+    """Résout la configuration, ouvre la fenêtre jusqu'à sa fermeture et renvoie le code de sortie."""
     arguments = creer_analyseur(__doc__, PARAMETRES, SECRETS).parse_args(argv)
     logging.basicConfig(level=logging.INFO, format=FORMAT_JOURNAL, datefmt=FORMAT_DATE)
     try:
@@ -50,7 +43,6 @@ def main(argv: list[str] | None = None) -> int:
     # Qt ne reçoit que le nom du programme : les options ont déjà été lues.
     application = QApplication(sys.argv[:1])
     fenetre = FenetreSupervision(config)
-    # Plein écran : la scène, qui suit la taille de la fenêtre, y est la plus lisible.
     fenetre.showMaximized()
     fenetre.demarrer()
     # Ctrl+C ferme la fenêtre, qui arrête alors ses threads comme avec le bouton de fermeture.

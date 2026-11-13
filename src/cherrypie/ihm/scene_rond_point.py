@@ -90,7 +90,6 @@ POURCENT = 100
 # Un cap compté depuis le nord devient une rotation Qt, comptée depuis l'est dans le sens
 # des aiguilles d'une montre : on retire ce quart de tour.
 QUART_DE_TOUR = 90.0
-# Côté minimal de la vue, en pixels, pour que les usagers restent visibles.
 TAILLE_MIN_VUE = 300
 
 
@@ -104,11 +103,7 @@ class MarqueurUsager(QGraphicsPathItem):
     """
 
     def __init__(self, categorie: str) -> None:
-        """Crée la silhouette d'un usager.
-
-        Args:
-            categorie (str): catégorie de l'usager (ex. "voiture").
-        """
+        """Crée la silhouette d'un usager de la catégorie donnée (ex. "voiture")."""
         super().__init__()
         self.__categorie = categorie
         longueur, largeur = GABARITS_CATEGORIE[categorie]
@@ -147,12 +142,7 @@ class MarqueurUsager(QGraphicsPathItem):
         return self.__halo
 
     def afficher(self, usager: dict, libelles: dict[str, str]) -> None:
-        """Oriente la silhouette, affiche la consigne par le contour et le détail dans l'infobulle.
-
-        Args:
-            usager (dict): description de l'usager, telle que le STATE la transmet.
-            libelles (dict[str, str]): nom de rue de chaque branche, pour l'infobulle.
-        """
+        """Oriente la silhouette d'après un usager du STATE ; consigne au contour, détail en infobulle."""
         if usager["cap"] is not None:
             self.setRotation(usager["cap"] - QUART_DE_TOUR)
         consigne = usager["consigne"]
@@ -182,9 +172,6 @@ class SceneRondPoint(QGraphicsScene):
 
         Les marques de régulation (voie réservée, entrées temporisées) sont posées tout
         de suite, cachées, et n'apparaissent que quand un STATE les signale.
-
-        Args:
-            rond_point (RondPoint): rond-point décrit par la configuration.
         """
         super().__init__()
         self.__rond_point = rond_point
@@ -244,9 +231,10 @@ class SceneRondPoint(QGraphicsScene):
 
     @property
     def passages_fermes(self) -> dict[tuple[str, str], QGraphicsLineItem]:
-        """dict[tuple[str, str], QGraphicsLineItem]: barrière de chaque chaussée, visible si un piéton la traverse (copie).
+        """dict[tuple[str, str], QGraphicsLineItem]: barrière de chaque chaussée (copie).
 
-        Les clés sont (branche, "entree") et (branche, "sortie").
+        Une barrière est visible quand un piéton traverse sa chaussée. Les clés sont
+        (branche, "entree") et (branche, "sortie").
         """
         return dict(self.__passages_fermes)
 
@@ -257,14 +245,7 @@ class SceneRondPoint(QGraphicsScene):
 
     @staticmethod
     def vers_scene(position: Position) -> QPointF:
-        """Convertit une position du rond-point en point de la scène.
-
-        Args:
-            position (Position): point du rond-point, en mètres, y vers le nord.
-
-        Returns:
-            QPointF: point de la scène, y vers le bas.
-        """
+        """Convertit une position du rond-point (y vers le nord) en point de la scène (y vers le bas)."""
         return QPointF(position.x, -position.y)
 
     def afficher_etat(self, etat: dict) -> None:
@@ -272,9 +253,6 @@ class SceneRondPoint(QGraphicsScene):
 
         Les noms de branches ou de segments que la scène ne connaît pas sont ignorés :
         ils viendraient d'un serveur configuré avec un autre rond-point.
-
-        Args:
-            etat (dict): données du STATE (usagers, densite, segments_reserves, entrees_bloquees).
         """
         self.__afficher_usagers(etat["usagers"])
         for nom, arc in self.__arcs_reserves.items():
@@ -350,7 +328,6 @@ class SceneRondPoint(QGraphicsScene):
         fin = bord + self.__rond_point.longueur_branche
         exterieur = branche.demi_largeur
         interieur = branche.terre_plein / 2
-        # Les lignes de rive partent de l'endroit où le bord de la chaussée rencontre l'anneau.
         depart_rive = math.sqrt(max(0.0, bord * bord - exterieur * exterieur))
         rive = QPen(COULEUR_MARQUAGE, EPAISSEUR_LIGNE_DE_RIVE)
         for cote in (1, -1):
@@ -443,7 +420,6 @@ class SceneRondPoint(QGraphicsScene):
         texte.setFont(police)
         texte.setDefaultTextColor(COULEUR_TEXTE)
         texte.document().setDefaultTextOption(QTextOption(Qt.AlignmentFlag.AlignHCenter))
-        # L'étiquette garde la même taille à l'écran, quel que soit le zoom de la vue.
         texte.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations)
         extremite = self.__rond_point.rayon_bord + self.__rond_point.longueur_branche
         ancrage = branche.point(extremite - RECUL_ETIQUETTE, -(branche.demi_largeur + ECART_ETIQUETTE))
@@ -491,12 +467,7 @@ class VueRondPoint(QGraphicsView):
     """Vue de la scène, qui montre tout le rond-point quelle que soit la taille de la fenêtre."""
 
     def __init__(self, scene: SceneRondPoint, parent: QWidget | None = None) -> None:
-        """Crée la vue, lissée et sans barres de défilement.
-
-        Args:
-            scene (SceneRondPoint): scène affichée.
-            parent (QWidget | None): widget parent.
-        """
+        """Crée la vue, lissée et sans barres de défilement."""
         super().__init__(scene, parent)
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setRenderHint(QPainter.RenderHint.TextAntialiasing)
@@ -507,10 +478,6 @@ class VueRondPoint(QGraphicsView):
         self.setMinimumSize(TAILLE_MIN_VUE, TAILLE_MIN_VUE)
 
     def resizeEvent(self, evenement: QResizeEvent) -> None:
-        """Recadre la scène entière à chaque changement de taille de la vue.
-
-        Args:
-            evenement (QResizeEvent): changement de taille reçu de Qt.
-        """
+        """Recadre la scène entière à chaque changement de taille de la vue."""
         super().resizeEvent(evenement)
         self.fitInView(self.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)

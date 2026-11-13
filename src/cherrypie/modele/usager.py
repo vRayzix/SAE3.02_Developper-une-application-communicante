@@ -12,7 +12,6 @@ from cherrypie.modele.trajectoire import Etape, Trajectoire
 
 # 1 km/h en m/s : les vitesses se lisent en km/h, les calculs se font en m/s.
 KMH = 1 / 3.6
-# Part de sa vitesse maximale que garde un usager qui dégage la voie.
 FACTEUR_RALENTISSEMENT = 0.5
 CHAMPS_OBLIGATOIRES = {"id", "categorie", "entree", "sortie"}
 
@@ -31,16 +30,11 @@ class Usager:
     # Écart gardé avec l'obstacle de devant, en mètres. Il couvre aussi le retard de la
     # position vue par le serveur, qui peut dater d'un pas.
     DISTANCE_SECURITE = 6.0
-    # Écart latéral habituel sur la chaussée d'approche, en mètres, positif vers la droite.
+    # En mètres, positif vers la droite.
     ECART_EN_APPROCHE = 0.0
 
     def __init__(self, identifiant: str, branche_entree: str, branche_sortie: str) -> None:
         """Crée un usager à l'arrêt, dont la position n'est pas encore connue.
-
-        Args:
-            identifiant (str): identifiant unique sur le réseau (ex. "voiture_12").
-            branche_entree (str): branche par laquelle il arrive.
-            branche_sortie (str): branche par laquelle il repart.
 
         Raises:
             TypeError: si l'on instancie directement Usager.
@@ -62,7 +56,6 @@ class Usager:
         self.__cap: float | None = None
         self.__vitesse = 0.0
         self.__segment: str | None = None
-        # Un usager qui vient de se présenter arrive par sa branche d'entrée.
         self.__etape = Etape.APPROCHE
         self.__consigne: CodeNotification | None = None
 
@@ -73,12 +66,6 @@ class Usager:
         Seuls « id », « categorie », « entree » et « sortie » sont obligatoires :
         c'est ce que le serveur apprend au HELLO. Les autres champs de vers_dict()
         sont repris quand ils sont présents.
-
-        Args:
-            contenu (dict): dictionnaire au format de vers_dict().
-
-        Returns:
-            Usager: une instance de la sous-classe qui correspond à la catégorie.
 
         Raises:
             TypeError: si le contenu n'est pas un dictionnaire ou si une valeur n'a pas le bon type.
@@ -128,11 +115,7 @@ class Usager:
 
     @position.setter
     def position(self, valeur: Position) -> None:
-        """Enregistre une nouvelle position.
-
-        Raises:
-            TypeError: si la valeur n'est pas une Position.
-        """
+        """Enregistre une nouvelle position (TypeError si ce n'est pas une Position)."""
         if not isinstance(valeur, Position):
             raise TypeError(f"position invalide : {valeur!r}")
         self.__position = valeur
@@ -144,23 +127,12 @@ class Usager:
 
     @cap.setter
     def cap(self, valeur: float) -> None:
-        """Enregistre une nouvelle direction.
-
-        Raises:
-            TypeError: si la valeur n'est pas un nombre.
-            ValueError: si elle n'est pas comprise entre 0 et 360.
-        """
+        """Enregistre une nouvelle direction, vérifiée par verifier_cap."""
         self.__cap = self.verifier_cap(valeur)
 
     @staticmethod
     def verifier_cap(valeur: object) -> float:
-        """Vérifie qu'une valeur peut servir de cap.
-
-        Args:
-            valeur (object): valeur à vérifier, reçue par exemple dans un POS.
-
-        Returns:
-            float: le cap, en degrés.
+        """Vérifie qu'une valeur, reçue par exemple dans un POS, peut servir de cap, et la renvoie en float.
 
         Raises:
             TypeError: si la valeur n'est pas un nombre.
@@ -180,7 +152,7 @@ class Usager:
 
     @vitesse.setter
     def vitesse(self, valeur: float) -> None:
-        """Enregistre une nouvelle vitesse.
+        """Enregistre une nouvelle vitesse, en m/s.
 
         Raises:
             TypeError: si la valeur n'est pas un nombre.
@@ -203,11 +175,7 @@ class Usager:
 
     @segment.setter
     def segment(self, valeur: str | None) -> None:
-        """Enregistre le segment occupé, ou None quand l'usager n'est pas sur l'anneau.
-
-        Raises:
-            ValueError: si le nom de segment est vide ou n'est pas un texte.
-        """
+        """Enregistre le segment occupé, ou None hors de l'anneau (ValueError si le nom est vide)."""
         if valeur is not None and (not isinstance(valeur, str) or not valeur):
             raise ValueError(f"segment invalide : {valeur!r}")
         self.__segment = valeur
@@ -219,11 +187,7 @@ class Usager:
 
     @etape.setter
     def etape(self, valeur: Etape) -> None:
-        """Enregistre l'étape où se trouve l'usager.
-
-        Raises:
-            TypeError: si la valeur n'est pas une Etape.
-        """
+        """Enregistre l'étape où se trouve l'usager (TypeError si ce n'est pas une Etape)."""
         if not isinstance(valeur, Etape):
             raise TypeError(f"étape invalide : {valeur!r}")
         self.__etape = valeur
@@ -234,29 +198,18 @@ class Usager:
         return self.__consigne
 
     def reagir(self, code: CodeNotification) -> bool:
-        """Applique une consigne du serveur, si la catégorie de l'usager la suit.
-
-        Args:
-            code (CodeNotification): consigne reçue dans un message NOTIF.
-
-        Returns:
-            bool: True si la consigne est appliquée, False si elle ne concerne pas cet usager.
-        """
+        """Applique une consigne du serveur ; False si la catégorie de l'usager ne la suit pas."""
         if code not in self.CONSIGNES_SUIVIES:
             return False
-        # OK_PASSER lève la consigne précédente : l'usager reprend sa marche normale.
         self.__consigne = None if code is CodeNotification.OK_PASSER else code
         return True
 
     def vitesse_autorisee(self) -> float:
-        """Donne la vitesse maximale permise par la consigne en cours.
+        """Vitesse maximale permise par la consigne en cours, en m/s : réduite pendant un DEGAGEZ.
 
         ATTENDEZ ne ralentit pas l'usager : il avance jusqu'à la ligne d'entrée et
         s'y arrête, ce qui dépend de sa trajectoire et non de sa vitesse. Pendant un
         CHANGEZ_VOIE, l'usager rangé reste immobile jusqu'à ce que le VP l'ait dépassé.
-
-        Returns:
-            float: vitesse en m/s, réduite pendant un DEGAGEZ, nulle pendant un CHANGEZ_VOIE.
         """
         if self.__consigne is CodeNotification.DEGAGEZ:
             return self.VITESSE_MAX * FACTEUR_RALENTISSEMENT
@@ -265,32 +218,19 @@ class Usager:
         return self.VITESSE_MAX
 
     def se_range(self) -> bool:
-        """Indique si l'usager doit se ranger sur sa droite pour laisser passer un véhicule prioritaire.
+        """Indique si l'usager doit se ranger sur sa droite : pendant un DEGAGEZ ou un CHANGEZ_VOIE.
 
         La place dont il dispose dépend de l'endroit où il se trouve : le bord de sa
         chaussée sur une branche, la voie extérieure sur l'anneau.
-
-        Returns:
-            bool: True pendant un DEGAGEZ ou un CHANGEZ_VOIE.
         """
         return self.__consigne in (CodeNotification.DEGAGEZ, CodeNotification.CHANGEZ_VOIE)
 
     def retenu_avant_la_ligne(self) -> bool:
-        """Indique si la consigne en cours interdit à l'usager de franchir sa ligne d'entrée.
-
-        Returns:
-            bool: True pendant un ATTENDEZ, et pendant un CHANGEZ_VOIE où il reste rangé.
-        """
+        """Indique si l'usager doit rester avant sa ligne d'entrée : pendant un ATTENDEZ ou un CHANGEZ_VOIE."""
         return self.__consigne in (CodeNotification.ATTENDEZ, CodeNotification.CHANGEZ_VOIE)
 
     def calculer_trajectoire(self, rond_point: RondPoint) -> Trajectoire:
         """Calcule le chemin de l'usager : approche, anneau, puis sortie.
-
-        Args:
-            rond_point (RondPoint): rond-point traversé.
-
-        Returns:
-            Trajectoire: la trajectoire de l'usager.
 
         Raises:
             BrancheInconnueError: si sa branche d'entrée ou de sortie n'existe pas.
@@ -298,12 +238,7 @@ class Usager:
         return Trajectoire.pour_vehicule(rond_point, self.__branche_entree, self.__branche_sortie)
 
     def vers_dict(self) -> dict:
-        """Convertit l'usager en dictionnaire prêt pour json.dumps.
-
-        Returns:
-            dict: identité, trajet, position (x et y à None si elle est inconnue), cap,
-                vitesse, segment, étape et consigne.
-        """
+        """Convertit l'usager en dictionnaire prêt pour json.dumps (x et y à None si la position est inconnue)."""
         return {
             "id": self.__identifiant,
             "categorie": self.CATEGORIE,
@@ -350,16 +285,10 @@ class Pieton(Usager):
     CATEGORIE = "pieton"
     VITESSE_MAX = 5 * KMH
     CONSIGNES_SUIVIES = frozenset({CodeNotification.ATTENDEZ, CodeNotification.OK_PASSER})
-    # Un piéton suit celui qui le précède sur le passage à un pas et demi.
     DISTANCE_SECURITE = 1.5
 
     def __init__(self, identifiant: str, branche_entree: str, branche_sortie: str) -> None:
-        """Crée un piéton.
-
-        Args:
-            identifiant (str): identifiant unique sur le réseau (ex. "pieton_4").
-            branche_entree (str): branche qu'il traverse.
-            branche_sortie (str): même branche que l'entrée.
+        """Crée un piéton, qui traverse sa branche d'entrée : la sortie doit être la même.
 
         Raises:
             ValueError: si une valeur est vide, ou si l'entrée et la sortie diffèrent.
@@ -373,12 +302,6 @@ class Pieton(Usager):
 
     def calculer_trajectoire(self, rond_point: RondPoint) -> Trajectoire:
         """Calcule la traversée de sa branche sur le passage piéton.
-
-        Args:
-            rond_point (RondPoint): rond-point traversé.
-
-        Returns:
-            Trajectoire: la trajectoire du piéton.
 
         Raises:
             BrancheInconnueError: si sa branche n'existe pas.
@@ -402,12 +325,6 @@ class VehiculePrioritaire(Usager):
 
     def calculer_trajectoire(self, rond_point: RondPoint) -> Trajectoire:
         """Calcule le chemin du VP, qui reste sur la voie intérieure de l'anneau de bout en bout.
-
-        Args:
-            rond_point (RondPoint): rond-point traversé.
-
-        Returns:
-            Trajectoire: la trajectoire du VP.
 
         Raises:
             BrancheInconnueError: si sa branche d'entrée ou de sortie n'existe pas.

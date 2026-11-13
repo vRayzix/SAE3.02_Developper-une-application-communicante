@@ -27,12 +27,7 @@ class Branche:
     """
 
     def __init__(self, parametres: ParametresBranche, capacite: int, largeur_chaussee: float) -> None:
-        """Crée une branche.
-
-        Args:
-            parametres (ParametresBranche): nom, libellé, cap, terre-plein et passage piéton.
-            capacite (int): nombre d'usagers à partir duquel la branche est considérée pleine.
-            largeur_chaussee (float): largeur de la chaussée de chaque sens, en mètres.
+        """Crée une branche ; capacite est le nombre d'usagers à partir duquel elle est pleine.
 
         Raises:
             ValueError: si le nom est vide, si la capacité est inférieure à 1, ou si une
@@ -108,15 +103,9 @@ class Branche:
         return self.__terre_plein / 2 + self.__largeur_chaussee
 
     def point(self, distance_au_centre: float, decalage: float = 0.0) -> Position:
-        """Calcule un point de la branche.
+        """Point de la branche à une distance du centre le long de l'axe, et à un écart de l'axe.
 
-        Args:
-            distance_au_centre (float): distance depuis le centre de l'anneau, mesurée le long de l'axe, en mètres.
-            decalage (float): écart par rapport à l'axe de la branche, en mètres,
-                positif vers la droite d'un usager qui roule vers l'anneau (côté entrée).
-
-        Returns:
-            Position: le point demandé.
+        L'écart est positif vers la droite d'un usager qui roule vers l'anneau (côté entrée).
         """
         angle = math.radians(self.angle)
         # Pour un usager qui roule vers le centre, sa droite est le vecteur (-sin, cos).
@@ -130,12 +119,7 @@ class Segment:
     """Portion de l'anneau entre deux branches consécutives, dans le sens de circulation."""
 
     def __init__(self, depart: Branche, arrivee: Branche, longueur: float) -> None:
-        """Crée un segment.
-
-        Args:
-            depart (Branche): branche où commence le segment.
-            arrivee (Branche): branche suivante, dans le sens de circulation.
-            longueur (float): longueur de l'arc sur l'axe de l'anneau, en mètres.
+        """Crée un segment ; longueur est celle de l'arc sur l'axe de l'anneau, en mètres.
 
         Raises:
             ValueError: si le départ et l'arrivée sont la même branche ou si la longueur n'est pas positive.
@@ -192,15 +176,7 @@ class RondPoint:
         longueur_branche: float,
         capacite_par_branche: int,
     ) -> None:
-        """Construit le rond-point et découpe son anneau en segments.
-
-        Args:
-            branches (list[ParametresBranche]): description de chaque branche.
-            rayon (float): rayon de l'axe de l'anneau, entre ses deux voies, en mètres.
-            largeur_voie_anneau (float): largeur de chaque voie de l'anneau, en mètres.
-            largeur_chaussee (float): largeur de la chaussée de chaque sens d'une branche, en mètres.
-            longueur_branche (float): longueur de chaque branche depuis le bord de l'anneau, en mètres.
-            capacite_par_branche (int): capacité de chaque branche.
+        """Construit le rond-point et découpe son anneau en segments ; dimensions en mètres.
 
         Raises:
             ValueError: s'il y a moins de NOMBRE_MIN_BRANCHES branches, des noms ou des caps
@@ -235,14 +211,7 @@ class RondPoint:
 
     @classmethod
     def depuis_config(cls, config: Configuration) -> RondPoint:
-        """Construit le rond-point décrit dans la configuration.
-
-        Args:
-            config (Configuration): configuration chargée depuis config.ini.
-
-        Returns:
-            RondPoint: le rond-point correspondant.
-        """
+        """Construit le rond-point décrit dans la configuration."""
         return cls(
             config.branches,
             config.rayon,
@@ -298,13 +267,7 @@ class RondPoint:
         return list(self.__segments)
 
     def branche(self, nom: str) -> Branche:
-        """Retrouve une branche par son nom.
-
-        Args:
-            nom (str): identifiant de la branche (ex. "nations_nord").
-
-        Returns:
-            Branche: la branche demandée.
+        """Retrouve une branche par son identifiant (ex. "nations_nord").
 
         Raises:
             BrancheInconnueError: si aucune branche ne porte ce nom.
@@ -316,30 +279,18 @@ class RondPoint:
         raise BrancheInconnueError(f"branche inconnue : {nom!r} (branches du rond-point : {noms})")
 
     def ecart_raccord(self, branche: Branche) -> float:
-        """Écart angulaire entre l'axe d'une branche et le milieu de ses chaussées au bord de l'anneau.
+        """Écart angulaire, en degrés, entre l'axe d'une branche et le milieu de ses chaussées au bord de l'anneau.
 
         Une chaussée d'entrée rejoint l'anneau un peu après l'axe de sa branche, dans le
         sens de circulation, et la chaussée de sortie le quitte d'autant avant.
-
-        Args:
-            branche (Branche): branche du rond-point.
-
-        Returns:
-            float: écart en degrés.
         """
         return math.degrees(math.atan2(branche.decalage_voie, self.rayon_bord))
 
     def segments_entre(self, entree: str, sortie: str) -> list[Segment]:
         """Liste les segments parcourus sur l'anneau pour aller d'une branche à une autre.
 
-        Si l'entrée et la sortie sont la même branche, l'usager fait le tour complet.
-
-        Args:
-            entree (str): branche par laquelle l'usager entre sur l'anneau.
-            sortie (str): branche par laquelle il le quitte.
-
-        Returns:
-            list[Segment]: segments dans l'ordre de passage.
+        Les segments sont dans l'ordre de passage. Si l'entrée et la sortie sont la même
+        branche, l'usager fait le tour complet.
 
         Raises:
             BrancheInconnueError: si l'une des deux branches n'existe pas.

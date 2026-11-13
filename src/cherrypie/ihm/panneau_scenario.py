@@ -35,7 +35,6 @@ NOMBRE_MAX_PAR_LIGNE = 10
 DELAI_MAX = 120.0
 PAS_DU_DELAI = 0.5
 MILLISECONDES_PAR_SECONDE = 1000
-# Attente maximale de l'arrêt de chaque client, en secondes, quand on arrête tout.
 DELAI_ARRET = 2.0
 FILTRE_FICHIERS = "Scénarios (*.json)"
 BOUTONS_EDITION = ("monter", "descendre", "modifier", "supprimer", "vider")
@@ -52,17 +51,13 @@ class PanneauScenario(QWidget):
     ligne précédente, puis on ajoute la ligne. La liste se réordonne avec les boutons ou
     par glisser-déposer. « Modifier », ou un double-clic, remet une ligne dans le
     formulaire ; « Valider la modification » la remplace à sa place. « Lancer le
-    scénario » programme chaque ligne à son instant ; « Arrêter tout » annule ce qui n'est pas encore parti et arrête les clients lancés.
-    Le scénario s'enregistre et se recharge en JSON, pour rejouer une démonstration.
+    scénario » programme chaque ligne à son instant ; « Arrêter tout » annule ce qui n'est
+    pas encore parti et arrête les clients lancés. Le scénario s'enregistre et se recharge
+    en JSON, pour rejouer une démonstration.
     """
 
     def __init__(self, lanceur: LanceurClients, parent: QWidget | None = None) -> None:
-        """Construit la section.
-
-        Args:
-            lanceur (LanceurClients): lanceur qui crée les clients.
-            parent (QWidget | None): widget parent.
-        """
+        """Construit la section, qui lance ses usagers par `lanceur`."""
         super().__init__(parent)
         self.__lanceur = lanceur
         branches = lanceur.config.branches
@@ -176,11 +171,7 @@ class PanneauScenario(QWidget):
         return any(minuterie.isActive() for minuterie in self.__minuteries)
 
     def ajouter(self) -> LigneScenario:
-        """Ajoute en bas de la liste la ligne décrite par le formulaire.
-
-        Returns:
-            LigneScenario: la ligne ajoutée.
-        """
+        """Ajoute en bas de la liste la ligne décrite par le formulaire, et la renvoie."""
         ligne = self.__ligne_du_formulaire()
         self.__inserer(self.__liste.count(), ligne)
         self.__mettre_a_jour_le_resume()
@@ -201,11 +192,7 @@ class PanneauScenario(QWidget):
         self.__montrer_le_mode_d_edition()
 
     def valider_modification(self) -> LigneScenario | None:
-        """Remplace la ligne en cours de modification par le formulaire, à la même place.
-
-        Returns:
-            LigneScenario | None: la nouvelle ligne, None si aucune ligne n'était en cours de modification.
-        """
+        """Remplace la ligne en cours de modification par le formulaire, à la même place ; None sans modification."""
         if self.__ligne_modifiee is None:
             return None
         # La ligne a pu être déplacée pendant la modification : on la cherche à sa place actuelle.
@@ -224,11 +211,7 @@ class PanneauScenario(QWidget):
         self.__montrer_le_mode_d_edition()
 
     def deplacer(self, decalage: int) -> None:
-        """Monte (décalage négatif) ou descend la ligne sélectionnée.
-
-        Args:
-            decalage (int): -1 pour monter d'un rang, 1 pour descendre.
-        """
+        """Monte (-1) ou descend (1) la ligne sélectionnée d'un rang."""
         rang = self.__liste.currentRow()
         cible = rang + decalage
         if rang < 0 or not 0 <= cible < self.__liste.count():
@@ -271,21 +254,11 @@ class PanneauScenario(QWidget):
         self.__lanceur.arreter_tous(DELAI_ARRET)
 
     def enregistrer(self, chemin: Path) -> None:
-        """Enregistre le scénario en JSON.
-
-        Args:
-            chemin (Path): fichier à écrire.
-
-        Raises:
-            OSError: si le fichier ne peut pas être écrit.
-        """
+        """Enregistre le scénario en JSON (OSError si le fichier ne peut pas être écrit)."""
         chemin.write_text(self.scenario.vers_json(), encoding="utf-8")
 
     def charger(self, chemin: Path) -> None:
-        """Remplace la liste par un scénario enregistré.
-
-        Args:
-            chemin (Path): fichier JSON à lire.
+        """Remplace la liste par un scénario enregistré en JSON.
 
         Raises:
             OSError: si le fichier ne peut pas être lu.
@@ -383,7 +356,6 @@ class PanneauScenario(QWidget):
         boutons["charger"].clicked.connect(self.__demander_chargement)
         boutons["lancer"].clicked.connect(self.lancer)
         boutons["arreter"].clicked.connect(self.arreter_tout)
-        # Après un glisser-déposer, l'ordre a changé mais pas le contenu : le résumé reste juste.
         self.__liste.model().rowsMoved.connect(self.__mettre_a_jour_le_resume)
 
     def __disposer(self) -> None:

@@ -23,21 +23,11 @@ class Registre:
         return list(self.__usagers.values())
 
     def contient(self, identifiant: str) -> bool:
-        """Indique si un usager est connecté sous cet identifiant.
-
-        Args:
-            identifiant (str): identifiant de l'usager.
-
-        Returns:
-            bool: True s'il est dans le registre.
-        """
+        """Indique si un usager est connecté sous cet identifiant."""
         return identifiant in self.__usagers
 
     def ajouter(self, usager: Usager) -> None:
-        """Inscrit un usager.
-
-        Args:
-            usager (Usager): usager qui vient de se présenter.
+        """Inscrit un usager qui vient de se présenter.
 
         Raises:
             ValueError: si un usager est déjà inscrit sous le même identifiant.
@@ -49,12 +39,6 @@ class Registre:
     def obtenir(self, identifiant: str) -> Usager:
         """Retrouve un usager connecté.
 
-        Args:
-            identifiant (str): identifiant de l'usager.
-
-        Returns:
-            Usager: l'usager inscrit sous cet identifiant.
-
         Raises:
             UsagerInconnuError: si aucun usager connecté ne porte cet identifiant.
         """
@@ -64,13 +48,7 @@ class Registre:
             raise UsagerInconnuError(f"aucun usager connecté sous l'identifiant {identifiant!r}") from None
 
     def retirer(self, identifiant: str) -> Usager:
-        """Retire un usager du registre.
-
-        Args:
-            identifiant (str): identifiant de l'usager.
-
-        Returns:
-            Usager: l'usager retiré.
+        """Retire un usager du registre et le renvoie.
 
         Raises:
             UsagerInconnuError: si aucun usager connecté ne porte cet identifiant.

@@ -17,10 +17,7 @@ CHAMPS_ENVELOPPE = {"ts", "nonce", "hmac"}
 
 
 class TypeMessage(Enum):
-    """Types de messages du protocole.
-
-    La valeur de chaque membre est la chaîne transmise dans le champ « type ».
-    """
+    """Types de messages du protocole ; la valeur est celle du champ « type »."""
 
     HELLO = "HELLO"
     HELLO_ACK = "HELLO_ACK"
@@ -60,12 +57,7 @@ class Message:
     """
 
     def __init__(self, type_message: TypeMessage, emetteur: str, donnees: dict | None = None) -> None:
-        """Crée un message.
-
-        Args:
-            type_message (TypeMessage): type du message.
-            emetteur (str): identifiant de l'émetteur (ex. "voiture_12" ou "serveur").
-            donnees (dict | None): contenu propre au type de message, vide par défaut.
+        """Crée un message de `emetteur` (ex. "voiture_12" ou "serveur"), aux données vides par défaut.
 
         Raises:
             TypeError: si le type n'est pas un TypeMessage ou si les données ne sont pas un dictionnaire.
@@ -86,13 +78,7 @@ class Message:
 
     @classmethod
     def depuis_dict(cls, contenu: dict) -> Message:
-        """Reconstruit un message à partir d'un dictionnaire reçu du réseau.
-
-        Args:
-            contenu (dict): dictionnaire issu de json.loads, avec les champs « type », « id » et « donnees ».
-
-        Returns:
-            Message: le message reconstruit.
+        """Reconstruit un message à partir d'un dictionnaire issu de json.loads.
 
         Raises:
             TrameInvalideError: si un champ manque ou contient une valeur invalide.
@@ -127,11 +113,7 @@ class Message:
         return dict(self.__donnees)
 
     def vers_dict(self) -> dict:
-        """Convertit le message en dictionnaire prêt pour json.dumps.
-
-        Returns:
-            dict: champs « type », « id » et « donnees ».
-        """
+        """Convertit le message en dictionnaire prêt pour json.dumps : « type », « id » et « donnees »."""
         return {"type": self.__type.value, "id": self.__emetteur, "donnees": dict(self.__donnees)}
 
     def __eq__(self, autre: object) -> bool:
@@ -153,7 +135,6 @@ class Enveloppe:
     {"type", "id", "ts", "nonce", "donnees", "hmac"}.
 
     Attributes:
-        message (Message): message transporté.
         ts (float): horodatage d'émission, en secondes depuis l'epoch.
         nonce (str): valeur aléatoire propre à cette enveloppe, pour repérer les rejeux.
         hmac (str): signature HMAC-SHA256 en hexadécimal, vide tant que l'enveloppe n'est pas signée.
@@ -165,12 +146,7 @@ class Enveloppe:
     hmac: str = ""
 
     def __post_init__(self) -> None:
-        """Vérifie les champs dès la construction.
-
-        Raises:
-            TypeError: si un champ n'a pas le bon type.
-            ValueError: si l'horodatage n'est pas fini ou si le nonce est vide.
-        """
+        """Vérifie le type des champs (TypeError), un horodatage fini et un nonce non vide (ValueError)."""
         if not isinstance(self.message, Message):
             raise TypeError("une enveloppe transporte un Message")
         # bool est une sous-classe de int : sans ce test, true passerait pour un horodatage.
@@ -186,13 +162,7 @@ class Enveloppe:
 
     @classmethod
     def depuis_dict(cls, contenu: dict) -> Enveloppe:
-        """Reconstruit une enveloppe à partir d'un dictionnaire reçu du réseau.
-
-        Args:
-            contenu (dict): dictionnaire issu de json.loads.
-
-        Returns:
-            Enveloppe: l'enveloppe reconstruite, pas encore vérifiée.
+        """Reconstruit une enveloppe, pas encore vérifiée, à partir d'un dictionnaire issu de json.loads.
 
         Raises:
             TrameInvalideError: si un champ manque ou contient une valeur invalide.
@@ -208,13 +178,7 @@ class Enveloppe:
 
     @classmethod
     def depuis_octets(cls, octets: bytes) -> Enveloppe:
-        """Reconstruit une enveloppe à partir d'une trame TCP ou d'un datagramme UDP.
-
-        Args:
-            octets (bytes): JSON encodé en UTF-8.
-
-        Returns:
-            Enveloppe: l'enveloppe reconstruite, pas encore vérifiée.
+        """Reconstruit une enveloppe, pas encore vérifiée, à partir d'une trame TCP ou d'un datagramme UDP.
 
         Raises:
             TrameInvalideError: si les octets ne sont pas un JSON UTF-8 ou si un champ est invalide.
@@ -228,19 +192,11 @@ class Enveloppe:
         return cls.depuis_dict(contenu)
 
     def vers_dict(self) -> dict:
-        """Convertit l'enveloppe en dictionnaire à plat, prêt pour json.dumps.
-
-        Returns:
-            dict: champs du message, plus « ts », « nonce » et « hmac ».
-        """
+        """Convertit l'enveloppe en dictionnaire à plat, prêt pour json.dumps."""
         contenu = self.message.vers_dict()
         contenu.update(ts=self.ts, nonce=self.nonce, hmac=self.hmac)
         return contenu
 
     def vers_octets(self) -> bytes:
-        """Encode l'enveloppe en JSON UTF-8, pour une trame TCP ou un datagramme UDP.
-
-        Returns:
-            bytes: le JSON compact de l'enveloppe.
-        """
+        """Encode l'enveloppe en JSON UTF-8 compact, pour une trame TCP ou un datagramme UDP."""
         return json.dumps(self.vers_dict(), separators=(",", ":")).encode("utf-8")

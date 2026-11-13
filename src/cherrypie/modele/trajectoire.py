@@ -18,14 +18,10 @@ from cherrypie.commun.config import TOUR_COMPLET
 from cherrypie.modele.position import Position
 from cherrypie.modele.rond_point import ANGLE_DU_NORD, Branche, RondPoint, Segment
 
-# Trottoir parcouru par un piéton avant et après sa traversée, en mètres.
 LONGUEUR_TROTTOIR = 4.0
-# Distances parcourues sur l'anneau pour rejoindre sa voie en arrivant de la chaussée
-# d'entrée, pour passer d'une voie à l'autre, et pour rejoindre la chaussée de sortie.
 LONGUEUR_INSERTION = 8.0
 LONGUEUR_CHANGEMENT_VOIE = 10.0
 LONGUEUR_DEGAGEMENT = 8.0
-# Sur un parcours court, chacune de ces transitions n'en occupe pas plus que cette part.
 PART_MAX_TRANSITION = 0.3
 # Une transition est découpée en morceaux d'au plus cet angle, en degrés : l'usager y
 # avance alors à vitesse presque constante, alors que sa distance au centre change.
@@ -37,15 +33,7 @@ MARGE_BORD_CHAUSSEE = 0.6
 
 
 def cap_de_la_direction(dx: float, dy: float) -> float:
-    """Convertit une direction du repère du rond-point en cap.
-
-    Args:
-        dx (float): composante vers l'est.
-        dy (float): composante vers le nord.
-
-    Returns:
-        float: cap en degrés depuis le nord, dans le sens des aiguilles d'une montre, entre 0 et 360.
-    """
+    """Cap d'une direction (dx vers l'est, dy vers le nord), en degrés depuis le nord, sens horaire, de 0 à 360."""
     return (ANGLE_DU_NORD - math.degrees(math.atan2(dy, dx))) % TOUR_COMPLET
 
 
@@ -63,9 +51,6 @@ class TronconDroit:
     """Tronçon parcouru en ligne droite, sur une branche.
 
     Attributes:
-        etape (Etape): étape de la trajectoire à laquelle appartient le tronçon.
-        depart (Position): point de départ.
-        arrivee (Position): point d'arrivée.
         place_a_droite (float): écart que l'usager peut prendre sur sa droite pour se ranger, en mètres.
     """
 
@@ -75,11 +60,7 @@ class TronconDroit:
     place_a_droite: float = 0.0
 
     def __post_init__(self) -> None:
-        """Refuse un tronçon de longueur nulle.
-
-        Raises:
-            ValueError: si le départ et l'arrivée sont confondus.
-        """
+        """Refuse un tronçon de longueur nulle (ValueError)."""
         if self.depart == self.arrivee:
             raise ValueError("un tronçon relie deux points distincts")
 
@@ -94,15 +75,7 @@ class TronconDroit:
         return None
 
     def position_a(self, distance: float, decalage: float) -> Position:
-        """Calcule la position atteinte après une distance parcourue sur le tronçon.
-
-        Args:
-            distance (float): distance depuis le début du tronçon, en mètres.
-            decalage (float): écart latéral en mètres, positif vers la droite du sens de marche.
-
-        Returns:
-            Position: la position correspondante.
-        """
+        """Position après `distance` mètres sur le tronçon, décalée de `decalage` mètres vers la droite."""
         longueur = self.longueur
         ux = (self.arrivee.x - self.depart.x) / longueur
         uy = (self.arrivee.y - self.depart.y) / longueur
@@ -113,14 +86,7 @@ class TronconDroit:
         )
 
     def cap_a(self, distance: float) -> float:
-        """Donne le cap suivi sur le tronçon, le même tout du long.
-
-        Args:
-            distance (float): distance depuis le début du tronçon, en mètres.
-
-        Returns:
-            float: cap en degrés depuis le nord.
-        """
+        """Cap suivi sur le tronçon, le même tout du long."""
         return cap_de_la_direction(self.arrivee.x - self.depart.x, self.arrivee.y - self.depart.y)
 
 
@@ -132,14 +98,9 @@ class TronconArc:
     À distance constante, l'usager suit une voie ; sinon, il passe d'une voie à l'autre, ou
     d'une chaussée de branche à une voie de l'anneau.
 
-    Attributes:
-        segment (Segment): segment de l'anneau où se trouve le morceau.
-        angle_debut (float): angle du début, en degrés.
-        angle_fin (float): angle de la fin, en degrés, plus grand que celui du début
-            (on tourne dans le sens des angles croissants).
-        rayon_debut (float): distance au centre au début, en mètres.
-        rayon_fin (float): distance au centre à la fin, en mètres.
-        place_a_droite (float): écart que l'usager peut prendre vers l'extérieur pour se ranger, en mètres.
+    Angles en degrés, rayons (distances au centre) en mètres. On tourne dans le sens des
+    angles croissants : angle_fin est plus grand que angle_debut. place_a_droite est l'écart
+    que l'usager peut prendre vers l'extérieur pour se ranger.
     """
 
     segment: Segment
@@ -150,11 +111,7 @@ class TronconArc:
     place_a_droite: float = 0.0
 
     def __post_init__(self) -> None:
-        """Refuse un morceau qui ne tourne pas dans le sens de circulation.
-
-        Raises:
-            ValueError: si l'angle de fin n'est pas plus grand que celui du début.
-        """
+        """Refuse un morceau qui ne tourne pas dans le sens de circulation (ValueError)."""
         if not self.angle_fin > self.angle_debut:
             raise ValueError("un arc de l'anneau se parcourt dans le sens des angles croissants")
 
@@ -171,15 +128,7 @@ class TronconArc:
         return math.hypot(rayon_moyen * ouverture, self.rayon_fin - self.rayon_debut)
 
     def position_a(self, distance: float, decalage: float) -> Position:
-        """Calcule la position atteinte après une distance parcourue sur le morceau.
-
-        Args:
-            distance (float): distance depuis le début du morceau, en mètres.
-            decalage (float): écart latéral en mètres, positif vers la droite du sens de marche.
-
-        Returns:
-            Position: la position correspondante.
-        """
+        """Position après `distance` mètres sur le morceau, décalée de `decalage` mètres vers la droite."""
         part = distance / self.longueur
         angle = math.radians(self.angle_debut + part * (self.angle_fin - self.angle_debut))
         # En tournant dans le sens inverse des aiguilles d'une montre, la droite du
@@ -188,18 +137,10 @@ class TronconArc:
         return Position(distance_au_centre * math.cos(angle), distance_au_centre * math.sin(angle))
 
     def cap_a(self, distance: float) -> float:
-        """Donne le cap suivi après une distance parcourue sur le morceau.
-
-        Args:
-            distance (float): distance depuis le début du morceau, en mètres.
-
-        Returns:
-            float: cap en degrés depuis le nord, tangent au morceau.
-        """
+        """Cap tangent au morceau après `distance` mètres."""
         part = distance / self.longueur
         angle = math.radians(self.angle_debut + part * (self.angle_fin - self.angle_debut))
         rayon = self.rayon_debut + part * (self.rayon_fin - self.rayon_debut)
-        # Dérivée de la position : la variation de distance au centre, puis la rotation.
         rotation = math.radians(self.angle_fin - self.angle_debut)
         ecartement = self.rayon_fin - self.rayon_debut
         dx = ecartement * math.cos(angle) - rayon * rotation * math.sin(angle)
@@ -213,15 +154,12 @@ Troncon = TronconDroit | TronconArc
 class Trajectoire:
     """Chemin complet d'un usager, découpé en tronçons parcourus l'un après l'autre.
 
-    Les méthodes repèrent l'usager par son avancement : la distance qu'il a
-    parcourue depuis son point de départ, en mètres.
+    Les méthodes repèrent l'usager par son avancement : la distance qu'il a parcourue
+    depuis son point de départ, en mètres. Un avancement négatif ou non fini lève ValueError.
     """
 
     def __init__(self, troncons: list[Troncon]) -> None:
-        """Crée une trajectoire.
-
-        Args:
-            troncons (list[Troncon]): tronçons dans l'ordre de parcours, en commençant par l'approche.
+        """Crée une trajectoire à partir de ses tronçons, dans l'ordre de parcours.
 
         Raises:
             ValueError: si la liste est vide ou ne commence pas par une approche.
@@ -238,15 +176,6 @@ class Trajectoire:
         extérieure. Les autres roulent sur la voie intérieure et se rabattent sur la voie
         extérieure au début du segment qui mène à leur sortie. Un véhicule prioritaire
         reste sur la voie intérieure de bout en bout.
-
-        Args:
-            rond_point (RondPoint): rond-point traversé.
-            entree (str): nom de la branche d'entrée.
-            sortie (str): nom de la branche de sortie.
-            prioritaire (bool): True pour un véhicule prioritaire.
-
-        Returns:
-            Trajectoire: la trajectoire du véhicule.
 
         Raises:
             BrancheInconnueError: si l'une des deux branches n'existe pas.
@@ -278,13 +207,6 @@ class Trajectoire:
         Le piéton part du trottoir côté chaussée d'entrée, s'arrête au bord de la
         chaussée s'il doit attendre, traverse les deux chaussées et le terre-plein, puis
         s'éloigne sur le trottoir d'en face.
-
-        Args:
-            rond_point (RondPoint): rond-point traversé.
-            branche (str): nom de la branche traversée.
-
-        Returns:
-            Trajectoire: la trajectoire du piéton.
 
         Raises:
             BrancheInconnueError: si la branche n'existe pas.
@@ -335,81 +257,33 @@ class Trajectoire:
         return segments
 
     def position_a(self, avancement: float, decalage: float = 0.0) -> Position:
-        """Calcule la position d'un usager à partir de son avancement.
+        """Position d'un usager, décalée de `decalage` mètres vers sa droite.
 
-        Args:
-            avancement (float): distance parcourue depuis le départ, en mètres.
-                Au-delà de la longueur totale, l'usager reste au bout de sa trajectoire.
-            decalage (float): écart latéral en mètres, positif vers la droite du sens de marche.
-
-        Returns:
-            Position: la position de l'usager.
-
-        Raises:
-            ValueError: si l'avancement est négatif ou n'est pas un nombre fini.
+        Au-delà de la longueur totale, l'usager reste au bout de sa trajectoire.
         """
         troncon, distance = self.__troncon_a(avancement)
         return troncon.position_a(distance, decalage)
 
     def cap_a(self, avancement: float) -> float:
-        """Donne le cap d'un usager, la direction dans laquelle il avance.
-
-        Args:
-            avancement (float): distance parcourue depuis le départ, en mètres.
-
-        Returns:
-            float: cap en degrés depuis le nord, dans le sens des aiguilles d'une montre.
-
-        Raises:
-            ValueError: si l'avancement est négatif ou n'est pas un nombre fini.
-        """
+        """Cap d'un usager, en degrés depuis le nord : la direction dans laquelle il avance."""
         troncon, distance = self.__troncon_a(avancement)
         return troncon.cap_a(distance)
 
     def etape_a(self, avancement: float) -> Etape:
-        """Donne l'étape où se trouve un usager.
-
-        Args:
-            avancement (float): distance parcourue depuis le départ, en mètres.
-
-        Returns:
-            Etape: l'étape correspondante.
-
-        Raises:
-            ValueError: si l'avancement est négatif ou n'est pas un nombre fini.
-        """
+        """Étape où se trouve un usager."""
         troncon, _ = self.__troncon_a(avancement)
         return troncon.etape
 
     def segment_a(self, avancement: float) -> Segment | None:
-        """Donne le segment de l'anneau où se trouve un usager.
-
-        Args:
-            avancement (float): distance parcourue depuis le départ, en mètres.
-
-        Returns:
-            Segment | None: le segment occupé, None si l'usager n'est pas sur l'anneau.
-
-        Raises:
-            ValueError: si l'avancement est négatif ou n'est pas un nombre fini.
-        """
+        """Segment de l'anneau où se trouve un usager, None hors de l'anneau."""
         troncon, _ = self.__troncon_a(avancement)
         return troncon.segment
 
     def place_a_droite_a(self, avancement: float) -> float:
-        """Donne l'écart qu'un usager peut prendre sur sa droite pour se ranger, là où il se trouve.
+        """Écart, en mètres, qu'un usager peut prendre sur sa droite pour se ranger, là où il se trouve.
 
         Sur une branche, il serre le bord de sa chaussée. Sur la voie intérieure de
         l'anneau, il passe sur la voie extérieure ; sur la voie extérieure, il y est déjà.
-
-        Args:
-            avancement (float): distance parcourue depuis le départ, en mètres.
-
-        Returns:
-            float: écart en mètres, positif ou nul.
-
-        Raises:
-            ValueError: si l'avancement est négatif ou n'est pas un nombre fini.
         """
         troncon, _ = self.__troncon_a(avancement)
         return troncon.place_a_droite
@@ -442,7 +316,6 @@ class Trajectoire:
         changement de voie éventuel, raccord vers la chaussée de sortie.
         """
         segments = rond_point.segments_entre(entree.nom, sortie.nom)
-        # Les angles s'accumulent d'un segment à l'autre, sans revenir à 0 après 360°.
         limites = [entree.angle]
         for segment in segments:
             limites.append(limites[-1] + segment.ouverture)
@@ -499,7 +372,6 @@ class Trajectoire:
                 rang = max(rang for rang, limite in enumerate(limites[:-1]) if limite <= (debut + fin) / 2)
                 rayon_a = rayon_debut + pente * (debut - angle_debut)
                 rayon_b = rayon_debut + pente * (fin - angle_debut)
-                # Sur la voie intérieure, se ranger veut dire passer sur la voie extérieure.
                 place = max(0.0, rayon_exterieur - rayon_b)
                 morceaux.append(TronconArc(segments[rang], debut, fin, rayon_a, rayon_b, place))
         return morceaux

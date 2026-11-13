@@ -35,7 +35,6 @@ SECRETS = {
     "cle": ("securite", "cle_hmac", "CHERRYPIE_CLE", "clé HMAC partagée"),
     "bdd_mdp": ("bdd", "mot_de_passe", "CHERRYPIE_BDD_MDP", "mot de passe MariaDB"),
 }
-# Les valeurs de config.exemple.ini, sans les secrets : sans fichier, on modélise Bel Air.
 DEFAUTS = {
     "reseau": {"hote": "127.0.0.1", "port_tcp": "5050", "port_udp": "5051"},
     "securite": {"fenetre_anti_rejeu": "5"},
@@ -80,11 +79,7 @@ DEFAUTS = {
 
 
 def port(texte: str) -> int:
-    """Convertit un numéro de port écrit en texte.
-
-    Raises:
-        argparse.ArgumentTypeError: si le texte n'est pas un entier entre 1 et 65535.
-    """
+    """Convertit un numéro de port écrit en texte ; argparse.ArgumentTypeError hors de 1 à 65535."""
     try:
         valeur = int(texte)
     except ValueError:
@@ -95,11 +90,7 @@ def port(texte: str) -> int:
 
 
 def texte_non_vide(texte: str) -> str:
-    """Refuse une valeur vide.
-
-    Raises:
-        argparse.ArgumentTypeError: si le texte est vide.
-    """
+    """Refuse une valeur vide (argparse.ArgumentTypeError)."""
     if not texte:
         raise argparse.ArgumentTypeError("valeur vide")
     return texte
@@ -108,15 +99,9 @@ def texte_non_vide(texte: str) -> str:
 def creer_analyseur(
     description: str, parametres: Iterable[str], secrets: Iterable[str] = ()
 ) -> argparse.ArgumentParser:
-    """Prépare les options d'un script : --config et les paramètres qu'il utilise.
+    """Prépare les options d'un script : --config et les clés de PARAMETRES qu'il utilise.
 
-    Args:
-        description (str): texte affiché par --help, en général la docstring du script.
-        parametres (Iterable[str]): clés de PARAMETRES à proposer en option.
-        secrets (Iterable[str]): clés de SECRETS que le script demande, citées par --help.
-
-    Returns:
-        argparse.ArgumentParser: l'analyseur, prêt pour parse_args().
+    Les clés de SECRETS que le script demande sont seulement citées par --help.
     """
     lignes_secrets = [f"  {SECRETS[nom][2]:<20} {SECRETS[nom][3]}" for nom in secrets]
     epilogue = "Chaque valeur vient de son option, sinon de sa variable d'environnement, sinon de config.ini,\n"
@@ -159,16 +144,12 @@ def resoudre_configuration(
     """Construit la configuration à partir des options, de l'environnement, de config.ini et des défauts.
 
     Args:
-        arguments (Mapping[str, object]): options analysées (vars(analyseur.parse_args())) ;
-            une option absente vaut None.
+        arguments (Mapping[str, object]): vars(analyseur.parse_args()) ; une option absente vaut None.
         chemin_defaut (Path): config.ini lu quand --config n'est pas donné, s'il existe.
         secrets (Iterable[str]): clés de SECRETS dont le programme a besoin.
-        environnement (Mapping[str, str] | None): variables d'environnement, os.environ par défaut.
-        saisir (Callable[[str], str] | None): saisie masquée d'un secret absent de
-            l'environnement (voir saisie_masquee), None hors d'un terminal.
-
-    Returns:
-        Configuration: la configuration validée.
+        environnement (Mapping[str, str] | None): os.environ par défaut.
+        saisir (Callable[[str], str] | None): saisie d'un secret absent de l'environnement
+            (voir saisie_masquee), None hors d'un terminal.
 
     Raises:
         ConfigurationInvalideError: fichier introuvable, secret absent ou valeur incohérente ;

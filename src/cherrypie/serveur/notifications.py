@@ -16,25 +16,12 @@ TEXTE_OK_PASSER = "Vous pouvez reprendre votre route."
 
 @dataclass(frozen=True)
 class Notification:
-    """Consigne destinée à un usager.
-
-    Attributes:
-        destinataire (str): identifiant de l'usager.
-        code (CodeNotification): consigne à appliquer.
-        texte (str): explication lisible, affichée à l'usager.
-    """
+    """Consigne destinée à un usager, avec son explication lisible."""
 
     destinataire: str
     code: CodeNotification
     texte: str
 
     def vers_message(self, emetteur: str) -> Message:
-        """Construit le message NOTIF à envoyer à l'usager.
-
-        Args:
-            emetteur (str): identifiant de l'émetteur, le serveur.
-
-        Returns:
-            Message: NOTIF avec le code et le texte de la consigne.
-        """
+        """Construit le message NOTIF à envoyer à l'usager."""
         return Message(TypeMessage.NOTIF, emetteur, {"code": self.code.value, "message": self.texte})
