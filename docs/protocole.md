@@ -135,13 +135,14 @@ REGLAGE n'est accepté que d'une session de supervision abonnée, avec `regulati
 - Une fois inscrit, il avance d'un pas toutes les `intervalle_position` secondes et envoie aussitôt sa position en UDP. Il envoie un PING toutes les `intervalle_ping` secondes.
 - Si le serveur ne donne aucune nouvelle pendant `timeout_client` secondes, alors qu'il répond normalement à chaque PING, le client considère la connexion perdue, même si TCP ne l'a pas encore signalé.
 - Après une coupure, ou un refus avec `reessayer` à `true`, le client attend `backoff_initial` secondes, puis un délai qui double à chaque échec (1, 2, 4, 8 s), plafonné à `backoff_max` (10 s). Il renvoie un HELLO à chaque reconnexion. Un refus définitif l'arrête.
+- Un serveur qui refuse les trames du client (horloges décalées, clé différente) ne répond pas du tout. Après 3 HELLO de suite sans HELLO_ACK, le client journalise une fois ce qu'il faut vérifier : l'écart des horloges, `CHERRYPIE_CLE`, et `--fenetre-anti-rejeu`.
 - Une nouvelle session repart sans consigne : le serveur renvoie celles qui s'appliquent encore.
 - À la fin de son trajet, ou quand on l'arrête, le client envoie un BYE : le serveur le retire du registre sans attendre le timeout.
 
 ## Côté supervision
 
 - La supervision ouvre une connexion TCP et envoie un ABONNEMENT, au nom de `supervision`. Le serveur ne l'accuse pas : la session reçoit ensuite un STATE à chaque cadence.
-- Comme un client, elle envoie un PING toutes les `intervalle_ping` secondes, sans quoi le serveur la retirerait au bout de `timeout_client`. Si elle ne reçoit ni PONG ni STATE pendant `timeout_client` secondes, elle considère la connexion perdue, se reconnecte avec le même backoff que les clients, puis se réabonne.
+- Comme un client, elle envoie un PING toutes les `intervalle_ping` secondes, sans quoi le serveur la retirerait au bout de `timeout_client`. Si elle ne reçoit ni PONG ni STATE pendant `timeout_client` secondes, elle considère la connexion perdue, se reconnecte avec le même backoff que les clients, puis se réabonne. Après 3 abonnements de suite sans aucune trame valide, elle journalise une fois le même conseil que le client.
 - Elle envoie un REGLAGE à chaque clic sur l'interrupteur de régulation. Le serveur ne répond pas : l'effet se lit dans le champ `regulation` des STATE suivants, et c'est ce champ que la supervision affiche. Un réglage demandé pendant une coupure est abandonné ; à la reconnexion, l'interrupteur reprend l'état du serveur.
 - Un STATE auquel il manque un champ est journalisé puis ignoré.
 - Elle envoie un STATS_DEMANDE quand on ouvre l'onglet « Statistiques » ou qu'on clique sur « Actualiser ». Plusieurs demandes faites avant l'envoi n'en font qu'une ; pendant une coupure, la demande part à la reconnexion.
@@ -176,4 +177,4 @@ Le champ `etape` dit où en est l'usager sur son trajet : `approche` (sur la cha
 
 ## Trames refusées
 
-À la réception, une trame passe trois contrôles dans cet ordre : lecture de l'enveloppe, vérification du HMAC, contrôle anti-rejeu (détails dans [securite.md](securite.md)). Chaque échec lève une exception dédiée, fille de `CherryPieError` : `TrameInvalideError`, `SignatureInvalideError` ou `RejeuDetecteError`, et `UsagerInconnuError` pour une position sans session TCP. La trame est alors journalisée puis ignorée, sans interrompre le serveur. Seule exception : sur TCP, une longueur annoncée de plus de 1 Mio ferme la connexion, puisque le flux ne peut plus être resynchronisé.
+À la réception, une trame passe trois contrôles dans cet ordre : lecture de l'enveloppe, vérification du HMAC, contrôle anti-rejeu (détails dans [securite.md](securite.md)). Chaque échec lève une exception dédiée, fille de `CherryPieError` : `TrameInvalideError`, `SignatureInvalideError`, `HorodatageHorsFenetreError` ou `RejeuDetecteError` (nonce déjà reçu), et `UsagerInconnuError` pour une position sans session TCP. La trame est alors journalisée puis ignorée, sans interrompre le serveur. Le premier refus pour l'horodatage ou la signature ajoute, une seule fois, ce qu'il faut vérifier : l'écart des horloges, `CHERRYPIE_CLE`, et `--fenetre-anti-rejeu` pour dépanner. Seule exception : sur TCP, une longueur annoncée de plus de 1 Mio ferme la connexion, puisque le flux ne peut plus être resynchronisé.

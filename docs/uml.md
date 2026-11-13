@@ -33,6 +33,7 @@ classDiagram
     class TrameInvalideError
     class SignatureInvalideError
     class RejeuDetecteError
+    class HorodatageHorsFenetreError
     class BrancheInconnueError
     class UsagerInconnuError
     class ScenarioInvalideError
@@ -49,6 +50,7 @@ classDiagram
     CherryPieError <|-- TrameInvalideError
     CherryPieError <|-- SignatureInvalideError
     CherryPieError <|-- RejeuDetecteError
+    RejeuDetecteError <|-- HorodatageHorsFenetreError
     CherryPieError <|-- BrancheInconnueError
     CherryPieError <|-- UsagerInconnuError
     CherryPieError <|-- ScenarioInvalideError
@@ -174,8 +176,9 @@ classDiagram
     GardeAntiRejeu ..> Enveloppe : contrôle
 ```
 
-- `Enveloppe` est la forme transmise sur le réseau : le `Message`, plus l'horodatage, le nonce et le HMAC. `Signataire.signer()` la construit ; à la réception, `Signataire.verifier()` puis `GardeAntiRejeu.controler()` la valident.
-- `Configuration` valide un `configparser` complet. Les scripts ne la lisent pas directement dans un fichier : la fonction `resoudre_configuration()` (module `commun/resolution.py`, sans classe) part des valeurs par défaut, y applique `config.ini` s'il existe, puis les variables `CHERRYPIE_*` et les options de la ligne de commande, et ajoute la clé HMAC et le mot de passe de la base pris dans l'environnement ou saisis. `Configuration` accepte une clé et un mot de passe vides : chaque script n'exige que les secrets dont il se sert.
+- `Enveloppe` est la forme transmise sur le réseau : le `Message`, plus l'horodatage, le nonce et le HMAC. `Signataire.signer()` la construit ; à la réception, `Signataire.verifier()` puis `GardeAntiRejeu.controler()` la valident. Un horodatage hors fenêtre lève `HorodatageHorsFenetreError`, distincte du nonce rejoué : seul ce refus-là peut venir d'horloges décalées.
+- Le module `securite` a aussi deux fonctions, sans classe : `conseil_horloges()` rédige ce qu'il faut vérifier quand les trames sont refusées (écart des horloges, `CHERRYPIE_CLE`, `--fenetre-anti-rejeu`), et `conseiller_une_fois()` le journalise une seule fois par processus, puisque les clients lancés par une même supervision échoueraient tous pour la même raison. Le client, la supervision et le serveur l'appellent.
+- `Configuration` valide un `configparser` complet. Les scripts ne la lisent pas directement dans un fichier : la fonction `resoudre_configuration()` (module `commun/resolution.py`, sans classe) part des valeurs par défaut, y applique `config.ini` s'il existe, puis les variables `CHERRYPIE_*` et les options de la ligne de commande (adresse, ports, base, fenêtre anti-rejeu), et ajoute la clé HMAC et le mot de passe de la base pris dans l'environnement ou saisis. `Configuration` accepte une clé et un mot de passe vides : chaque script n'exige que les secrets dont il se sert.
 - `ParametresBranche` décrit une branche telle que la donne sa section `[branche.<identifiant>]` de la configuration : identifiant (celui du protocole), libellé affiché, cap depuis le nord, largeur du terre-plein et distance du passage piéton. La configuration refuse un identifiant qui n'est pas en minuscules sans accents, une section sans branche, deux branches au même cap, ou une voie d'anneau plus large que le rayon.
 - `CodeNotification` fait partie du protocole plutôt que du serveur, parce que le client en a besoin pour réagir aux consignes.
 - `DecoupeurTrames` tient le tampon d'une socket TCP : `ajouter()` renvoie les trames complètes et garde le reste pour la lecture suivante.
@@ -436,6 +439,7 @@ classDiagram
         -lire_tcp(numero: int) None
         -traiter_trame(numero: int, trame: bytes) None
         -lire_udp() None
+        -conseiller(erreur: CherryPieError) None
         -ouvrir(octets: bytes) Message
         -envoyer(numero: int, message: Message) None
         -vider(numero: int) None
@@ -537,7 +541,7 @@ classDiagram
 
 - La boucle réseau et la logique sont séparées. `Serveur` ne décide rien ; `LogiqueServeur` ne touche aucune socket, ce qui permet de la tester sans réseau. Elles se parlent par numéro de session : la boucle associe chaque numéro à une `Connexion` (la socket et ses tampons), la logique à une `Session` (usager, abonnement, dernière activité).
 - `servir()` fait tourner une seule boucle `select` sur la socket d'écoute TCP, la socket UDP et les sockets des clients. Son délai d'attente court jusqu'à la prochaine cadence (`intervalle_etat`) : à chaque cadence, `cadencer()` ferme les sessions silencieuses et envoie le STATE aux supervisions. `arreter()` lève un `threading.Event` vérifié à chaque tour, ce qui arrête la boucle en moins d'un intervalle.
-- Chaque trame reçue passe par `ouvrir()` (enveloppe, HMAC, anti-rejeu) avant d'être confiée à la logique. Une trame refusée est journalisée puis ignorée.
+- Chaque trame reçue passe par `ouvrir()` (enveloppe, HMAC, anti-rejeu) avant d'être confiée à la logique. Une trame refusée est journalisée puis ignorée ; après un refus pour l'horodatage ou la signature, `conseiller()` ajoute une fois ce qu'il faut vérifier.
 - `Connexion` utilise une socket non bloquante. Son découpeur recolle les trames reçues en plusieurs morceaux ou collées ensemble, et sa file d'envoi garde ce que la socket n'a pas pu accepter, jusqu'à ce que `select` la signale prête à écrire. Un client qui laisse plus de 1 Mio en attente est déconnecté.
 - `Serveur` confie l'historique à `Historique` (paquet `bdd`), qui l'écrit en base dans son propre thread : à chaque cadence, les traversées terminées et, toutes les `intervalle_releves` secondes, un relevé de densité par branche ; à chaque HELLO accepté (`Reponse.inscrit`) et à chaque session d'usager fermée, un événement de connexion. Un STATS_DEMANDE (`Reponse.statistiques_demandees`) part à l'historique, après les traversées pas encore transmises ; la réponse revient à une cadence suivante, en STATS_REPONSE.
 - Aux frontières, une erreur imprévue sur une session ne ferme que cette session ; ailleurs dans la boucle, elle est journalisée et la boucle continue.
@@ -718,6 +722,7 @@ classDiagram
         -recus : deque[Message]
         -etat : EtatConnexion
         -vp_annonce : bool
+        -hello_sans_reponse : int
         -sur_position : Callable | None
         -sur_notification : Callable | None
         -sur_connexion : Callable | None
@@ -770,6 +775,7 @@ classDiagram
 - `rouler()` enchaîne les connexions. Après une coupure, ou un refus provisoire (`InscriptionRefuseeError.reessayer`), il attend avec un délai qui double (1, 2, 4, 8 s, plafonné à 10 s). L'attente se fait sur un `threading.Event` : `arreter()` réveille le client sans attendre la fin du délai. Un refus définitif l'arrête.
 - `circuler()` fait avancer l'usager d'un pas à chaque intervalle de position, envoie le POS en UDP, envoie un PING toutes les `intervalle_ping` secondes et traite les messages reçus. Elle s'arrête si le serveur reste muet plus de `timeout_client` secondes, et dit au revoir (BYE) à la fin du trajet ou à l'arrêt.
 - Les messages lus attendent dans une file (`recus`) : une NOTIF arrivée dans la même lecture que le HELLO_ACK n'est pas perdue.
+- `connecter()` compte les HELLO de suite restés sans HELLO_ACK (`hello_sans_reponse`) ; au troisième, le client journalise le conseil de `conseiller_une_fois()`. Une inscription remet le compte à zéro.
 - `Deplacement` contient les règles de mouvement, sans réseau, ce qui permet de les tester seules. À chaque pas, l'usager parcourt la distance que permet sa consigne et s'arrête sur la ligne d'entrée pendant un ATTENDEZ, un CHANGEZ_VOIE ou un cédez-le-passage s'il ne l'a pas encore franchie. Pour se ranger, il se décale progressivement (2 m/s) jusqu'à la place que donne sa trajectoire ; pendant un DEGAGEZ, il ne ralentit qu'une fois rangé, pour ne pas boucher la voie qu'il libère ; pendant un CHANGEZ_VOIE, il se décale sans accélérer puis s'immobilise. Sur sa chaussée d'approche, le VP serre la gauche (`ECART_EN_APPROCHE`). Chaque pas met à jour sa position, son cap, sa vitesse, son segment et son étape. `noter_devant()` fixe l'avancement à ne pas dépasser pour garder sa distance de sécurité avec l'obstacle de devant (`Usager.DISTANCE_SECURITE` : 6 m pour un véhicule, 1,5 m pour un piéton) ; l'usager ne recule jamais.
 - Un client de VP envoie VP_ALERT à chaque connexion tant que le VP n'a pas quitté l'anneau, avec son `eta` (le temps qu'il lui faut pour atteindre l'anneau), puis VP_FIN au pas où il passe en étape de sortie.
 
@@ -883,6 +889,7 @@ classDiagram
         -socket : socket | None
         -decoupeur : DecoupeurTrames
         -etat : EtatConnexion
+        -abonnements_sans_reponse : int
         +tourner() None
         +demander_reglage(regulation: bool) None
         +demander_statistiques() None
@@ -890,6 +897,7 @@ classDiagram
         -boucler() None
         -connecter() None
         -ecouter() None
+        -noter_abonnement_sans_reponse() None
         -lire(attente: float) bool
         -transmettre_etat(message: Message) None
         -ouvrir(octets: bytes) Message
@@ -1052,7 +1060,7 @@ classDiagram
 
 - Trois sortes de threads se partagent la supervision : le thread de l'IHM, qui possède tous les widgets ; le `QThread` du réseau, où vit `ReseauSupervision` après `moveToThread()` ; un `threading.Thread` par `ClientUsager` lancé depuis la section « Scénario ». Seul le thread de l'IHM touche aux widgets. Les deux autres émettent des signaux, que Qt remet aux objets de l'IHM dans leur thread (connexion en file d'attente).
 - Les signaux sont des attributs de classe (`pyqtSignal`), d'où le soulignement. `etat_recu` porte les données d'un STATE (`dict`), `connexion_changee` l'état de la connexion et un détail (`str, str`), `termine` n'a pas d'argument. Les signaux de `RelaisClient` commencent par l'identifiant de l'usager : `position_changee (str, dict)`, `notification_recue (str, str, str, bool)` pour le code, le texte et l'application de la consigne, `connexion_changee (str, str, str)`. `LanceurClients` réémet ces trois signaux, plus `client_lance (str, str)` pour l'identifiant et le trajet d'un client qui part ; `PanneauSuivi` les affiche.
-- `ReseauSupervision.tourner()` est relié au signal `started` du `QThread`. Comme le client, la boucle se connecte, s'abonne (ABONNEMENT), envoie un PING toutes les `intervalle_ping` secondes et se reconnecte avec le même backoff. Un STATE auquel il manque un champ est journalisé et ignoré, pour ne jamais faire échouer l'affichage.
+- `ReseauSupervision.tourner()` est relié au signal `started` du `QThread`. Comme le client, la boucle se connecte, s'abonne (ABONNEMENT), envoie un PING toutes les `intervalle_ping` secondes et se reconnecte avec le même backoff. Un STATE auquel il manque un champ est journalisé et ignoré, pour ne jamais faire échouer l'affichage. Une connexion qui expire sans avoir reçu une seule trame compte comme un abonnement sans réponse ; au troisième de suite, le travailleur journalise le même conseil que le client.
 - Tant que `tourner()` s'exécute, le `QThread` ne revient pas à sa boucle d'événements : un slot appelé en file d'attente n'y serait jamais exécuté. Les réglages demandés par l'IHM passent donc par une `SimpleQueue`, que la boucle vide à chaque tour ; l'attente sur la socket est bornée à 0,1 s pour qu'un réglage ou l'arrêt soit pris en compte vite. Les réglages demandés hors connexion sont abandonnés à la connexion suivante.
 - `termine` est relié à `QThread.quit()` en connexion directe : à la fermeture, le thread de l'IHM attend le réseau dans `wait()` et ne traiterait pas un signal en file d'attente.
 - `RelaisClient` adapte les rappels du client, qui ne dépend pas de Qt. Créé dans le thread de l'IHM, il émet un signal à chaque rappel. Le client garde ses fonctions de rappel, donc le relais, aussi longtemps qu'il vit.
@@ -1094,7 +1102,6 @@ classDiagram
         -lire(requete: str, limite: int) list[tuple]
         -connexion_ouverte() MySQLConnectionAbstract
         -traduire(erreur: mysql.connector.Error) BddError
-        -est_utile(instruction: str) bool$
     }
 
     class Historique {
@@ -1183,7 +1190,7 @@ classDiagram
 ```
 
 - Seul le serveur accède à la base. `PanneauStats`, onglet « Statistiques » de la supervision (paquet `ihm`, montré ici avec les données qu'il affiche), ne connaît que la réponse STATS_REPONSE : il ne parle jamais à MariaDB.
-- `AccesBdd` réunit toutes les requêtes : requêtes paramétrées (`%s`), `executemany` pour chaque lot, `commit()` explicite. Une erreur de mysql.connector devient une erreur métier selon son code : `BddInjoignableError` (serveur éteint, adresse inconnue, connexion perdue), `AccesBddRefuseError`, `BaseAbsenteError`, sinon `BddError`. `schema.sql` crée les trois tables (`passage_vp`, `releve_densite`, `evenement_connexion`) avec `CREATE TABLE IF NOT EXISTS` : `scripts/init_bdd.py` peut le relancer sans rien perdre.
+- `AccesBdd` réunit toutes les requêtes : requêtes paramétrées (`%s`), `executemany` pour chaque lot, `commit()` explicite. Une erreur de mysql.connector devient une erreur métier selon son code : `BddInjoignableError` (serveur éteint, adresse inconnue, connexion perdue), `AccesBddRefuseError`, `BaseAbsenteError`, sinon `BddError`. `schema.sql` crée les trois tables (`passage_vp`, `releve_densite`, `evenement_connexion`) avec `CREATE TABLE IF NOT EXISTS` : `scripts/init_bdd.py` peut le relancer sans rien perdre. `executer_script()` le découpe par la fonction `decouper_script()` du même module, qui ne coupe pas sur un « ; » placé dans un commentaire (`--`, `#`, `/* */`) ou entre quotes, et retire les commentaires.
 - `Historique` est un `threading.Thread` démon. La boucle du serveur y dépose ce qu'il faut écrire ; le thread l'écrit par lots, une table après l'autre, et ne retire un lot de sa file d'attente qu'une fois validé : un lot refusé est réessayé tel quel, sans doublon. Base injoignable, il garde au plus 10 000 enregistrements par table et retente la connexion toutes les `delai_reessai` secondes. Une demande de statistiques force une tentative, puisque la supervision attend une réponse.
 - Les tests remplacent `AccesBdd` par `DoublureBdd` (une sous-classe qui garde tout en mémoire et peut simuler une panne) et `mysql.connector.connect` par une fausse connexion. Le seul test qui vise une vraie base est marqué `bdd` et ignoré si elle est absente.
 
