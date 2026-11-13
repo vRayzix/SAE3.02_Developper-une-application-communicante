@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import configparser
 import getpass
+import math
 import os
 import sys
 from collections.abc import Callable, Iterable, Mapping
@@ -28,8 +29,14 @@ PARAMETRES = {
     "bdd_port": ("bdd", "port", "CHERRYPIE_BDD_PORT", "port de MariaDB"),
     "bdd_utilisateur": ("bdd", "utilisateur", "CHERRYPIE_BDD_UTILISATEUR", "utilisateur MariaDB"),
     "bdd_nom": ("bdd", "base", "CHERRYPIE_BDD_NOM", "nom de la base"),
+    "fenetre_anti_rejeu": (
+        "securite",
+        "fenetre_anti_rejeu",
+        "CHERRYPIE_FENETRE_ANTI_REJEU",
+        "écart d'horloge maximal accepté avec l'émetteur d'une trame, en secondes ; "
+        "à élargir sur toutes les machines, seulement pour dépanner",
+    ),
 }
-PARAMETRES_PORT = {"port_tcp", "port_udp", "bdd_port"}
 # Nom du secret : section et clé dans la configuration, variable d'environnement, libellé.
 SECRETS = {
     "cle": ("securite", "cle_hmac", "CHERRYPIE_CLE", "clé HMAC partagée"),
@@ -89,11 +96,31 @@ def port(texte: str) -> int:
     return valeur
 
 
+def secondes(texte: str) -> float:
+    """Convertit une durée écrite en texte ; argparse.ArgumentTypeError si elle n'est pas finie et positive."""
+    try:
+        valeur = float(texte)
+    except ValueError:
+        valeur = math.nan
+    if not math.isfinite(valeur) or valeur <= 0:
+        raise argparse.ArgumentTypeError(f"nombre de secondes strictement positif attendu (lu : {texte!r})")
+    return valeur
+
+
 def texte_non_vide(texte: str) -> str:
     """Refuse une valeur vide (argparse.ArgumentTypeError)."""
     if not texte:
         raise argparse.ArgumentTypeError("valeur vide")
     return texte
+
+
+# Conversion et nom de la valeur dans --help, pour les paramètres qui ne sont pas du texte.
+CONVERSIONS: dict[str, tuple[Callable[[str], object], str]] = {
+    "port_tcp": (port, "PORT"),
+    "port_udp": (port, "PORT"),
+    "bdd_port": (port, "PORT"),
+    "fenetre_anti_rejeu": (secondes, "SECONDES"),
+}
 
 
 def creer_analyseur(
@@ -120,10 +147,11 @@ def creer_analyseur(
     )
     for nom in parametres:
         section, cle, variable, aide = PARAMETRES[nom]
+        conversion, valeur = CONVERSIONS.get(nom, (texte_non_vide, cle.upper().replace("HOTE", "ADRESSE")))
         analyseur.add_argument(
             "--" + nom.replace("_", "-"),
-            type=port if nom in PARAMETRES_PORT else texte_non_vide,
-            metavar="PORT" if nom in PARAMETRES_PORT else cle.upper().replace("HOTE", "ADRESSE"),
+            type=conversion,
+            metavar=valeur,
             help=f"{aide} ({variable}, [{section}] {cle})",
         )
     return analyseur
@@ -196,10 +224,11 @@ def fusionner_fichier(
     parseur.read_dict(fichier)
 
 
-def convertir_variable(nom: str, variable: str, texte: str) -> str | int:
+def convertir_variable(nom: str, variable: str, texte: str) -> object:
     """Vérifie la valeur d'une variable d'environnement comme le ferait son option."""
+    conversion, _ = CONVERSIONS.get(nom, (str, ""))
     try:
-        return port(texte) if nom in PARAMETRES_PORT else texte
+        return conversion(texte)
     except argparse.ArgumentTypeError as erreur:
         raise ConfigurationInvalideError(f"variable d'environnement {variable} : {erreur}") from None
 

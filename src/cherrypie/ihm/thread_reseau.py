@@ -19,7 +19,7 @@ from cherrypie.client.client_usager import TAILLE_LECTURE, EtatConnexion
 from cherrypie.commun.config import Configuration
 from cherrypie.commun.erreurs import CherryPieError
 from cherrypie.commun.protocole import Enveloppe, Message, TypeMessage
-from cherrypie.commun.securite import GardeAntiRejeu, Signataire
+from cherrypie.commun.securite import ESSAIS_AVANT_CONSEIL, GardeAntiRejeu, Signataire, conseiller_une_fois
 from cherrypie.commun.trame import DecoupeurTrames
 
 IDENTIFIANT_SUPERVISION = "supervision"
@@ -65,6 +65,7 @@ class ReseauSupervision(QObject):
         self.__socket: socket.socket | None = None
         self.__decoupeur = DecoupeurTrames()
         self.__etat = EtatConnexion.DECONNECTE
+        self.__abonnements_sans_reponse = 0
 
     @property
     def signataire(self) -> Signataire:
@@ -110,6 +111,11 @@ class ReseauSupervision(QObject):
     def arret_demande(self) -> bool:
         """bool: True dès que arreter() a été appelée."""
         return self.__arret.is_set()
+
+    @property
+    def abonnements_sans_reponse(self) -> int:
+        """int: abonnements de suite restés sans aucune trame valide du serveur."""
+        return self.__abonnements_sans_reponse
 
     def demander_reglage(self, regulation: bool) -> None:
         """Demande au serveur d'activer ou de couper la régulation (message REGLAGE).
@@ -195,6 +201,7 @@ class ReseauSupervision(QObject):
         """
         prochain_ping = time.monotonic() + self.__config.intervalle_ping
         derniere_nouvelle = time.monotonic()
+        reponse_recue = False
         while not self.__arret.is_set():
             self.__envoyer_reglages()
             if self.__statistiques_demandees.is_set():
@@ -207,10 +214,21 @@ class ReseauSupervision(QObject):
             # Le serveur répond aux PING et diffuse des STATE : un long silence veut dire
             # qu'il est tombé, même si la connexion TCP n'a pas encore cassé.
             if maintenant - derniere_nouvelle > self.__config.timeout_client:
+                if not reponse_recue:
+                    self.__noter_abonnement_sans_reponse()
                 raise TimeoutError(f"aucune nouvelle du serveur depuis plus de {self.__config.timeout_client:g} s")
             if self.__lire(min(ATTENTE_MAX, max(0.0, prochain_ping - maintenant))):
                 derniere_nouvelle = time.monotonic()
+                reponse_recue = True
+                self.__abonnements_sans_reponse = 0
         self.__envoyer(Message(TypeMessage.BYE, IDENTIFIANT_SUPERVISION))
+
+    def __noter_abonnement_sans_reponse(self) -> None:
+        """Compte un abonnement resté sans réponse ; à partir de quelques-uns, en donne la cause probable."""
+        self.__abonnements_sans_reponse += 1
+        if self.__abonnements_sans_reponse >= ESSAIS_AVANT_CONSEIL:
+            constat = f"aucune réponse du serveur après {self.__abonnements_sans_reponse} abonnements de suite"
+            conseiller_une_fois(journal, constat, self.__config.fenetre_anti_rejeu)
 
     def __lire(self, attente: float) -> bool:
         """Attend des données du serveur, au plus `attente` secondes, et transmet STATE et statistiques valides.

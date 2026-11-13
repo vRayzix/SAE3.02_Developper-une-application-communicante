@@ -12,7 +12,7 @@ import pytest
 from doublure_bdd import FausseConnexion
 from mysql.connector import errorcode
 
-from cherrypie.bdd.acces_bdd import REQUETE_DENSITE, REQUETE_PASSAGE, AccesBdd
+from cherrypie.bdd.acces_bdd import REQUETE_DENSITE, REQUETE_PASSAGE, AccesBdd, decouper_script
 from cherrypie.bdd.enregistrements import EvenementConnexion, ReleveDensite, TypeConnexion
 from cherrypie.commun.erreurs import (
     AccesBddRefuseError,
@@ -157,9 +157,35 @@ def test_script_execute_instruction_par_instruction(acces: AccesBdd, connexions:
     acces.executer_script(SCHEMA.read_text(encoding="utf-8"))
     requetes = [requete for requete, _ in connexions[0].requetes]
     tables = ["passage_vp", "releve_densite", "evenement_connexion"]
-    assert [f"CREATE TABLE IF NOT EXISTS {table}" in requete for requete, table in zip(requetes, tables)] == [True] * 3
+    debuts = [f"CREATE TABLE IF NOT EXISTS {table} (" for table in tables]
+    assert [requete.startswith(debut) for requete, debut in zip(requetes, debuts)] == [True] * 3
     assert len(requetes) == 3
     assert connexions[0].commits == 1
+
+
+def test_vrai_schema_sans_fragment_de_commentaire() -> None:
+    # Le commentaire d'en-tête contient un « ; » : MariaDB refusait sa seconde moitié (erreur 1064).
+    instructions = decouper_script(SCHEMA.read_text(encoding="utf-8"))
+    assert len(instructions) == 3
+    assert all(instruction.startswith("CREATE TABLE IF NOT EXISTS ") for instruction in instructions)
+    assert all(instruction.endswith(") CHARACTER SET utf8mb4") for instruction in instructions)
+    assert not any("--" in instruction for instruction in instructions)
+
+
+@pytest.mark.parametrize(
+    ("script", "attendues"),
+    [
+        ("-- en-tête ; suite\nCREATE TABLE t (x INT);\n-- fin ;", ["CREATE TABLE t (x INT)"]),
+        ("/* un ;\n deux ; */ CREATE TABLE t (x INT); /* ; */", ["CREATE TABLE t (x INT)"]),
+        ("INSERT INTO t VALUES ('a ; b'); SELECT 1", ["INSERT INTO t VALUES ('a ; b')", "SELECT 1"]),
+        ("INSERT INTO t VALUES ('l''a ; b', \"c\\\" ; d\")", ["INSERT INTO t VALUES ('l''a ; b', \"c\\\" ; d\")"]),
+        ("SELECT '-- pas un commentaire ;' ;;\n;", ["SELECT '-- pas un commentaire ;'"]),
+        ("SELECT 1 # fin ; de ligne\n; SELECT 2", ["SELECT 1", "SELECT 2"]),
+    ],
+    ids=["tiret-tiret", "bloc", "quotes", "quotes-echappees", "instructions-vides", "diese"],
+)
+def test_point_virgule_hors_instruction_ignore(script: str, attendues: list[str]) -> None:
+    assert decouper_script(script) == attendues
 
 
 # ---------- Lecture ----------

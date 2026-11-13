@@ -1,5 +1,6 @@
 """Tests du client usager face à un vrai serveur, sur 127.0.0.1."""
 
+import logging
 import os
 import socket
 import subprocess
@@ -14,7 +15,7 @@ from outils import DELAI, attendre
 from cherrypie.client.client_usager import ClientUsager, EtatConnexion
 from cherrypie.commun.config import Configuration
 from cherrypie.commun.protocole import CodeNotification, Enveloppe, Message, TypeMessage
-from cherrypie.commun.securite import Signataire
+from cherrypie.commun.securite import ESSAIS_AVANT_CONSEIL, Signataire
 from cherrypie.commun.trame import DecoupeurTrames
 from cherrypie.modele.usager import FACTEUR_RALENTISSEMENT, VehiculePrioritaire, Voiture
 from cherrypie.serveur.serveur import Serveur
@@ -213,6 +214,29 @@ def test_essais_espaces_par_un_delai_qui_double(
     attendre(lambda: len(instants) >= 5)
     ecarts = [suivant - precedent for precedent, suivant in zip(instants, instants[1:])]
     assert ecarts[:4] == pytest.approx([0.1, 0.2, 0.4, 0.4], abs=0.08)
+
+
+@pytest.mark.usefixtures("conseil_a_donner")
+def test_conseil_apres_plusieurs_hello_sans_reponse(
+    fabrique_config: Callable[..., Configuration],
+    preparer_client: Callable[..., ClientUsager],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO)
+    config = fabrique_config(**{**DELAIS_RAPIDES, "timeout_client": "0.3"})
+    # Le système accepte la connexion, personne ne répond : c'est ce que voit un client
+    # quand le serveur refuse ses trames (horloges décalées ou clé différente).
+    with socket.create_server((config.hote, config.port_tcp)):
+        client = preparer_client(config)
+        client.start()
+        attendre(lambda: caplog.text.count("pas de HELLO_ACK") > ESSAIS_AVANT_CONSEIL, delai=4 * DELAI)
+        client.arreter()
+        client.join(timeout=DELAI)
+    messages = [enregistrement.getMessage() for enregistrement in caplog.records]
+    conseils = [rang for rang, message in enumerate(messages) if "CHERRYPIE_CLE" in message]
+    assert len(conseils) == 1
+    assert messages[conseils[0]].startswith(f"aucun HELLO_ACK après {ESSAIS_AVANT_CONSEIL} HELLO de suite")
+    assert sum("pas de HELLO_ACK" in message for message in messages[: conseils[0]]) == ESSAIS_AVANT_CONSEIL - 1
 
 
 def test_identifiant_deja_connecte_refuse_puis_inscrit(

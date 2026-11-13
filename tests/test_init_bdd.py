@@ -66,7 +66,7 @@ def test_options_et_mot_de_passe_transmis(
 def test_aide_sans_pyqt() -> None:
     # Sur la VM code, sans écran, le script ne doit pas charger Qt.
     aide, qt_charge = aide_du_script(CHEMIN_SCRIPT)
-    assert "--bdd-hote" in aide and "CHERRYPIE_BDD_MDP" in aide and "--port-tcp" not in aide
+    assert "--bdd-hote" in aide and "CHERRYPIE_BDD_MDP" in aide and "--port-tcp" not in aide and "--fenetre" not in aide
     assert not qt_charge
 
 

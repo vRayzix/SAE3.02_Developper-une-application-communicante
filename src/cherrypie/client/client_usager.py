@@ -21,7 +21,7 @@ from cherrypie.client.deplacement import Deplacement
 from cherrypie.commun.config import Configuration
 from cherrypie.commun.erreurs import CherryPieError, InscriptionRefuseeError
 from cherrypie.commun.protocole import CodeNotification, Enveloppe, Message, TypeMessage
-from cherrypie.commun.securite import GardeAntiRejeu, Signataire
+from cherrypie.commun.securite import ESSAIS_AVANT_CONSEIL, GardeAntiRejeu, Signataire, conseiller_une_fois
 from cherrypie.commun.trame import DecoupeurTrames
 from cherrypie.modele.rond_point import RondPoint
 from cherrypie.modele.trajectoire import Etape
@@ -95,6 +95,7 @@ class ClientUsager(threading.Thread):
         self.__recus: deque[Message] = deque()
         self.__etat = EtatConnexion.DECONNECTE
         self.__vp_annonce = False
+        self.__hello_sans_reponse = 0
         self.__sur_position = sur_position
         self.__sur_notification = sur_notification
         self.__sur_connexion = sur_connexion
@@ -148,6 +149,11 @@ class ClientUsager(threading.Thread):
     def vp_annonce(self) -> bool:
         """bool: True entre le VP_ALERT et le VP_FIN d'un véhicule prioritaire, sur la connexion en cours."""
         return self.__vp_annonce
+
+    @property
+    def hello_sans_reponse(self) -> int:
+        """int: HELLO de suite restés sans HELLO_ACK, remis à zéro par une inscription."""
+        return self.__hello_sans_reponse
 
     @property
     def recus(self) -> list[Message]:
@@ -238,7 +244,15 @@ class ClientUsager(threading.Thread):
         usager = self.usager
         description = {"categorie": usager.CATEGORIE, "entree": usager.branche_entree, "sortie": usager.branche_sortie}
         self.__envoyer(Message(TypeMessage.HELLO, usager.identifiant, description))
-        accuse = self.__attendre(TypeMessage.HELLO_ACK)
+        try:
+            accuse = self.__attendre(TypeMessage.HELLO_ACK)
+        except TimeoutError:
+            self.__hello_sans_reponse += 1
+            if self.__hello_sans_reponse >= ESSAIS_AVANT_CONSEIL:
+                constat = f"aucun HELLO_ACK après {self.__hello_sans_reponse} HELLO de suite"
+                conseiller_une_fois(journal, constat, self.__config.fenetre_anti_rejeu)
+            raise
+        self.__hello_sans_reponse = 0
         if accuse.donnees.get("accepte") is not True:
             raison = str(accuse.donnees.get("raison", "sans raison"))
             raise InscriptionRefuseeError(raison, accuse.donnees.get("reessayer") is True)

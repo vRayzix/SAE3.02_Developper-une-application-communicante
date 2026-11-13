@@ -10,6 +10,7 @@ from cherrypie.commun.erreurs import (
     BrancheInconnueError,
     CherryPieError,
     ConfigurationInvalideError,
+    HorodatageHorsFenetreError,
     InscriptionRefuseeError,
     RejeuDetecteError,
     ScenarioInvalideError,
@@ -23,6 +24,7 @@ ERREURS_METIER = [
     TrameInvalideError,
     SignatureInvalideError,
     RejeuDetecteError,
+    HorodatageHorsFenetreError,
     BrancheInconnueError,
     UsagerInconnuError,
     ScenarioInvalideError,
@@ -53,6 +55,10 @@ def test_inscription_refusee_garde_sa_raison_et_le_droit_de_reessayer() -> None:
     assert isinstance(refus, CherryPieError)
     assert str(refus) == "l'identifiant voiture_12 est déjà connecté"
     assert refus.reessayer
+
+
+def test_horodatage_hors_fenetre_est_un_rejeu() -> None:
+    assert issubclass(HorodatageHorsFenetreError, RejeuDetecteError)
 
 
 @pytest.mark.parametrize("classe", [BddInjoignableError, AccesBddRefuseError, BaseAbsenteError])
