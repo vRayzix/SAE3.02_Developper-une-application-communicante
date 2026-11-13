@@ -14,7 +14,6 @@ from mysql.connector import errorcode
 
 from cherrypie.bdd.acces_bdd import REQUETE_DENSITE, REQUETE_PASSAGE, AccesBdd
 from cherrypie.bdd.enregistrements import EvenementConnexion, ReleveDensite, TypeConnexion
-from cherrypie.commun.config import Configuration
 from cherrypie.commun.erreurs import (
     AccesBddRefuseError,
     BaseAbsenteError,
@@ -22,6 +21,7 @@ from cherrypie.commun.erreurs import (
     BddInjoignableError,
     ConfigurationInvalideError,
 )
+from cherrypie.commun.resolution import resoudre_configuration
 from cherrypie.serveur.passages import PassageVp
 
 RACINE = Path(__file__).resolve().parent.parent
@@ -185,14 +185,11 @@ def test_statistiques_du_plus_ancien_au_plus_recent(acces: AccesBdd, connexions:
 
 @pytest.fixture
 def vraie_bdd() -> AccesBdd:
-    """Accès à la base de config.ini ; le test est ignoré sans config.ini ou sans base joignable."""
-    chemin = RACINE / "config.ini"
-    if not chemin.exists():
-        pytest.skip("pas de config.ini à la racine du dépôt")
+    """Accès à la base que viserait init_bdd.py ; le test est ignoré sans CHERRYPIE_BDD_MDP ou sans base joignable."""
     try:
-        config = Configuration.depuis_fichier(chemin)
+        config = resoudre_configuration({}, RACINE / "config.ini", secrets=("bdd_mdp",))
     except ConfigurationInvalideError as erreur:
-        pytest.skip(f"config.ini à compléter : {erreur}")
+        pytest.skip(f"base non configurée : {erreur}")
     acces = AccesBdd(config.parametres_bdd, config.delai_connexion_bdd)
     try:
         acces.connecter()

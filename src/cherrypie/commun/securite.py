@@ -24,7 +24,7 @@ TAILLE_NONCE = 8
 class Signataire:
     """Signe les messages sortants et vérifie les enveloppes entrantes.
 
-    Le serveur et tous les clients partagent la même clé, lue dans config.ini.
+    Le serveur et tous les clients partagent la même clé, donnée par CHERRYPIE_CLE ou saisie au lancement.
     """
 
     def __init__(self, cle: bytes) -> None:

@@ -18,6 +18,7 @@ from cherrypie.modele.usager import Usager, Voiture
 from cherrypie.serveur.serveur import Serveur
 
 CHEMIN_EXEMPLE = Path(__file__).resolve().parent.parent / "config.exemple.ini"
+CLE_DE_TEST = "cle_de_test"
 
 
 def port_libre(type_socket: socket.SocketKind) -> int:
@@ -60,7 +61,7 @@ def aucun_thread_oublie() -> Iterator[None]:
 
 @pytest.fixture
 def fabrique_config() -> Callable[..., Configuration]:
-    """Fabrique des configurations tirées du fichier d'exemple, sur 127.0.0.1 et des ports libres.
+    """Fabrique des configurations tirées du fichier d'exemple, sur 127.0.0.1 et des ports libres, avec une clé HMAC.
 
     Les arguments nommés remplacent des valeurs de l'exemple, quelle que soit leur
     section : fabrique_config(timeout_client="0.3"). branches=["a", "b", "c"] remplace
@@ -71,6 +72,7 @@ def fabrique_config() -> Callable[..., Configuration]:
         parseur = configparser.ConfigParser(interpolation=None)
         parseur.read(CHEMIN_EXEMPLE, encoding="utf-8")
         parseur["reseau"]["hote"] = "127.0.0.1"
+        parseur["securite"]["cle_hmac"] = CLE_DE_TEST
         parseur["reseau"]["port_tcp"] = str(port_libre(socket.SOCK_STREAM))
         parseur["reseau"]["port_udp"] = str(port_libre(socket.SOCK_DGRAM))
         if branches is not None:

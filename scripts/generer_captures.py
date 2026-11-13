@@ -14,6 +14,7 @@ la fin, compare les deux traversées sans demander de MariaDB.
 import configparser
 import logging
 import os
+import secrets
 import socket
 import sys
 import threading
@@ -70,10 +71,12 @@ PAUSE_BOUCLE = 0.01
 
 
 def configuration() -> Configuration:
-    """Reprend config.exemple.ini, sur 127.0.0.1 et des ports libres."""
+    """Reprend config.exemple.ini, sur 127.0.0.1 et des ports libres, avec une clé jetable."""
     parseur = configparser.ConfigParser(interpolation=None)
     parseur.read(RACINE / "config.exemple.ini", encoding="utf-8")
     parseur["reseau"]["hote"] = "127.0.0.1"
+    # Le serveur et la fenêtre tournent dans ce processus : une clé jetable leur suffit.
+    parseur["securite"]["cle_hmac"] = secrets.token_hex(32)
     parseur["bdd"]["intervalle_releves"] = INTERVALLE_RELEVES
     for cle, type_socket in (("port_tcp", socket.SOCK_STREAM), ("port_udp", socket.SOCK_DGRAM)):
         with socket.socket(socket.AF_INET, type_socket) as prise:
