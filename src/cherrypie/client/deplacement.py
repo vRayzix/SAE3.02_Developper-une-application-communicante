@@ -11,7 +11,6 @@ from cherrypie.modele.usager import Usager
 # Vitesse à laquelle un usager se décale sur le côté pour se ranger ou changer de voie, en m/s :
 # le mouvement reste visible à l'écran au lieu de se faire d'un coup.
 VITESSE_LATERALE = 2.0
-# Écart latéral, en mètres, en deçà duquel un usager qui se décale est considéré comme rangé.
 TOLERANCE_RANGEMENT = 0.05
 
 
@@ -31,12 +30,7 @@ class Deplacement:
     """
 
     def __init__(self, usager: Usager, trajectoire: Trajectoire) -> None:
-        """Place l'usager au départ de sa trajectoire, à l'arrêt.
-
-        Args:
-            usager (Usager): usager à faire avancer.
-            trajectoire (Trajectoire): chemin qu'il suit.
-        """
+        """Place l'usager au départ de sa trajectoire, à l'arrêt."""
         self.__usager = usager
         self.__trajectoire = trajectoire
         self.__avancement = 0.0
@@ -81,11 +75,7 @@ class Deplacement:
         return self.__avancement >= self.__trajectoire.longueur
 
     def noter_devant(self, distance: float | None, ceder: bool) -> None:
-        """Prend en compte ce que voit le conducteur, d'après le dernier message DEVANT.
-
-        Args:
-            distance (float | None): distance jusqu'à l'obstacle devant, None si la voie est libre.
-            ceder (bool): True s'il faut attendre sur la ligne d'entrée que l'anneau se libère.
+        """Prend en compte le dernier message DEVANT : distance à l'obstacle (None si libre) et cédez-le-passage.
 
         Raises:
             ValueError: si la distance est négative ou n'est pas un nombre fini.
@@ -99,10 +89,7 @@ class Deplacement:
         self.__ceder = ceder
 
     def avancer(self, duree: float) -> None:
-        """Fait avancer l'usager pendant une durée, puis met à jour sa position, sa vitesse, son segment et son étape.
-
-        Args:
-            duree (float): durée du pas, en secondes.
+        """Fait avancer l'usager pendant `duree` secondes, puis met à jour position, vitesse, segment et étape.
 
         Raises:
             ValueError: si la durée est négative ou n'est pas un nombre fini.

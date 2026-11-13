@@ -27,7 +27,6 @@ from cherrypie.modele.rond_point import RondPoint
 from cherrypie.modele.trajectoire import Etape
 from cherrypie.modele.usager import Usager, VehiculePrioritaire
 
-# Octets demandés à chaque lecture de la socket TCP.
 TAILLE_LECTURE = 65536
 
 journal = logging.getLogger(__name__)
@@ -74,8 +73,6 @@ class ClientUsager(threading.Thread):
         """Prépare le client ; la connexion ne s'ouvre qu'au lancement du thread.
 
         Args:
-            config (Configuration): configuration partagée avec le serveur.
-            usager (Usager): usager que le client fait circuler.
             sur_position (Callable[[dict], None] | None): appelée après chaque pas, avec une
                 copie de l'état de l'usager (format de Usager.vers_dict()).
             sur_notification (Callable[[CodeNotification, str, bool], None] | None): appelée
@@ -191,7 +188,6 @@ class ClientUsager(threading.Thread):
         try:
             raison = self.__rouler()
         except Exception:
-            # Frontière du thread : une erreur imprévue est journalisée, jamais propagée.
             journal.exception("erreur inattendue dans le client %s", self.usager.identifiant)
             raison = "erreur inattendue"
         finally:
@@ -237,7 +233,6 @@ class ClientUsager(threading.Thread):
         hote, port = self.__config.hote, self.__config.port_tcp
         self.__changer_etat(EtatConnexion.CONNEXION, f"vers {hote}:{port}")
         self.__socket_tcp = socket.create_connection((hote, port), timeout=self.__config.timeout_client)
-        # Chaque connexion repart de tampons vides : un reste de l'ancienne n'aurait plus de sens.
         self.__decoupeur = DecoupeurTrames()
         self.__recus.clear()
         usager = self.usager
@@ -380,10 +375,8 @@ class ClientUsager(threading.Thread):
     def __lire(self, attente: float) -> bool:
         """Attend des données du serveur, au plus `attente` secondes, et range les messages valides dans la file.
 
-        Une trame refusée (JSON, HMAC, rejeu) est journalisée puis ignorée.
-
-        Returns:
-            bool: True si au moins un message valide est arrivé.
+        Une trame refusée (JSON, HMAC, rejeu) est journalisée puis ignorée. Renvoie True si au
+        moins un message valide est arrivé.
 
         Raises:
             ConnectionError: si le serveur a fermé ou coupé la connexion.

@@ -41,13 +41,10 @@ TITRE = "CherryPie : supervision du rond-point"
 # Taille en dessous de laquelle la fenêtre ne descend pas : tout reste lisible sur l'écran d'un portable.
 LARGEUR_MINIMALE = 1000
 HAUTEUR_MINIMALE = 640
-# À l'ouverture, la fenêtre prend cette part de l'écran.
 PART_ECRAN = 0.85
-# La largeur se partage entre la scène et le panneau latéral selon ces parts, à l'ouverture comme quand elle change.
 PARTS_SCENE = 3
 PARTS_PANNEAU = 2
 COLONNES_LEGENDE = 4
-# Attente maximale de l'arrêt du thread réseau à la fermeture, en secondes.
 DELAI_ARRET = 2.0
 MILLISECONDES_PAR_SECONDE = 1000
 INCONNU = "inconnue"
@@ -69,11 +66,7 @@ class FenetreSupervision(QMainWindow):
     """
 
     def __init__(self, config: Configuration) -> None:
-        """Construit la fenêtre et prépare le réseau ; demarrer() le lance.
-
-        Args:
-            config (Configuration): configuration partagée avec le serveur.
-        """
+        """Construit la fenêtre et prépare le réseau ; demarrer() le lance."""
         super().__init__()
         self.__config = config
         self.__scene = SceneRondPoint(RondPoint.depuis_config(config))
@@ -92,7 +85,6 @@ class FenetreSupervision(QMainWindow):
         self.__panneau_lateral = QScrollArea()
         self.__separateur = QSplitter()
         self.__onglets = QTabWidget()
-        # Après chaque connexion, la case reprend l'état du serveur au premier STATE reçu.
         self.__case_a_aligner = True
         self.__fil = QThread(self)
         self.__reseau = ReseauSupervision(config)
@@ -207,11 +199,7 @@ class FenetreSupervision(QMainWindow):
             journal.warning("le thread réseau de la supervision ne s'est pas arrêté à temps")
 
     def closeEvent(self, evenement: QCloseEvent) -> None:
-        """Arrête proprement tous les threads avant de fermer la fenêtre.
-
-        Args:
-            evenement (QCloseEvent): demande de fermeture reçue de Qt.
-        """
+        """Arrête proprement tous les threads avant de fermer la fenêtre."""
         self.arreter()
         super().closeEvent(evenement)
 
@@ -278,7 +266,6 @@ class FenetreSupervision(QMainWindow):
         self.__case_regulation.clicked.connect(self.__regler)
         self.__reseau.statistiques_recues.connect(self.__panneau_stats.afficher)
         self.__panneau_stats.actualisation_demandee.connect(self.__reseau.demander_statistiques)
-        # Ouvrir l'onglet des statistiques les actualise : elles ont pu changer depuis.
         self.__onglets.currentChanged.connect(self.__actualiser_si_statistiques)
 
     def __disposer(self) -> None:

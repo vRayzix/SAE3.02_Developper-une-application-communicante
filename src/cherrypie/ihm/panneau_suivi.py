@@ -46,16 +46,10 @@ class PanneauSuivi(QWidget):
     """
 
     def __init__(self, lanceur: LanceurClients, parent: QWidget | None = None) -> None:
-        """Construit le panneau et le relie au lanceur.
-
-        Args:
-            lanceur (LanceurClients): lanceur dont on suit les clients.
-            parent (QWidget | None): widget parent.
-        """
+        """Construit le panneau et le relie au lanceur dont il suit les clients."""
         super().__init__(parent)
         self.__lignes: dict[str, QTreeWidgetItem] = {}
         self.__evenements = EvenementsServeur({branche.nom: branche.libelle for branche in lanceur.config.branches})
-        # Message de la ligne du haut et ses sujets, avec le nombre de fois que chacun est revenu.
         self.__dernier_message: tuple | None = None
         self.__sujets: dict[str, int] = {}
         self.__liste_clients = QTreeWidget()
@@ -68,7 +62,6 @@ class PanneauSuivi(QWidget):
         entete.setStretchLastSection(False)
         self.__messages = QListWidget()
         self.__messages.setWordWrap(True)
-        # Une ligne longue passe à la ligne : la liste ne défile qu'en hauteur.
         self.__messages.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.__disposer()
         lanceur.client_lance.connect(self.__ajouter_client)
@@ -107,11 +100,7 @@ class PanneauSuivi(QWidget):
         return self.__messages
 
     def noter_etat(self, etat: dict) -> None:
-        """Ajoute à la liste les événements que révèle un STATE.
-
-        Args:
-            etat (dict): données d'un STATE reçu par la supervision.
-        """
+        """Ajoute à la liste les événements que révèle un STATE reçu par la supervision."""
         for nature, objet in self.__evenements.comparer(etat, datetime.now()):
             debut = f"{EMETTEUR_SERVEUR} : {nature}" + (" : " if objet else "")
             self.__ajouter_message(("evenement", nature), objet, debut, "", COULEUR_EVENEMENT)

@@ -18,10 +18,7 @@ class LigneScenario:
     """Une ligne du scénario : des usagers d'un même trajet, lancés ensemble.
 
     Attributes:
-        categorie (str): catégorie des usagers (ex. "voiture").
-        entree (str): identifiant de la branche d'entrée.
         sortie (str): identifiant de la branche de sortie, la même que l'entrée pour un piéton.
-        nombre (int): nombre d'usagers lancés, au moins 1.
         delai (float): attente avant ce lancement, depuis celui de la ligne précédente, en secondes.
     """
 
@@ -50,11 +47,7 @@ class LigneScenario:
             raise ScenarioInvalideError("un piéton traverse une seule branche : l'entrée et la sortie sont la même")
 
     def vers_dict(self) -> dict:
-        """Convertit la ligne en dictionnaire prêt pour json.dumps.
-
-        Returns:
-            dict: catégorie, entrée, sortie, nombre et délai.
-        """
+        """Convertit la ligne en dictionnaire prêt pour json.dumps."""
         return {
             "categorie": self.categorie,
             "entree": self.entree,
@@ -65,13 +58,7 @@ class LigneScenario:
 
     @classmethod
     def depuis_dict(cls, contenu: dict) -> LigneScenario:
-        """Recrée une ligne à partir d'un dictionnaire.
-
-        Args:
-            contenu (dict): dictionnaire au format de vers_dict().
-
-        Returns:
-            LigneScenario: la ligne décrite.
+        """Recrée une ligne à partir d'un dictionnaire au format de vers_dict().
 
         Raises:
             ScenarioInvalideError: si un champ manque ou si la ligne est incohérente.
@@ -88,11 +75,7 @@ class Scenario:
     """Suite ordonnée de lignes, lancées l'une après l'autre."""
 
     def __init__(self, lignes: list[LigneScenario]) -> None:
-        """Crée un scénario.
-
-        Args:
-            lignes (list[LigneScenario]): lignes dans l'ordre de lancement.
-        """
+        """Crée un scénario à partir de ses lignes, dans l'ordre de lancement."""
         self.__lignes = list(lignes)
 
     @property
@@ -106,11 +89,7 @@ class Scenario:
         return sum(ligne.nombre for ligne in self.__lignes)
 
     def instants_de_depart(self) -> list[float]:
-        """Calcule l'instant de lancement de chaque ligne, depuis le début du scénario.
-
-        Returns:
-            list[float]: instants en secondes ; chaque délai compte depuis la ligne précédente.
-        """
+        """Instant de lancement de chaque ligne, en secondes depuis le début du scénario."""
         instants = []
         instant = 0.0
         for ligne in self.__lignes:
@@ -119,24 +98,13 @@ class Scenario:
         return instants
 
     def vers_json(self) -> str:
-        """Convertit le scénario en texte JSON, lisible et versionné.
-
-        Returns:
-            str: le scénario au format JSON.
-        """
+        """Convertit le scénario en texte JSON, lisible et versionné."""
         contenu = {"version": VERSION_FORMAT, "lignes": [ligne.vers_dict() for ligne in self.__lignes]}
         return json.dumps(contenu, ensure_ascii=False, indent=2)
 
     @classmethod
     def depuis_json(cls, texte: str, branches: set[str]) -> Scenario:
-        """Relit un scénario enregistré, en vérifiant qu'il convient à ce rond-point.
-
-        Args:
-            texte (str): scénario au format JSON.
-            branches (set[str]): identifiants des branches du rond-point.
-
-        Returns:
-            Scenario: le scénario relu.
+        """Relit un scénario JSON, en vérifiant qu'il ne nomme que des branches de ce rond-point.
 
         Raises:
             ScenarioInvalideError: si le texte n'est pas un scénario valide, ou s'il nomme une

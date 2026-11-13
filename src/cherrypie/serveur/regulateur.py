@@ -55,11 +55,7 @@ class Regulateur:
     """Décide, à chaque cadence, des consignes à envoyer aux usagers."""
 
     def __init__(self, rond_point: RondPoint) -> None:
-        """Crée un régulateur qui n'a encore envoyé aucune consigne.
-
-        Args:
-            rond_point (RondPoint): rond-point régulé.
-        """
+        """Crée un régulateur qui n'a encore envoyé aucune consigne."""
         self.__rond_point = rond_point
         self.__active = True
         self.__consignes_envoyees: dict[str, CodeNotification] = {}
@@ -77,11 +73,7 @@ class Regulateur:
 
     @active.setter
     def active(self, valeur: bool) -> None:
-        """Active ou coupe la régulation (message REGLAGE).
-
-        Raises:
-            TypeError: si la valeur n'est pas un booléen.
-        """
+        """Active ou coupe la régulation (message REGLAGE) ; TypeError si ce n'est pas un booléen."""
         if not isinstance(valeur, bool):
             raise TypeError(f"la régulation est active ou non (reçu : {valeur!r})")
         self.__active = valeur
@@ -100,11 +92,6 @@ class Regulateur:
         self, registre: Registre, passages: list[PassageEnCours], densites: dict[str, float]
     ) -> list[Notification]:
         """Compare la consigne voulue pour chaque usager à celle déjà envoyée.
-
-        Args:
-            registre (Registre): usagers connectés, avec leur dernière étape connue.
-            passages (list[PassageEnCours]): VP annoncés dont la traversée n'est pas finie.
-            densites (dict[str, float]): densité de chaque branche, pour le dosage des entrées.
 
         Returns:
             list[Notification]: consignes nouvelles ou levées, à envoyer à leurs destinataires.
@@ -145,9 +132,6 @@ class Regulateur:
 
         S'il revient sur une nouvelle session, il repart sans consigne : la prochaine
         décision lui renverra celle qui vaut encore.
-
-        Args:
-            identifiant (str): identifiant de l'usager.
         """
         self.__consignes_envoyees.pop(identifiant, None)
 

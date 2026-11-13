@@ -27,11 +27,7 @@ class RelaisClient(QObject):
     connexion_changee = pyqtSignal(str, str, str)
 
     def __init__(self, identifiant: str) -> None:
-        """Crée le relais d'un client.
-
-        Args:
-            identifiant (str): identifiant de l'usager du client.
-        """
+        """Crée le relais du client d'un usager."""
         super().__init__()
         self.__identifiant = identifiant
 
@@ -41,28 +37,13 @@ class RelaisClient(QObject):
         return self.__identifiant
 
     def sur_position(self, usager: dict) -> None:
-        """Rappel de position du client : émet position_changee.
-
-        Args:
-            usager (dict): état de l'usager après un pas.
-        """
+        """Rappel de position du client : émet position_changee."""
         self.position_changee.emit(self.__identifiant, usager)
 
     def sur_notification(self, code: CodeNotification, texte: str, appliquee: bool) -> None:
-        """Rappel de consigne du client : émet notification_recue.
-
-        Args:
-            code (CodeNotification): consigne reçue.
-            texte (str): texte qui l'accompagne.
-            appliquee (bool): True si l'usager l'applique.
-        """
+        """Rappel de consigne du client : émet notification_recue."""
         self.notification_recue.emit(self.__identifiant, code.value, texte, appliquee)
 
     def sur_connexion(self, etat: EtatConnexion, detail: str) -> None:
-        """Rappel d'état de connexion du client : émet connexion_changee.
-
-        Args:
-            etat (EtatConnexion): nouvel état de la connexion.
-            detail (str): explication lisible.
-        """
+        """Rappel d'état de connexion du client : émet connexion_changee."""
         self.connexion_changee.emit(self.__identifiant, etat.value, detail)

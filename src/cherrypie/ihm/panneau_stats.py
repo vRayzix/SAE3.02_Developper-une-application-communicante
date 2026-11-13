@@ -14,7 +14,6 @@ POURCENT = 100
 TAILLE_POINT = 10
 EPAISSEUR_LIGNE = 2
 OPACITE_GRILLE = 0.2
-# Marge au-dessus de la plus longue traversée, et de part et d'autre des numéros de traversée.
 MARGE_HAUT = 1.15
 MARGE_RANG = 0.5
 DECALAGE_LEGENDE = (10, 10)
@@ -41,7 +40,6 @@ class PanneauStats(QWidget):
 
         Args:
             libelles (dict[str, str]): nom de rue de chaque branche, par identifiant, dans l'ordre des branches.
-            parent (QWidget | None): widget parent.
         """
         super().__init__(parent)
         self.__libelles = dict(libelles)
@@ -85,11 +83,7 @@ class PanneauStats(QWidget):
         return self.__densites
 
     def afficher(self, statistiques: dict) -> None:
-        """Affiche une réponse STATS_REPONSE.
-
-        Args:
-            statistiques (dict): données de la réponse, avec `disponible` à False si la base est injoignable.
-        """
+        """Affiche une réponse STATS_REPONSE ; `disponible` y vaut False si la base est injoignable."""
         heure = datetime.now().time().isoformat(timespec="seconds")
         if not statistiques.get("disponible"):
             raison = statistiques.get("raison", "raison inconnue")

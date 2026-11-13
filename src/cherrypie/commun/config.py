@@ -1,4 +1,4 @@
-"""Lecture et validation du fichier de configuration (config.ini)."""
+"""Lecture et validation de la configuration : config.ini, ou valeurs résolues par resolution.py."""
 
 from __future__ import annotations
 
@@ -48,10 +48,7 @@ class Configuration:
     """
 
     def __init__(self, parseur: configparser.ConfigParser) -> None:
-        """Extrait et valide toutes les valeurs d'un fichier déjà analysé.
-
-        Args:
-            parseur (configparser.ConfigParser): contenu de config.ini.
+        """Extrait et valide toutes les valeurs d'une configuration déjà analysée.
 
         Raises:
             ConfigurationInvalideError: si une clé manque ou si une valeur est incohérente.
@@ -59,7 +56,9 @@ class Configuration:
         self.__hote = self.__lire_texte(parseur, "reseau", "hote")
         self.__port_tcp = self.__lire_entier(parseur, "reseau", "port_tcp", PORT_MIN, PORT_MAX)
         self.__port_udp = self.__lire_entier(parseur, "reseau", "port_udp", PORT_MIN, PORT_MAX)
-        self.__cle_hmac = self.__lire_texte(parseur, "securite", "cle_hmac").encode("utf-8")
+        # Clé et mot de passe peuvent manquer : resoudre_configuration les exige pour les
+        # seuls programmes qui s'en servent (la supervision n'a pas de mot de passe de base).
+        self.__cle_hmac = parseur.get("securite", "cle_hmac", fallback="").encode("utf-8")
         self.__fenetre_anti_rejeu = self.__lire_reel_positif(parseur, "securite", "fenetre_anti_rejeu")
         self.__intervalle_ping = self.__lire_reel_positif(parseur, "delais", "intervalle_ping")
         self.__timeout_client = self.__lire_reel_positif(parseur, "delais", "timeout_client")
@@ -77,7 +76,7 @@ class Configuration:
             "hote": self.__lire_texte(parseur, "bdd", "hote"),
             "port": self.__lire_entier(parseur, "bdd", "port", PORT_MIN, PORT_MAX),
             "utilisateur": self.__lire_texte(parseur, "bdd", "utilisateur"),
-            "mot_de_passe": self.__lire_texte(parseur, "bdd", "mot_de_passe"),
+            "mot_de_passe": parseur.get("bdd", "mot_de_passe", fallback=""),
             "base": self.__lire_texte(parseur, "bdd", "base"),
         }
         self.__delai_connexion_bdd = self.__lire_reel_positif(parseur, "bdd", "delai_connexion")
@@ -87,41 +86,13 @@ class Configuration:
 
     @classmethod
     def depuis_fichier(cls, chemin: str | Path) -> Configuration:
-        """Lit un fichier config.ini et construit la configuration.
-
-        Args:
-            chemin (str | Path): chemin du fichier à lire.
-
-        Returns:
-            Configuration: la configuration validée.
+        """Lit un fichier config.ini complet et construit la configuration.
 
         Raises:
             ConfigurationInvalideError: si le fichier est introuvable, mal formé
                 ou contient une valeur incohérente.
         """
-        # Sans interpolation, un « % » dans un mot de passe ou dans la clé est lu
-        # tel quel au lieu de provoquer une erreur de configparser.
-        parseur = configparser.ConfigParser(interpolation=None)
-        try:
-            fichiers_lus = parseur.read(chemin, encoding="utf-8")
-        except UnicodeDecodeError as erreur:
-            raise ConfigurationInvalideError(f"{chemin} n'est pas encodé en UTF-8") from erreur
-        # Les messages de configparser recopient la ligne fautive, qui peut contenir la
-        # clé HMAC ou le mot de passe : on n'en garde que le numéro. « from None » évite
-        # que l'erreur d'origine réapparaisse dans une trace journalisée.
-        except configparser.MissingSectionHeaderError as erreur:
-            raise ConfigurationInvalideError(
-                f"{chemin}, ligne {erreur.lineno} : valeur placée avant toute section"
-            ) from None
-        except configparser.ParsingError as erreur:
-            lignes = ", ".join(str(numero) for numero, _ in erreur.errors)
-            raise ConfigurationInvalideError(f"{chemin}, ligne {lignes} : format « cle = valeur » attendu") from None
-        except configparser.Error as erreur:
-            # Restent les sections ou clés en double, dont le message ne cite que des noms.
-            raise ConfigurationInvalideError(f"{chemin} est mal formé : {erreur}") from None
-        if not fichiers_lus:
-            raise ConfigurationInvalideError(f"fichier de configuration introuvable ou illisible : {chemin}")
-        return cls(parseur)
+        return cls(lire_fichier(chemin))
 
     @property
     def hote(self) -> str:
@@ -140,7 +111,7 @@ class Configuration:
 
     @property
     def cle_hmac(self) -> bytes:
-        """bytes: clé partagée qui signe toutes les trames."""
+        """bytes: clé partagée qui signe toutes les trames, vide si elle n'a pas été fournie."""
         return self.__cle_hmac
 
     @property
@@ -338,3 +309,34 @@ class Configuration:
             Configuration.__lire_reel_positif(parseur, section, "terre_plein"),
             Configuration.__lire_reel_positif(parseur, section, "passage_pieton"),
         )
+
+
+def lire_fichier(chemin: str | Path) -> configparser.ConfigParser:
+    """Lit un fichier au format de config.ini, sans en valider les valeurs.
+
+    Raises:
+        ConfigurationInvalideError: si le fichier est introuvable, illisible ou mal formé.
+    """
+    # Sans interpolation, un « % » dans une valeur est lu tel quel au lieu de
+    # provoquer une erreur de configparser.
+    parseur = configparser.ConfigParser(interpolation=None)
+    try:
+        fichiers_lus = parseur.read(chemin, encoding="utf-8")
+    except UnicodeDecodeError as erreur:
+        raise ConfigurationInvalideError(f"{chemin} n'est pas encodé en UTF-8") from erreur
+    # Les messages de configparser recopient la ligne fautive, qui peut contenir un
+    # secret : on n'en garde que le numéro. « from None » évite que l'erreur
+    # d'origine réapparaisse dans une trace journalisée.
+    except configparser.MissingSectionHeaderError as erreur:
+        raise ConfigurationInvalideError(
+            f"{chemin}, ligne {erreur.lineno} : valeur placée avant toute section"
+        ) from None
+    except configparser.ParsingError as erreur:
+        lignes = ", ".join(str(numero) for numero, _ in erreur.errors)
+        raise ConfigurationInvalideError(f"{chemin}, ligne {lignes} : format « cle = valeur » attendu") from None
+    except configparser.Error as erreur:
+        # Restent les sections ou clés en double, dont le message ne cite que des noms.
+        raise ConfigurationInvalideError(f"{chemin} est mal formé : {erreur}") from None
+    if not fichiers_lus:
+        raise ConfigurationInvalideError(f"fichier de configuration introuvable ou illisible : {chemin}")
+    return parseur

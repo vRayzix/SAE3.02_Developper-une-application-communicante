@@ -30,11 +30,7 @@ class CalculateurDensite:
     """
 
     def __init__(self, rond_point: RondPoint) -> None:
-        """Crée un calculateur pour un rond-point.
-
-        Args:
-            rond_point (RondPoint): rond-point dont on mesure les branches.
-        """
+        """Crée un calculateur pour un rond-point."""
         self.__rond_point = rond_point
 
     @property
@@ -43,14 +39,7 @@ class CalculateurDensite:
         return self.__rond_point
 
     def calculer(self, registre: Registre) -> dict[str, float]:
-        """Calcule la densité de toutes les branches.
-
-        Args:
-            registre (Registre): usagers connectés, avec leur dernière étape connue.
-
-        Returns:
-            dict[str, float]: pour chaque branche, usagers en approche / capacité, borné entre 0 et 1.
-        """
+        """Densité de chaque branche : usagers en approche / capacité, bornée entre 0 et 1."""
         en_approche = {branche.nom: 0 for branche in self.__rond_point.branches}
         for usager in registre.usagers:
             if usager.etape is Etape.APPROCHE:
@@ -63,12 +52,6 @@ class CalculateurDensite:
     @staticmethod
     def niveau(densite: float) -> NiveauDensite:
         """Classe une densité selon les seuils du cahier des charges.
-
-        Args:
-            densite (float): densité d'une branche, entre 0 et 1.
-
-        Returns:
-            NiveauDensite: faible en dessous de 0,4, moyenne en dessous de 0,7, forte au-delà.
 
         Raises:
             ValueError: si la densité n'est pas comprise entre 0 et 1.

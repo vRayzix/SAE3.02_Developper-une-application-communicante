@@ -23,7 +23,6 @@ from cherrypie.commun.securite import GardeAntiRejeu, Signataire
 from cherrypie.commun.trame import DecoupeurTrames
 
 IDENTIFIANT_SUPERVISION = "supervision"
-# Attente maximale de la boucle : un réglage demandé par l'IHM, ou l'arrêt, part dans ce délai.
 ATTENTE_MAX = 0.1
 CLES_ETAT = frozenset(
     {"usagers", "densite", "vp_actif", "vps", "segments_reserves", "entrees_bloquees", "passages_fermes", "regulation"}
@@ -55,11 +54,7 @@ class ReseauSupervision(QObject):
     termine = pyqtSignal()
 
     def __init__(self, config: Configuration) -> None:
-        """Prépare le travailleur ; la connexion ne s'ouvre qu'à l'appel de tourner().
-
-        Args:
-            config (Configuration): configuration partagée avec le serveur.
-        """
+        """Prépare le travailleur ; la connexion ne s'ouvre qu'à l'appel de tourner()."""
         super().__init__()
         self.__config = config
         self.__signataire = Signataire(config.cle_hmac)
@@ -121,9 +116,6 @@ class ReseauSupervision(QObject):
 
         Peut être appelée depuis le thread de l'IHM. Un réglage demandé hors connexion
         est abandonné à la connexion suivante : l'IHM reprend alors l'état du serveur.
-
-        Args:
-            regulation (bool): True pour activer la régulation, False pour la couper.
         """
         self.__reglages.put(regulation)
 
@@ -150,7 +142,6 @@ class ReseauSupervision(QObject):
         try:
             self.__boucler()
         except Exception:
-            # Frontière du thread : une erreur imprévue est journalisée, jamais propagée.
             journal.exception("erreur inattendue dans le réseau de la supervision")
             raison = "erreur inattendue"
         finally:
@@ -224,10 +215,8 @@ class ReseauSupervision(QObject):
     def __lire(self, attente: float) -> bool:
         """Attend des données du serveur, au plus `attente` secondes, et transmet STATE et statistiques valides.
 
-        Une trame refusée (JSON, HMAC, rejeu) est journalisée puis ignorée.
-
-        Returns:
-            bool: True si au moins un message valide est arrivé.
+        Une trame refusée (JSON, HMAC, rejeu) est journalisée puis ignorée. Renvoie True si au
+        moins un message valide est arrivé.
 
         Raises:
             ConnectionError: si le serveur a fermé ou coupé la connexion.

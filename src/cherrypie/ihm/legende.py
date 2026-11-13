@@ -22,7 +22,7 @@ from cherrypie.ihm.style import (
 )
 from cherrypie.modele.usager import Pieton, VehiculePrioritaire, Voiture
 
-# Taille d'une icône de légende, en pixels, et proportions des motifs dessinés dedans.
+# En pixels.
 LARGEUR_ICONE = 26
 HAUTEUR_ICONE = 18
 PROPORTION_SILHOUETTE_LONGUEUR = 0.85
@@ -44,12 +44,7 @@ class Legende(QGroupBox):
     """
 
     def __init__(self, colonnes: int, parent: QWidget | None = None) -> None:
-        """Construit la légende.
-
-        Args:
-            colonnes (int): nombre d'entrées par ligne.
-            parent (QWidget | None): widget parent.
-        """
+        """Construit la légende, avec `colonnes` entrées par ligne."""
         super().__init__("Légende", parent)
         self.__libelles: list[str] = []
         grille = QGridLayout(self)
@@ -92,7 +87,6 @@ class Legende(QGroupBox):
         disposition = QHBoxLayout(entree)
         disposition.setContentsMargins(0, 0, 0, 0)
         texte = QLabel(libelle)
-        # Une entrée longue passe à la ligne plutôt que d'être coupée quand la scène est étroite.
         texte.setWordWrap(True)
         disposition.addWidget(image)
         disposition.addWidget(texte, 1)

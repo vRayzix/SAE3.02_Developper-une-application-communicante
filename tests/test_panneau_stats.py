@@ -79,8 +79,8 @@ def test_un_seul_mode_mesure_sans_gain(panneau: PanneauStats) -> None:
 # ---------- Réponse indisponible ----------
 
 def test_base_injoignable_expliquee(panneau: PanneauStats) -> None:
-    panneau.afficher({"disponible": False, "raison": "base injoignable (10.0.0.2:3306)"})
-    assert panneau.etat.text().endswith("statistiques indisponibles, base injoignable (10.0.0.2:3306)")
+    panneau.afficher({"disponible": False, "raison": "base injoignable (bdd.exemple:3306)"})
+    assert panneau.etat.text().endswith("statistiques indisponibles, base injoignable (bdd.exemple:3306)")
 
 
 def test_actualiser_emet_la_demande(panneau: PanneauStats) -> None:

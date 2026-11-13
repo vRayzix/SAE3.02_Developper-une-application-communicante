@@ -17,7 +17,6 @@ from cherrypie.serveur.passages import PassageVp
 # Au-delà de ce nombre d'enregistrements d'un même type en attente, les plus anciens sont
 # oubliés : une base injoignable pendant des heures ne doit pas remplir la mémoire du serveur.
 MAX_EN_ATTENTE = 10_000
-# Une demande de statistiques renvoie au plus ces nombres de traversées et de relevés.
 NOMBRE_PASSAGES_LUS = 200
 NOMBRE_RELEVES_LUS = 2_000
 
@@ -26,11 +25,7 @@ journal = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class DemandeStatistiques:
-    """Demande de statistiques d'une session de supervision.
-
-    Attributes:
-        numero (int): numéro de la session qui attend la réponse.
-    """
+    """Demande de statistiques de la session de supervision `numero`."""
 
     numero: int
 
@@ -46,12 +41,7 @@ class Historique(threading.Thread):
     """
 
     def __init__(self, acces: AccesBdd, delai_reessai: float) -> None:
-        """Prépare le thread, sans le démarrer.
-
-        Args:
-            acces (AccesBdd): accès à la base.
-            delai_reessai (float): attente entre deux tentatives de connexion, en secondes.
-        """
+        """Prépare le thread, sans le démarrer ; delai_reessai est en secondes."""
         super().__init__(name="historique", daemon=True)
         self.__acces = acces
         self.__delai_reessai = delai_reessai
@@ -105,44 +95,24 @@ class Historique(threading.Thread):
         return len(self.__passages) + len(self.__releves) + len(self.__connexions)
 
     def noter_passage(self, passage: PassageVp) -> None:
-        """Confie une traversée de VP à écrire. Appelable depuis n'importe quel thread.
-
-        Args:
-            passage (PassageVp): traversée mesurée.
-        """
+        """Confie une traversée de VP à écrire. Appelable depuis n'importe quel thread."""
         self.__taches.put(passage)
 
     def noter_densites(self, releves: list[ReleveDensite]) -> None:
-        """Confie des relevés de densité à écrire. Appelable depuis n'importe quel thread.
-
-        Args:
-            releves (list[ReleveDensite]): un relevé par branche.
-        """
+        """Confie des relevés de densité, un par branche, à écrire. Appelable depuis n'importe quel thread."""
         for releve in releves:
             self.__taches.put(releve)
 
     def noter_connexion(self, evenement: EvenementConnexion) -> None:
-        """Confie une connexion ou une déconnexion à écrire. Appelable depuis n'importe quel thread.
-
-        Args:
-            evenement (EvenementConnexion): événement de connexion.
-        """
+        """Confie une connexion ou une déconnexion à écrire. Appelable depuis n'importe quel thread."""
         self.__taches.put(evenement)
 
     def demander_statistiques(self, numero: int) -> None:
-        """Demande les statistiques pour une session ; la réponse arrive par reponses_pretes().
-
-        Args:
-            numero (int): numéro de la session qui attend la réponse.
-        """
+        """Demande les statistiques pour une session ; la réponse arrive par reponses_pretes()."""
         self.__taches.put(DemandeStatistiques(numero))
 
     def reponses_pretes(self) -> list[tuple[int, dict]]:
-        """Relève les réponses aux demandes de statistiques, sans attendre.
-
-        Returns:
-            list[tuple[int, dict]]: numéro de session et données de chaque réponse.
-        """
+        """Relève, sans attendre, les réponses aux demandes de statistiques : (numéro de session, données)."""
         reponses = []
         while True:
             try:
@@ -151,11 +121,7 @@ class Historique(threading.Thread):
                 return reponses
 
     def arreter(self, delai: float) -> None:
-        """Demande l'arrêt du thread et l'attend ; il tente une dernière écriture avant de finir.
-
-        Args:
-            delai (float): attente maximale, en secondes.
-        """
+        """Demande l'arrêt du thread et l'attend au plus `delai` secondes ; il tente une dernière écriture."""
         self.__arret.set()
         self.__taches.put(None)
         self.join(timeout=delai)

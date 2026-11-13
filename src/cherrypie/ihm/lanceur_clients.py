@@ -34,11 +34,7 @@ class LanceurClients(QObject):
     notification_recue = pyqtSignal(str, str, str, bool)
 
     def __init__(self, config: Configuration) -> None:
-        """Prépare le lanceur.
-
-        Args:
-            config (Configuration): configuration donnée aux clients lancés (serveur, branches).
-        """
+        """Prépare le lanceur ; la configuration est donnée aux clients lancés."""
         super().__init__()
         self.__config = config
         self.__libelles = {branche.nom: branche.libelle for branche in config.branches}
@@ -66,44 +62,20 @@ class LanceurClients(QObject):
         return list(self.__clients)
 
     def trajet(self, categorie: str, entree: str, sortie: str) -> str:
-        """Décrit un trajet avec les noms de rues.
-
-        Args:
-            categorie (str): catégorie de l'usager.
-            entree (str): identifiant de la branche d'entrée.
-            sortie (str): identifiant de la branche de sortie.
-
-        Returns:
-            str: par exemple « Bd des Nations (sud) vers Rue Albert Camus », ou « traverse ... » pour un piéton.
-        """
+        """Décrit un trajet avec les noms de rues : « Bd des Nations (sud) vers Rue Albert Camus », « traverse ... »."""
         if categorie == Pieton.CATEGORIE:
             return f"traverse {self.__libelles[entree]}"
         return f"{self.__libelles[entree]} vers {self.__libelles[sortie]}"
 
     def lancer(self, categorie: str, entree: str, sortie: str, nombre: int) -> list[ClientUsager]:
-        """Crée des usagers d'un même trajet et lance un client pour chacun.
-
-        Args:
-            categorie (str): catégorie des usagers (ex. "voiture").
-            entree (str): identifiant de la branche d'entrée.
-            sortie (str): identifiant de la branche de sortie.
-            nombre (int): nombre d'usagers à lancer.
-
-        Returns:
-            list[ClientUsager]: les clients lancés, déjà démarrés.
-        """
-        # Les clients arrivés au bout ont fini leur thread : inutile de les garder.
+        """Crée `nombre` usagers d'un même trajet et lance un client pour chacun ; renvoie les clients démarrés."""
         self.__clients = [client for client in self.__clients if client.is_alive()]
         lances = [self.__lancer_un(categorie, entree, sortie) for _ in range(nombre)]
         journal.info("%d %s lancé(s) de %s vers %s", len(lances), categorie, entree, sortie)
         return lances
 
     def arreter_tous(self, delai: float) -> None:
-        """Arrête tous les clients lancés et attend la fin de leurs threads.
-
-        Args:
-            delai (float): attente maximale pour chaque thread, en secondes.
-        """
+        """Arrête tous les clients lancés et attend chaque thread au plus `delai` secondes."""
         for client in self.__clients:
             client.arreter()
         for client in self.__clients:

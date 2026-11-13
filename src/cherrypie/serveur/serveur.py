@@ -34,9 +34,7 @@ from cherrypie.modele.rond_point import RondPoint
 from cherrypie.serveur.connexion import Connexion
 from cherrypie.serveur.logique import IDENTIFIANT_SERVEUR, LogiqueServeur
 
-# Taille maximale d'un datagramme UDP.
 TAILLE_MAX_DATAGRAMME = 65535
-# Attente maximale, à l'arrêt, de la dernière écriture de l'historique en base, en secondes.
 DELAI_ARRET_HISTORIQUE = 5.0
 
 journal = logging.getLogger(__name__)
@@ -48,10 +46,7 @@ class Serveur:
     def __init__(self, config: Configuration, acces_bdd: AccesBdd | None = None) -> None:
         """Prépare le serveur, sans ouvrir de socket ni se connecter à la base.
 
-        Args:
-            config (Configuration): configuration chargée depuis config.ini.
-            acces_bdd (AccesBdd | None): accès à la base de l'historique ; par défaut, celui
-                que décrit la section [bdd] de la configuration.
+        Sans acces_bdd, l'historique va dans la base que décrit la section [bdd] de la configuration.
         """
         self.__config = config
         self.__logique = LogiqueServeur(RondPoint.depuis_config(config), config.timeout_client)
@@ -163,7 +158,6 @@ class Serveur:
                         prochaine_cadence = time.monotonic() + self.__config.intervalle_etat
                         self.__cadencer()
                 except Exception:
-                    # Frontière : une erreur imprévue est journalisée, la boucle continue.
                     journal.exception("erreur inattendue dans la boucle du serveur")
         finally:
             self.__tout_fermer()
@@ -249,7 +243,6 @@ class Serveur:
             self.__fermer(numero, str(erreur))
             return
         except TrameInvalideError as erreur:
-            # Une longueur aberrante désynchronise le flux : impossible de retrouver la trame suivante.
             self.__fermer(numero, f"flux illisible : {erreur}")
             return
         for trame in trames:
@@ -295,9 +288,7 @@ class Serveur:
         """Lit une enveloppe reçue, vérifie son HMAC puis sa fraîcheur, et renvoie son message.
 
         Raises:
-            TrameInvalideError: si les octets ne forment pas une enveloppe valide.
-            SignatureInvalideError: si le HMAC ne correspond pas.
-            RejeuDetecteError: si l'enveloppe est trop ancienne ou déjà reçue.
+            TrameInvalideError, SignatureInvalideError, RejeuDetecteError: selon le contrôle qui échoue.
         """
         enveloppe = Enveloppe.depuis_octets(octets)
         self.__signataire.verifier(enveloppe)

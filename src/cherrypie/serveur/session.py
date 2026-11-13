@@ -12,12 +12,7 @@ class Session:
     """
 
     def __init__(self, numero: int, maintenant: float) -> None:
-        """Ouvre une session.
-
-        Args:
-            numero (int): numéro attribué par le serveur, jamais réutilisé.
-            maintenant (float): instant d'ouverture, sur l'horloge monotone du serveur.
-        """
+        """Ouvre une session sous un numéro jamais réutilisé ; instants sur l'horloge monotone du serveur."""
         self.__numero = numero
         self.__derniere_activite = maintenant
         self.__identifiant: str | None = None
@@ -53,11 +48,7 @@ class Session:
 
     @superviseur.setter
     def superviseur(self, valeur: bool) -> None:
-        """Abonne ou désabonne la session aux STATE.
-
-        Raises:
-            TypeError: si la valeur n'est pas un booléen.
-        """
+        """Abonne ou désabonne la session aux STATE ; TypeError si ce n'est pas un booléen."""
         if not isinstance(valeur, bool):
             raise TypeError(f"un abonnement vaut True ou False (reçu : {valeur!r})")
         self.__superviseur = valeur
@@ -81,13 +72,5 @@ class Session:
         self.__derniere_activite = valeur
 
     def est_expiree(self, maintenant: float, delai: float) -> bool:
-        """Indique si la session est restée silencieuse trop longtemps.
-
-        Args:
-            maintenant (float): instant présent, sur l'horloge monotone du serveur.
-            delai (float): silence maximal toléré, en secondes.
-
-        Returns:
-            bool: True si aucun message n'est arrivé depuis plus de `delai` secondes.
-        """
+        """Indique si aucun message n'est arrivé depuis plus de `delai` secondes."""
         return maintenant - self.__derniere_activite > delai

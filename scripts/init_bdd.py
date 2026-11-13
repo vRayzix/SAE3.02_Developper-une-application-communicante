@@ -1,10 +1,8 @@
-"""Crée les tables de l'historique dans la base MariaDB décrite par config.ini.
+"""Crée les tables de l'historique dans la base MariaDB.
 
-Usage : python scripts/init_bdd.py [chemin/vers/config.ini]
-Sans argument, le fichier config.ini à la racine du dépôt est utilisé. Le script se
-connecte avec les identifiants de la section [bdd], exécute src/cherrypie/bdd/schema.sql
-et dit clairement ce qui ne va pas : serveur injoignable, accès refusé ou base absente.
-Il peut être relancé sans rien perdre.
+Exemple : CHERRYPIE_BDD_MDP=... python3 scripts/init_bdd.py --bdd-hote <adresse de la VM bdd>
+Le script exécute src/cherrypie/bdd/schema.sql et dit clairement ce qui ne va pas :
+serveur injoignable, accès refusé ou base absente. Il peut être relancé sans rien perdre.
 """
 
 import sys
@@ -15,7 +13,6 @@ RACINE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RACINE / "src"))
 
 from cherrypie.bdd.acces_bdd import AccesBdd
-from cherrypie.commun.config import Configuration
 from cherrypie.commun.erreurs import (
     AccesBddRefuseError,
     BaseAbsenteError,
@@ -23,31 +20,30 @@ from cherrypie.commun.erreurs import (
     BddInjoignableError,
     ConfigurationInvalideError,
 )
+from cherrypie.commun.resolution import creer_analyseur, resoudre_configuration, saisie_masquee
 
 SCHEMA = RACINE / "src" / "cherrypie" / "bdd" / "schema.sql"
-# Ce qu'il faut vérifier pour chaque cause d'échec, en plus du message de l'erreur.
+CHEMIN_CONFIG = RACINE / "config.ini"
+PARAMETRES = ["bdd_hote", "bdd_port", "bdd_utilisateur", "bdd_nom"]
+SECRETS = ["bdd_mdp"]
 CONSEILS = {
     BddInjoignableError: (
-        "Vérifiez que MariaDB tourne (sudo systemctl status mariadb), que [bdd] hote et port sont justes,\n"
+        "Vérifiez que MariaDB tourne (systemctl status mariadb), que --bdd-hote et --bdd-port sont justes,\n"
         "que bind-address autorise les connexions distantes et que le pare-feu laisse passer le port 3306."
     ),
     AccesBddRefuseError: (
-        "Vérifiez [bdd] utilisateur et mot_de_passe, et que l'utilisateur est autorisé depuis l'adresse\n"
+        "Vérifiez --bdd-utilisateur et CHERRYPIE_BDD_MDP, et que l'utilisateur est autorisé depuis l'adresse\n"
         "de cette machine (CREATE USER 'cherrypie'@'<adresse>' ... ; GRANT ... ; voir le README)."
     ),
     BaseAbsenteError: "Créez-la sur le serveur MariaDB : CREATE DATABASE cherrypie CHARACTER SET utf8mb4;",
 }
 
 
-def main() -> int:
-    """Charge la configuration, se connecte à la base et crée les tables.
-
-    Returns:
-        int: code de sortie du programme, 0 si les tables sont prêtes.
-    """
-    chemin = Path(sys.argv[1]) if len(sys.argv) > 1 else RACINE / "config.ini"
+def main(argv: list[str] | None = None) -> int:
+    """Résout la configuration, crée les tables et renvoie le code de sortie, 0 si elles sont prêtes."""
+    arguments = creer_analyseur(__doc__, PARAMETRES, SECRETS).parse_args(argv)
     try:
-        config = Configuration.depuis_fichier(chemin)
+        config = resoudre_configuration(vars(arguments), CHEMIN_CONFIG, SECRETS, saisir=saisie_masquee())
     except ConfigurationInvalideError as erreur:
         print(f"Configuration invalide : {erreur}", file=sys.stderr)
         return 1

@@ -21,11 +21,7 @@ class EvenementsServeur:
     """
 
     def __init__(self, libelles: dict[str, str]) -> None:
-        """Prépare la comparaison.
-
-        Args:
-            libelles (dict[str, str]): nom de rue de chaque branche, par identifiant.
-        """
+        """Prépare la comparaison ; libelles donne le nom de rue de chaque branche, par identifiant."""
         self.__libelles = dict(libelles)
         self.__precedent: dict | None = None
 
@@ -44,14 +40,9 @@ class EvenementsServeur:
         self.__precedent = None
 
     def comparer(self, etat: dict, maintenant: datetime) -> list[Evenement]:
-        """Décrit les changements depuis le STATE précédent, puis retient celui-ci.
+        """Décrit les changements depuis le STATE précédent, dans un ordre stable, puis retient celui-ci.
 
-        Args:
-            etat (dict): données d'un STATE.
-            maintenant (datetime): heure de réception, pour situer l'arrivée prévue d'un VP.
-
-        Returns:
-            list[Evenement]: nature et objet de chaque événement, dans un ordre stable.
+        `maintenant`, l'heure de réception, situe l'arrivée prévue d'un VP.
         """
         precedent, self.__precedent = self.__precedent, etat
         if precedent is None:

@@ -41,7 +41,8 @@ def test_exemple_valeurs_reseau() -> None:
 
 def test_exemple_valeurs_securite_et_delais() -> None:
     config = Configuration.depuis_fichier(CHEMIN_EXEMPLE)
-    assert config.cle_hmac == b"remplacer_par_une_cle_secrete"
+    # La clé et le mot de passe viennent de l'environnement ou d'une saisie (voir test_resolution).
+    assert config.cle_hmac == b""
     assert config.fenetre_anti_rejeu == pytest.approx(5.0)
     assert config.intervalle_ping == pytest.approx(2.0)
     assert config.timeout_client == pytest.approx(6.0)
@@ -72,7 +73,7 @@ def test_exemple_valeurs_bdd() -> None:
         "hote": "localhost",
         "port": 3306,
         "utilisateur": "cherrypie",
-        "mot_de_passe": "remplacer_par_le_mot_de_passe",
+        "mot_de_passe": "",
         "base": "cherrypie",
     }
     assert (config.delai_connexion_bdd, config.delai_reessai_bdd, config.intervalle_releves) == (3.0, 10.0, 5.0)
@@ -119,8 +120,8 @@ def test_cle_absente_refusee(tmp_path: Path, texte_exemple: str) -> None:
 
 
 def test_cle_vide_refusee(tmp_path: Path, texte_exemple: str) -> None:
-    chemin = ecrire_variante(tmp_path, texte_exemple, "cle_hmac = remplacer_par_une_cle_secrete", "cle_hmac =")
-    with pytest.raises(ConfigurationInvalideError, match="cle_hmac est vide"):
+    chemin = ecrire_variante(tmp_path, texte_exemple, "hote = 127.0.0.1", "hote =")
+    with pytest.raises(ConfigurationInvalideError, match="hote est vide"):
         Configuration.depuis_fichier(chemin)
 
 
@@ -186,19 +187,21 @@ def test_valeur_incoherente_refusee(
 # ---------- Caractères spéciaux ----------
 
 def test_mot_de_passe_avec_pourcent_lu_tel_quel(tmp_path: Path, texte_exemple: str) -> None:
-    chemin = ecrire_variante(
-        tmp_path, texte_exemple, "mot_de_passe = remplacer_par_le_mot_de_passe", "mot_de_passe = 50%de_sel"
-    )
+    chemin = ecrire_variante(tmp_path, texte_exemple, "base = cherrypie", "base = cherrypie\nmot_de_passe = 50%de_sel")
     config = Configuration.depuis_fichier(chemin)
     assert config.parametres_bdd["mot_de_passe"] == "50%de_sel"
 
 
 # ---------- Confidentialité ----------
 
-def test_repr_de_la_configuration_ne_montre_pas_la_cle() -> None:
-    config = Configuration.depuis_fichier(CHEMIN_EXEMPLE)
-    assert "remplacer_par_une_cle_secrete" not in repr(config)
-    assert "remplacer_par_le_mot_de_passe" not in repr(config)
+def test_repr_de_la_configuration_ne_montre_pas_la_cle(tmp_path: Path, texte_exemple: str) -> None:
+    texte = texte_exemple.replace("[securite]", "[securite]\ncle_hmac = cle_tres_secrete").replace(
+        "base = cherrypie", "base = cherrypie\nmot_de_passe = mdp_tres_secret"
+    )
+    config = Configuration.depuis_fichier(ecrire_config(tmp_path, texte))
+    assert config.cle_hmac == b"cle_tres_secrete"
+    assert "cle_tres_secrete" not in repr(config)
+    assert "mdp_tres_secret" not in repr(config)
 
 
 SECRET = "cle_tres_secrete_42"
@@ -211,9 +214,9 @@ def numero_de_ligne(debut: str) -> int:
 
 LIGNES_MALFORMEES = [
     pytest.param(
-        "cle_hmac = remplacer_par_une_cle_secrete",
+        "fenetre_anti_rejeu = 5",
         f"cle_hmac {SECRET}",
-        f"ligne {numero_de_ligne('cle_hmac = ')}",
+        f"ligne {numero_de_ligne('fenetre_anti_rejeu = ')}",
         id="sans-egal",
     ),
     pytest.param(

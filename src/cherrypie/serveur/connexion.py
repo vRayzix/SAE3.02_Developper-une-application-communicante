@@ -6,7 +6,6 @@ import socket
 
 from cherrypie.commun.trame import DecoupeurTrames
 
-# Octets demandés à chaque lecture : de quoi recevoir plusieurs trames d'un coup.
 TAILLE_LECTURE = 65536
 # Au-delà, le client ne lit plus ses messages : mieux vaut le déconnecter que de
 # garder indéfiniment ses messages en mémoire.
@@ -22,12 +21,7 @@ class Connexion:
     """
 
     def __init__(self, prise: socket.socket, adresse: tuple[str, int]) -> None:
-        """Prend en charge une socket renvoyée par accept().
-
-        Args:
-            prise (socket.socket): socket connectée au client.
-            adresse (tuple[str, int]): adresse IP et port du client.
-        """
+        """Prend en charge une socket renvoyée par accept(), et l'adresse IP et le port du client."""
         prise.setblocking(False)
         # Les messages sont petits et attendus tout de suite : on désactive
         # l'algorithme de Nagle, qui les retarderait pour les regrouper.
@@ -63,9 +57,6 @@ class Connexion:
         Une lecture peut contenir un morceau de trame comme plusieurs trames : le
         découpeur garde les morceaux jusqu'à ce que chaque trame soit complète.
 
-        Returns:
-            list[bytes]: charges utiles des trames complètes, éventuellement aucune.
-
         Raises:
             ConnectionResetError: si le client a coupé la connexion brutalement.
             ConnectionError: si le client a fermé la connexion (lecture de 0 octet).
@@ -81,10 +72,7 @@ class Connexion:
         return self.__decoupeur.ajouter(octets)
 
     def envoyer(self, trame: bytes) -> None:
-        """Met une trame en file d'envoi, puis envoie tout de suite ce que la socket accepte.
-
-        Args:
-            trame (bytes): trame complète, en-tête de longueur compris.
+        """Met une trame complète en file d'envoi, puis envoie tout de suite ce que la socket accepte.
 
         Raises:
             ConnectionError: si le client ne lit plus ses messages (file pleine), ou s'il

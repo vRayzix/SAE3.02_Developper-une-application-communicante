@@ -9,7 +9,7 @@ Ce document décrit les messages échangés entre le serveur du rond-point, les 
 | TCP | 5050 | messages qui doivent arriver : HELLO, HELLO_ACK, VP_ALERT, VP_FIN, BYE, PING, PONG, NOTIF, STATE, ABONNEMENT, REGLAGE, DEVANT, STATS_DEMANDE, STATS_REPONSE |
 | UDP | 5051 | positions (POS), environ toutes les 200 ms ; une position perdue est remplacée par la suivante |
 
-Les ports et les délais se règlent dans `config.ini`.
+Les ports se règlent par `--port-tcp` et `--port-udp` (ou `CHERRYPIE_PORT_TCP`, `CHERRYPIE_PORT_UDP`, ou `config.ini`), les délais dans `config.ini` (voir le README).
 
 ## Découpage des trames TCP
 
@@ -166,7 +166,7 @@ STATS_DEMANDE n'est accepté que d'une session de supervision abonnée ; venu d'
  "densites": [{"instant": "2026-11-17T15:31:15.004000", "branche": "nations_sud", "densite": 0.375}]}
 ```
 
-Les listes vont du plus ancien au plus récent, les dates en ISO 8601. Base injoignable, la réponse vaut `{"disponible": false, "raison": "base injoignable (10.0.0.2:3306)"}` et la supervision affiche la raison. Comme toutes les trames, STATS_DEMANDE et STATS_REPONSE sont signés par HMAC et soumis à l'anti-rejeu.
+Les listes vont du plus ancien au plus récent, les dates en ISO 8601. Base injoignable, la réponse vaut `{"disponible": false, "raison": "base injoignable (adresse-de-la-vm-bdd:3306)"}` et la supervision affiche la raison. Comme toutes les trames, STATS_DEMANDE et STATS_REPONSE sont signés par HMAC et soumis à l'anti-rejeu.
 
 ## Positions en UDP
 
