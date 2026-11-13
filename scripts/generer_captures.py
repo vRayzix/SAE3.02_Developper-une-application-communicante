@@ -7,8 +7,12 @@ fenêtre de supervision dans ce processus, sur des ports libres et sans rien aff
 joue deux fois, avec puis sans régulation, en prenant chaque capture au même délai après
 le départ du véhicule prioritaire. Pendant le passage régulé, il capture aussi la fenêtre
 à trois tailles d'écran et la section « Suivi ». Les deux serveurs écrivent leur historique
-dans la même base en mémoire, la doublure des tests : l'onglet « Statistiques », capturé à
-la fin, compare les deux traversées sans demander de MariaDB.
+dans la même base en mémoire : l'onglet « Statistiques », capturé à la fin, compare les deux
+traversées sans demander de MariaDB.
+
+Cette base en mémoire est la doublure de base des tests, DoublureBdd de
+tests/doublure_bdd.py : le script a besoin du dossier tests/ du dépôt, et seulement de
+requirements.txt pour s'exécuter.
 """
 
 import configparser
