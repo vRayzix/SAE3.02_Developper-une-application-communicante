@@ -12,7 +12,7 @@ L'application se découpe en trois parties :
 
 ## Équipe
 
-Groupe CherryPie, BUT2 R&T de l'IUT de Colmar : Yassine et Ilkan.
+Groupe CherryPie, BUT2 R&T de l'IUT de Colmar : Lucas CARRIAT et Ilkan GUNEY.
 
 ## Prérequis
 
